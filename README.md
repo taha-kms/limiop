@@ -2,7 +2,7 @@
 
 SkillSync helps job seekers understand how their skills and CV align with real job opportunities. It collects public job postings, extracts and normalizes requested skills, compares them with a user's profile, and presents job matches and skill gaps. Applications continue on the original employer or job-board website.
 
-> SkillSync is in its initial development stage. The architecture and stack below describe the intended product direction; runnable application services have not been added yet.
+> SkillSync is in its initial development stage. The backend foundation is available; the remaining architecture and stack below describe the intended product direction.
 
 ## Product goals
 
@@ -73,9 +73,9 @@ Directories should be added only when an implementation requires them.
 
 ## Getting started
 
-The repository does not yet contain runnable frontend, backend, Airflow, or ML services. For the current product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md).
+The initial FastAPI backend includes typed environment configuration and a health endpoint. See the [backend setup guide](backend/README.md) for local installation, validation, and run commands.
 
-Component-specific setup commands will be documented here as each service is introduced. The intended local-development direction is Docker Compose with reproducible environments for the web application, API, PostgreSQL, and Airflow services.
+The repository does not yet contain frontend, Airflow, database, or ML implementations. For the current product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md). The intended local-development direction is Docker Compose with reproducible environments for the web application, API, PostgreSQL, and Airflow services.
 
 ## Development workflow
 
