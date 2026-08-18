@@ -14,6 +14,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base
@@ -46,6 +47,7 @@ class JobSource(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+    provenance_records: Mapped[list["JobProvenance"]] = relationship(back_populates="source")
 
 
 class Company(Base):
@@ -178,3 +180,58 @@ class Job(Base):
         onupdate=func.now(),
     )
     company: Mapped[Company] = relationship(back_populates="jobs")
+    provenance_records: Mapped[list["JobProvenance"]] = relationship(back_populates="job")
+
+
+class JobProvenance(Base):
+    """Trace one canonical job back to an untrusted external source record."""
+
+    __tablename__ = "job_provenance"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_id",
+            "source_job_id",
+            name="uq_job_provenance_source_id_source_job_id",
+        ),
+        CheckConstraint(
+            "last_seen_at >= first_seen_at",
+            name="ck_job_provenance_seen_order",
+        ),
+        Index("ix_job_provenance_job_id", "job_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    job_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "jobs.id",
+            name="fk_job_provenance_job_id_jobs",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    source_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "job_sources.id",
+            name="fk_job_provenance_source_id_job_sources",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    source_job_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    raw_payload: Mapped[dict[str, object] | None] = mapped_column(
+        JSONB(none_as_null=True),
+        nullable=True,
+    )
+    job: Mapped[Job] = relationship(back_populates="provenance_records")
+    source: Mapped[JobSource] = relationship(back_populates="provenance_records")
