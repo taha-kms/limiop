@@ -1,0 +1,1 @@
+"""SkillSync backend application package."""
