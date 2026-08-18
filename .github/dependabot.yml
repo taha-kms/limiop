@@ -35,10 +35,14 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: python
+        versions:
+          - '>= 3.14'
     commit-message:
       prefix: ci
 
-  - package-ecosystem: docker
+  - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly
