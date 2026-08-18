@@ -5,10 +5,10 @@ from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
-from app.db.base import Base
+from app.modules.jobs.models import JobSource
 
 config = context.config
-target_metadata = Base.metadata
+target_metadata = JobSource.metadata
 
 
 def database_url() -> str:
