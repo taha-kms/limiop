@@ -1,0 +1,91 @@
+name: Docs
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Check Markdown formatting
+        run: |
+          status=0
+          while IFS= read -r file; do
+            if grep -nE ' +$' "$file" > /dev/null; then
+              echo "::error file=$file::trailing whitespace"
+              status=1
+            fi
+            if grep -q $'\r' "$file"; then
+              echo "::error file=$file::CRLF line endings"
+              status=1
+            fi
+            if [ -n "$(tail -c1 "$file")" ]; then
+              echo "::error file=$file::missing final newline"
+              status=1
+            fi
+          done < <(git ls-files '*.md')
+          exit $status
+
+      - name: Check relative Markdown links
+        run: |
+          status=0
+          while IFS= read -r file; do
+            dir=$(dirname "$file")
+            while IFS= read -r link; do
+              case "$link" in
+                http://*|https://*|mailto:*|'#'*) continue ;;
+              esac
+              target=${link%%#*}
+              if [ -n "$target" ] && [ ! -e "$dir/$target" ]; then
+                echo "::error file=$file::broken relative link: $link"
+                status=1
+              fi
+            done < <(grep -oE '\]\([^)]+\)' "$file" | sed -E 's/^\]\(//; s/\)$//')
+          done < <(git ls-files '*.md')
+          exit $status
+
+      - name: Check skill structure
+        run: |
+          status=0
+          for path in agent-skills/*/; do
+            dir=${path%/}
+            name=$(basename "$dir")
+            if [ ! -f "$dir/SKILL.md" ]; then
+              echo "::error::skill $name is missing SKILL.md"
+              status=1
+              continue
+            fi
+            while IFS= read -r ref; do
+              if [ ! -f "$dir/$ref" ]; then
+                echo "::error file=$dir/SKILL.md::skill $name references missing $ref"
+                status=1
+              fi
+            done < <(grep -ohE 'references/[A-Za-z0-9_.-]+\.md' "$dir/SKILL.md" | sort -u)
+            if [ -d "$dir/references" ]; then
+              for file in "$dir"/references/*.md; do
+                if ! grep -q "references/$(basename "$file")" "$dir/SKILL.md"; then
+                  echo "::error file=$file::skill $name never references this file"
+                  status=1
+                fi
+              done
+            fi
+            unexpected=$(ls -A "$dir" | grep -vE '^(SKILL\.md|references)$' | tr '\n' ' ' || true)
+            if [ -n "$unexpected" ]; then
+              echo "::error::skill $name contains unexpected entries: $unexpected"
+              status=1
+            fi
+          done
+          exit $status

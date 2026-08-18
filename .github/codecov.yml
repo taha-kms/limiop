@@ -1,0 +1,40 @@
+# Coverage policy. The upload step is added to the first workflow that runs a
+# test suite; no component produces coverage yet.
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: 80%
+
+comment:
+  layout: reach, diff, flags
+  require_changes: true
+
+flags:
+  backend:
+    paths:
+      - backend/
+    carryforward: true
+  frontend:
+    paths:
+      - frontend/
+    carryforward: true
+  airflow:
+    paths:
+      - airflow/
+    carryforward: true
+  ml:
+    paths:
+      - ml/
+    carryforward: true
+
+ignore:
+  - docs/**
+  - agent-skills/**
+  - '**/tests/**'
+  - '**/*.spec.ts'
+  - '**/*.test.ts'
