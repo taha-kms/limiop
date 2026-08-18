@@ -1,39 +1,17 @@
 import asyncio
-import os
-from collections.abc import Awaitable, Callable, Iterator
-from pathlib import Path
+from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 import pytest
-from alembic import command
-from alembic.config import Config
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from app.core.config import get_settings
 from app.db.base import Base
 from app.db.session import Database
 from app.modules.jobs.models import JobSource
 
 pytestmark = pytest.mark.integration
-BACKEND_ROOT = Path(__file__).parents[3]
-
-
-@pytest.fixture
-def database_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[PostgresDsn]:
-    value = os.getenv("SKILLSYNC_TEST_DATABASE_URL")
-    if value is None:
-        pytest.skip("SKILLSYNC_TEST_DATABASE_URL is not configured")
-
-    monkeypatch.setenv("SKILLSYNC_DATABASE_URL", value)
-    get_settings.cache_clear()
-    command.upgrade(Config(BACKEND_ROOT / "alembic.ini"), "head")
-
-    try:
-        yield PostgresDsn(value)
-    finally:
-        get_settings.cache_clear()
 
 
 def run_database_test(
