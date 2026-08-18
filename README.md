@@ -73,9 +73,9 @@ Directories should be added only when an implementation requires them.
 
 ## Getting started
 
-The initial FastAPI backend includes typed environment configuration and a health endpoint. See the [backend setup guide](backend/README.md) for local installation, validation, and run commands.
+The initial FastAPI backend includes typed environment configuration, PostgreSQL persistence infrastructure, Alembic migrations, and a health endpoint. See the [backend setup guide](backend/README.md) for native and Docker Compose workflows.
 
-The repository does not yet contain frontend, Airflow, database, or ML implementations. For the current product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md). The intended local-development direction is Docker Compose with reproducible environments for the web application, API, PostgreSQL, and Airflow services.
+The repository does not yet contain frontend, Airflow, domain database models, or ML implementations. For the current product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md). The intended local-development direction is Docker Compose with reproducible environments for the web application, API, PostgreSQL, and Airflow services.
 
 ## Development workflow
 

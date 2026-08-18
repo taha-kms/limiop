@@ -16,6 +16,22 @@ jobs:
   analyze:
     name: Quality gate
     runs-on: ubuntu-latest
+    env:
+      SKILLSYNC_TEST_DATABASE_URL: postgresql+psycopg://skillsync_test:skillsync_test@localhost:5432/skillsync_test
+    services:
+      postgres:
+        image: postgres:17.10-alpine@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_DB: skillsync_test
+          POSTGRES_PASSWORD: skillsync_test
+          POSTGRES_USER: skillsync_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U skillsync_test -d skillsync_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

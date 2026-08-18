@@ -14,18 +14,24 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.app_name == "SkillSync API"
     assert settings.environment is Environment.LOCAL
     assert settings.debug is False
+    assert str(settings.database_url) == "postgresql+psycopg://localhost/skillsync"
 
 
 def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLSYNC_APP_NAME", "Configured API")
     monkeypatch.setenv("SKILLSYNC_ENVIRONMENT", "staging")
     monkeypatch.setenv("SKILLSYNC_DEBUG", "true")
+    monkeypatch.setenv(
+        "SKILLSYNC_DATABASE_URL",
+        "postgresql+psycopg://app@database.example/skillsync",
+    )
 
     settings = Settings()
 
     assert settings.app_name == "Configured API"
     assert settings.environment is Environment.STAGING
     assert settings.debug is True
+    assert str(settings.database_url) == "postgresql+psycopg://app@database.example/skillsync"
 
 
 def test_settings_load_dotenv_file(tmp_path: Path) -> None:
@@ -44,6 +50,20 @@ def test_settings_reject_unknown_environment(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLSYNC_ENVIRONMENT", "unknown")
 
     with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_reject_non_postgresql_database_url(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("SKILLSYNC_DATABASE_URL", "sqlite:///skillsync.db")
+
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_settings_require_async_psycopg_driver(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("SKILLSYNC_DATABASE_URL", "postgresql://localhost/skillsync")
+
+    with pytest.raises(ValidationError, match="postgresql\\+psycopg"):
         Settings()
 
 

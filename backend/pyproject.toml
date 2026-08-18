@@ -9,8 +9,11 @@ description = "SkillSync backend API"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+  "alembic>=1.19.1,<2.0.0",
   "fastapi>=0.141.1,<1.0.0",
+  "psycopg[binary]>=3.3.4,<4.0.0",
   "pydantic-settings>=2.15.0,<3.0.0",
+  "sqlalchemy[asyncio]>=2.0.52,<3.0.0",
   "uvicorn[standard]>=0.52.3,<1.0.0",
 ]
 
@@ -37,6 +40,9 @@ addopts = [
   "--cov-fail-under=80",
 ]
 testpaths = ["tests"]
+markers = [
+  "integration: requires a PostgreSQL test database",
+]
 
 [tool.coverage.run]
 branch = true

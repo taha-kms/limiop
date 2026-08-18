@@ -5,8 +5,10 @@ The backend is a FastAPI application organized around explicit HTTP, configurati
 ## Requirements
 
 - Python 3.12
+- PostgreSQL 17 for database-backed development
+- Docker and Docker Compose for the containerized workflow
 
-## Setup
+## Native setup
 
 Run these commands from `backend/`:
 
@@ -21,6 +23,7 @@ cp .env.example .env
 Start the development server:
 
 ```bash
+alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
@@ -35,6 +38,40 @@ Configuration uses environment variables with the `SKILLSYNC_` prefix. Local val
 | `SKILLSYNC_APP_NAME` | `SkillSync API` | API title exposed in OpenAPI |
 | `SKILLSYNC_ENVIRONMENT` | `local` | Runtime environment: `local`, `test`, `staging`, or `production` |
 | `SKILLSYNC_DEBUG` | `false` | Enables FastAPI debug behavior |
+| `SKILLSYNC_DATABASE_URL` | `postgresql+psycopg://localhost/skillsync` | Async-capable PostgreSQL connection URL |
+
+The default database URL is a credential-free local development placeholder. Override it in `.env` to match your PostgreSQL authentication setup. URL-encode special characters in credentials.
+
+## Docker Compose
+
+From the repository root:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Replace the example database password and matching URL before starting the services. Compose starts PostgreSQL, waits for it to become healthy, applies Alembic migrations, and then starts the API at `http://localhost:8000`.
+
+Stop the services while keeping database data:
+
+```bash
+docker compose down
+```
+
+Passing `--volumes` also deletes the local PostgreSQL data volume.
+
+## Migrations
+
+Run Alembic commands from `backend/` with `SKILLSYNC_DATABASE_URL` configured:
+
+```bash
+alembic upgrade head
+alembic downgrade base
+alembic current
+```
+
+Alembic and the application share the metadata in `app/db/base.py`. Persistent schema changes must update both the SQLAlchemy model and the migration history.
 
 ## Validation
 
@@ -45,7 +82,7 @@ mypy
 pytest
 ```
 
-Pytest enforces branch-aware coverage and writes `coverage.xml` for Codecov and quality analysis.
+Set `SKILLSYNC_TEST_DATABASE_URL` to include PostgreSQL session and migration integration tests. Without it, those tests are reported as skipped. Pytest enforces branch-aware coverage and writes `coverage.xml` for Codecov and quality analysis.
 
 ## Structure
 
@@ -54,8 +91,10 @@ backend/
 ├── app/
 │   ├── api/          # Route registration and HTTP endpoints
 │   ├── core/         # Typed application configuration
+│   ├── db/           # SQLAlchemy engine, sessions, and shared metadata
 │   ├── schemas/      # Public API contracts
 │   └── main.py       # Application factory and ASGI entry point
+├── alembic/          # Versioned PostgreSQL migrations
 ├── tests/            # API and configuration tests
 └── pyproject.toml    # Package, test, lint, and type-check configuration
 ```
