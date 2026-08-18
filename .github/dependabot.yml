@@ -1,8 +1,7 @@
 version: 2
 
 updates:
-  # Only the GitHub Actions ecosystem exists in the repository today. Add pip
-  # entries for backend/, airflow/, and ml/ and an npm entry for frontend/ as
+  # Add pip entries for airflow/ and ml/ and an npm entry for frontend/ as
   # those services introduce their manifests.
   - package-ecosystem: github-actions
     directory: /
@@ -10,6 +9,20 @@ updates:
       interval: weekly
     groups:
       github-actions:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    groups:
+      backend-dependencies:
         patterns:
           - '*'
         update-types:
