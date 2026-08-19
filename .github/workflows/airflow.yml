@@ -1,0 +1,58 @@
+name: Airflow
+
+on:
+  pull_request:
+    paths:
+      - 'airflow/**'
+      - 'backend/**'
+      - '.github/workflows/airflow.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'airflow/**'
+      - 'backend/**'
+      - '.github/workflows/airflow.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate DAGs
+    runs-on: ubuntu-latest
+    env:
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW_HOME: ${{ github.workspace }}/airflow/.airflow-home
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: airflow/requirements.txt
+
+      - name: Install Airflow and the backend package
+        working-directory: airflow
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest ruff
+
+      - name: Check formatting
+        working-directory: airflow
+        run: ruff format --check .
+
+      - name: Lint DAGs
+        working-directory: airflow
+        run: ruff check .
+
+      - name: Test DAG structure
+        working-directory: airflow
+        run: pytest

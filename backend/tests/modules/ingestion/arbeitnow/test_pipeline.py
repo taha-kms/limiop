@@ -10,10 +10,11 @@ import pytest
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
+from app.core.config import Settings
 from app.db.session import Database
 from app.modules.ingestion.arbeitnow.client import ArbeitnowConfig
 from app.modules.ingestion.arbeitnow.normalizer import ArbeitnowNormalizer
-from app.modules.ingestion.arbeitnow.pipeline import arbeitnow_run
+from app.modules.ingestion.arbeitnow.pipeline import arbeitnow_run, ingest_arbeitnow
 from app.modules.ingestion.arbeitnow.records import ArbeitnowValidator
 from app.modules.ingestion.contracts import IngestionStage, IngestionSummary
 from app.modules.ingestion.pipeline import utc_now
@@ -362,5 +363,54 @@ def test_a_record_persistence_refuses_is_reported_without_stopping_the_run(
         assert summary.failures[0].source_job_id == "working-student-frontend-654321"
         assert "2 stored jobs" in summary.failures[0].reason
         assert summary.is_complete is False
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_the_entry_point_runs_against_the_configured_database(database_url: PostgresDsn) -> None:
+    """The scheduler entry point owns the engine and the client, so this
+    exercises it end to end with only the outbound transport replaced."""
+
+    async def exercise(database: Database) -> None:
+        http_client = httpx2.AsyncClient(
+            transport=httpx2.MockTransport(responding(page(board_body()["data"])))
+        )
+        try:
+            summary = await ingest_arbeitnow(
+                config=FAST_CONFIG,
+                settings=Settings(database_url=PostgresDsn(str(database_url))),
+                http_client=http_client,
+            )
+        finally:
+            await http_client.aclose()
+
+        assert summary.source_key == "arbeitnow"
+        assert summary.created == 2
+        assert summary.is_complete is True
+        assert len(await stored_titles(database)) == 2
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_the_entry_point_reports_an_unreachable_provider(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        http_client = httpx2.AsyncClient(
+            transport=httpx2.MockTransport(
+                responding(*[httpx2.ConnectError("refused")] * FAST_CONFIG.max_attempts)
+            )
+        )
+        try:
+            summary = await ingest_arbeitnow(
+                config=FAST_CONFIG,
+                settings=Settings(database_url=PostgresDsn(str(database_url))),
+                http_client=http_client,
+            )
+        finally:
+            await http_client.aclose()
+
+        assert summary.fetched == 0
+        assert summary.failures[0].stage is IngestionStage.FETCH
 
     run_database_test(database_url, exercise)

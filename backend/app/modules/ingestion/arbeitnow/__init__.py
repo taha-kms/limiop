@@ -7,7 +7,11 @@ from app.modules.ingestion.arbeitnow.client import (
     ArbeitnowConfig,
 )
 from app.modules.ingestion.arbeitnow.normalizer import ArbeitnowNormalizer
-from app.modules.ingestion.arbeitnow.pipeline import DISPLAY_NAME, arbeitnow_run
+from app.modules.ingestion.arbeitnow.pipeline import (
+    DISPLAY_NAME,
+    arbeitnow_run,
+    ingest_arbeitnow,
+)
 from app.modules.ingestion.arbeitnow.records import ArbeitnowJobRecord, ArbeitnowValidator
 
 __all__ = [
@@ -20,4 +24,5 @@ __all__ = [
     "ArbeitnowNormalizer",
     "ArbeitnowValidator",
     "arbeitnow_run",
+    "ingest_arbeitnow",
 ]
