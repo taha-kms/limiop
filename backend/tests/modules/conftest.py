@@ -9,7 +9,7 @@ from pydantic import PostgresDsn
 
 from app.core.config import get_settings
 
-BACKEND_ROOT = Path(__file__).parents[3]
+BACKEND_ROOT = Path(__file__).parents[2]
 
 
 @pytest.fixture

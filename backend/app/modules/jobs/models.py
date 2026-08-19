@@ -18,6 +18,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base
+from app.modules.jobs.constants import FINGERPRINT_LENGTH
 from app.modules.jobs.domain import (
     EmploymentType,
     JobStatus,
@@ -102,6 +103,7 @@ class Job(Base):
             "published_at IS NULL OR expires_at IS NULL OR expires_at >= published_at",
             name="ck_jobs_expiry_not_before_publication",
         ),
+        Index("ix_jobs_fingerprint", "fingerprint"),
         Index("ix_jobs_status_published_at", "status", "published_at"),
         Index("ix_jobs_status_expires_at", "status", "expires_at"),
         Index("ix_jobs_company_id", "company_id"),
@@ -116,6 +118,11 @@ class Job(Base):
             ondelete="RESTRICT",
         ),
         nullable=False,
+    )
+    fingerprint: Mapped[str] = mapped_column(
+        String(FINGERPRINT_LENGTH),
+        nullable=False,
+        server_default="",
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
