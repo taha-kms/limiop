@@ -117,6 +117,11 @@ class JobRecordValidator[ProviderRecordT](Protocol):
 class JobRecordNormalizer[ProviderRecordT](Protocol):
     """Maps one typed provider record onto the canonical contract."""
 
-    def normalize(self, record: ProviderRecordT) -> NormalizedJob:
-        """Return the canonical job, or raise `RecordValidationError`."""
+    def normalize(self, record: ProviderRecordT, raw: RawRecord) -> NormalizedJob:
+        """Return the canonical job, or raise `RecordValidationError`.
+
+        The untrusted `raw` record is passed alongside the validated one so
+        provenance can preserve exactly what the provider sent, including the
+        fields validation ignored.
+        """
         ...

@@ -57,7 +57,7 @@ class FakeValidator:
 class FakeNormalizer:
     """A normalizer that satisfies the normalize boundary."""
 
-    def normalize(self, record: ProviderRecord) -> NormalizedJob:
+    def normalize(self, record: ProviderRecord, raw: RawRecord) -> NormalizedJob:
         return NormalizedJob.model_validate(
             {
                 "company": {"display_name": record.company_name},
@@ -209,7 +209,8 @@ def test_stages_chain_from_raw_record_to_canonical_job() -> None:
     normalizer = accepts_normalizer(FakeNormalizer())
 
     page = asyncio.run(client.fetch_page(1))
-    normalized = normalizer.normalize(validator.validate(page.records[0]))
+    raw = page.records[0]
+    normalized = normalizer.normalize(validator.validate(raw), raw)
 
     assert accepts_client(client) == SOURCE_KEY
     assert client.requested == [1]
