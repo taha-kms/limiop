@@ -6,6 +6,7 @@ from app.modules.ingestion.arbeitnow.client import (
     ArbeitnowClient,
     ArbeitnowConfig,
 )
+from app.modules.ingestion.arbeitnow.normalizer import ArbeitnowNormalizer
 from app.modules.ingestion.arbeitnow.records import ArbeitnowJobRecord, ArbeitnowValidator
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "ArbeitnowClient",
     "ArbeitnowConfig",
     "ArbeitnowJobRecord",
+    "ArbeitnowNormalizer",
     "ArbeitnowValidator",
 ]
