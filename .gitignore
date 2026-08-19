@@ -55,6 +55,8 @@ airflow/airflow.db
 airflow/airflow-webserver.pid
 airflow/logs/
 airflow/xcom_backend/
+airflow/.airflow-home/
+airflow/simple_auth_manager_passwords.json.generated
 
 # Local databases and data
 *.db
