@@ -73,6 +73,13 @@ alembic current
 
 Alembic and the application share the metadata in `app/db/base.py`. Persistent schema changes must update both the SQLAlchemy model and the migration history.
 
+## Job catalog
+
+The job catalog lives in `app/modules/jobs/` and owns the source-independent job
+representation shared by ingestion, the API, analytics, and matching. Its fields,
+validation rules, and provenance model are described in
+[the canonical job contract](../docs/canonical-job-contract.md).
+
 ## Validation
 
 ```bash
@@ -92,6 +99,7 @@ backend/
 │   ├── api/          # Route registration and HTTP endpoints
 │   ├── core/         # Typed application configuration
 │   ├── db/           # SQLAlchemy engine, sessions, and shared metadata
+│   ├── modules/      # Bounded domain modules with their own models and schemas
 │   ├── schemas/      # Public API contracts
 │   └── main.py       # Application factory and ASGI entry point
 ├── alembic/          # Versioned PostgreSQL migrations
