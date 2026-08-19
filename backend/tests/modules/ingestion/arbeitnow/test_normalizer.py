@@ -50,7 +50,14 @@ def test_a_representative_record_becomes_a_canonical_job() -> None:
 
 
 def test_normalization_is_deterministic() -> None:
-    assert normalize() == normalize()
+    raw = raw_record()
+    record = ArbeitnowValidator().validate(raw)
+    normalizer = ArbeitnowNormalizer()
+
+    first = normalizer.normalize(record, raw)
+    second = normalizer.normalize(record, raw)
+
+    assert first == second
 
 
 def test_provenance_identifies_the_external_record() -> None:
