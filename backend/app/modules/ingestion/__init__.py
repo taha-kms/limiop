@@ -23,6 +23,11 @@ from app.modules.ingestion.errors import (
     SourceResponseError,
     SourceUnavailableError,
 )
+from app.modules.ingestion.persistence import (
+    PersistenceResult,
+    SourceRegistration,
+    persist_job,
+)
 
 __all__ = [
     "DeduplicationDecision",
@@ -34,12 +39,15 @@ __all__ = [
     "JobRecordValidator",
     "JobSourceClient",
     "MatchBasis",
+    "PersistenceResult",
     "RawPage",
     "RawRecord",
     "RecordFailure",
     "RecordOutcome",
     "RecordValidationError",
+    "SourceRegistration",
     "SourceResponseError",
     "SourceUnavailableError",
     "decide",
+    "persist_job",
 ]
