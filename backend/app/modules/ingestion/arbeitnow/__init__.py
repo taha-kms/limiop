@@ -7,14 +7,17 @@ from app.modules.ingestion.arbeitnow.client import (
     ArbeitnowConfig,
 )
 from app.modules.ingestion.arbeitnow.normalizer import ArbeitnowNormalizer
+from app.modules.ingestion.arbeitnow.pipeline import DISPLAY_NAME, arbeitnow_run
 from app.modules.ingestion.arbeitnow.records import ArbeitnowJobRecord, ArbeitnowValidator
 
 __all__ = [
     "DEFAULT_BASE_URL",
+    "DISPLAY_NAME",
     "SOURCE_KEY",
     "ArbeitnowClient",
     "ArbeitnowConfig",
     "ArbeitnowJobRecord",
     "ArbeitnowNormalizer",
     "ArbeitnowValidator",
+    "arbeitnow_run",
 ]

@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
@@ -43,6 +44,15 @@ class FakeClient:
     async def fetch_page(self, page: int) -> RawPage:
         self.requested.append(page)
         return self.pages[page]
+
+    async def fetch_pages(self) -> AsyncIterator[RawPage]:
+        page = 1
+        while page in self.pages:
+            fetched = await self.fetch_page(page)
+            yield fetched
+            if fetched.next_page is None:
+                return
+            page = fetched.next_page
 
 
 class FakeValidator:

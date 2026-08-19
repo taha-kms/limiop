@@ -28,11 +28,13 @@ from app.modules.ingestion.persistence import (
     SourceRegistration,
     persist_job,
 )
+from app.modules.ingestion.pipeline import IngestionRun
 
 __all__ = [
     "DeduplicationDecision",
     "DeduplicationOutcome",
     "IngestionError",
+    "IngestionRun",
     "IngestionStage",
     "IngestionSummary",
     "JobRecordNormalizer",

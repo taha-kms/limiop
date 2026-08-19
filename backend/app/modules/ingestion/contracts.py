@@ -11,7 +11,7 @@ Each stage is a protocol so providers stay independently testable, and nothing
 here imports a scheduler, a web framework, or a database session factory.
 """
 
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
@@ -101,6 +101,15 @@ class JobSourceClient(Protocol):
 
     async def fetch_page(self, page: int) -> RawPage:
         """Return one page, or raise `SourceUnavailableError`/`SourceResponseError`."""
+        ...
+
+    def fetch_pages(self) -> AsyncIterator[RawPage]:
+        """Yield pages in order, within the client's own bound.
+
+        Pagination lives here rather than in the pipeline because its shape is
+        provider-specific: page numbers, cursors, and continuation tokens all
+        satisfy this boundary.
+        """
         ...
 
 
