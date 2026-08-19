@@ -11,6 +11,12 @@ from app.modules.ingestion.contracts import (
     RecordFailure,
     RecordOutcome,
 )
+from app.modules.ingestion.deduplication import (
+    DeduplicationDecision,
+    DeduplicationOutcome,
+    MatchBasis,
+    decide,
+)
 from app.modules.ingestion.errors import (
     IngestionError,
     RecordValidationError,
@@ -19,12 +25,15 @@ from app.modules.ingestion.errors import (
 )
 
 __all__ = [
+    "DeduplicationDecision",
+    "DeduplicationOutcome",
     "IngestionError",
     "IngestionStage",
     "IngestionSummary",
     "JobRecordNormalizer",
     "JobRecordValidator",
     "JobSourceClient",
+    "MatchBasis",
     "RawPage",
     "RawRecord",
     "RecordFailure",
@@ -32,4 +41,5 @@ __all__ = [
     "RecordValidationError",
     "SourceResponseError",
     "SourceUnavailableError",
+    "decide",
 ]
