@@ -5,6 +5,8 @@ concrete parts and owns their lifecycles, so a scheduler can start a run without
 knowing any stage.
 """
 
+from datetime import UTC, datetime
+
 import httpx2
 
 from app.core.config import Settings, get_settings
@@ -19,6 +21,7 @@ from app.modules.ingestion.arbeitnow.records import ArbeitnowJobRecord, Arbeitno
 from app.modules.ingestion.contracts import IngestionSummary
 from app.modules.ingestion.persistence import SourceRegistration
 from app.modules.ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
+from app.modules.ingestion.reconciliation import ReconciliationResult, reconcile
 
 DISPLAY_NAME = "Arbeitnow"
 
@@ -71,8 +74,28 @@ async def ingest_arbeitnow(
     app_settings = settings if settings is not None else get_settings()
     database = Database(app_settings.database_url)
     resolved = config if config is not None else ArbeitnowConfig()
+    started_at = datetime.now(UTC)
     try:
         async with ArbeitnowClient(resolved, http_client=http_client) as client:
-            return await build_run(client, max_records).execute(database)
+            summary = await build_run(client, max_records).execute(database)
+        await reconcile_after(database, summary, run_started_at=started_at)
+        return summary
     finally:
         await database.dispose()
+
+
+async def reconcile_after(
+    database: Database,
+    summary: IngestionSummary,
+    *,
+    run_started_at: datetime,
+) -> ReconciliationResult:
+    """Conclude what this run is entitled to conclude, if anything.
+
+    Run against the assembled summary rather than inside the run, so a failure
+    recorded after the last page still denies the conclusion.
+    """
+    async with database.session() as session:
+        result = await reconcile(session, summary, run_started_at=run_started_at)
+        await session.commit()
+    return result

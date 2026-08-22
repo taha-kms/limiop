@@ -67,10 +67,21 @@ class GreenhouseClient:
         # unreachable company does not discard every other company's postings,
         # and reported afterwards so it is not lost either.
         self.failures: list[RecordFailure] = []
+        self._reached_the_end = False
 
     @property
     def source_key(self) -> str:
         return SOURCE_KEY
+
+    @property
+    def reached_the_end(self) -> bool:
+        """Whether every configured board was read.
+
+        A board that could not be read leaves that company's postings unseen,
+        and an unseen posting is indistinguishable from one that is gone, so a
+        single skipped board denies the whole run.
+        """
+        return self._reached_the_end
 
     async def __aenter__(self) -> Self:
         return self
@@ -133,13 +144,17 @@ class GreenhouseClient:
         A board is an independent company. One of them going away says nothing
         about the others, so its failure is recorded and the run continues.
         """
+        self._reached_the_end = False
+        skipped = False
         for board in self.config.boards:
             try:
                 yield await self.fetch_board(board)
             except (SourceResponseError, SourceUnavailableError) as error:
+                skipped = True
                 self.failures.append(
                     RecordFailure(stage=IngestionStage.FETCH, reason=error.message)
                 )
+        self._reached_the_end = not skipped
 
     def _read_board(self, board: str, response: httpx2.Response) -> RawPage:
         if response.status_code != httpx2.codes.OK:

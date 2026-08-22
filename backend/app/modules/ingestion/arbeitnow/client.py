@@ -63,10 +63,16 @@ class ArbeitnowClient:
             else httpx2.AsyncClient(timeout=self.config.timeout_seconds)
         )
         self._sleeper = sleeper
+        self._reached_the_end = False
 
     @property
     def source_key(self) -> str:
         return SOURCE_KEY
+
+    @property
+    def reached_the_end(self) -> bool:
+        """Whether the last walk ran out of pages rather than out of allowance."""
+        return self._reached_the_end
 
     async def __aenter__(self) -> Self:
         return self
@@ -116,12 +122,19 @@ class ArbeitnowClient:
         )
 
     async def fetch_pages(self) -> AsyncIterator[RawPage]:
-        """Yield pages in order, stopping at the end of the board or `max_pages`."""
+        """Yield pages in order, stopping at the end of the board or `max_pages`.
+
+        Stopping at `max_pages` leaves the rest of the board unread, which is
+        not the same as there being no rest, so only the first exit reports the
+        end.
+        """
+        self._reached_the_end = False
         page = 1
         for _ in range(self.config.max_pages):
             fetched = await self.fetch_page(page)
             yield fetched
             if fetched.next_page is None:
+                self._reached_the_end = True
                 return
             page = fetched.next_page
 

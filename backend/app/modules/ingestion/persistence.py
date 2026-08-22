@@ -19,7 +19,12 @@ from sqlalchemy.orm import selectinload
 
 from app.modules.ingestion.contracts import IngestionStage, RecordFailure, RecordOutcome
 from app.modules.ingestion.deduplication import DeduplicationOutcome, decide
-from app.modules.jobs.domain import EmploymentType, WorkplaceType, normalize_company_name
+from app.modules.jobs.domain import (
+    EmploymentType,
+    JobStatus,
+    WorkplaceType,
+    normalize_company_name,
+)
 from app.modules.jobs.matching import match_key_of
 from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.repositories import observe_job_provenance
@@ -294,5 +299,10 @@ async def write(
         seen_at=seen_at,
         raw_payload=incoming.provenance.raw_payload,
     )
+    # A source listing it again contradicts the conclusion that nobody did.
+    # Expiry is left alone: a stated date does not stop having passed because
+    # the posting is still on a board.
+    if job.status is JobStatus.REMOVED:
+        job.status = JobStatus.ACTIVE
     await session.flush()
     return PersistenceResult(outcome=outcome, job_id=job.id)
