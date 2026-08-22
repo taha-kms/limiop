@@ -5,6 +5,8 @@ concrete parts, owns their lifecycles, and folds in the boards that could not
 be read, which the generic run has no way to learn about.
 """
 
+from datetime import UTC, datetime
+
 import httpx2
 
 from app.core.config import Settings, get_settings
@@ -20,6 +22,7 @@ from app.modules.ingestion.greenhouse.normalizer import GreenhouseNormalizer
 from app.modules.ingestion.greenhouse.records import GreenhouseJobRecord, GreenhouseValidator
 from app.modules.ingestion.persistence import SourceRegistration
 from app.modules.ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
+from app.modules.ingestion.reconciliation import ReconciliationResult, reconcile
 
 DISPLAY_NAME = "Greenhouse"
 
@@ -76,6 +79,8 @@ def with_board_failures(summary: IngestionSummary, client: GreenhouseClient) -> 
         updated=summary.updated,
         skipped=summary.skipped,
         failures=summary.failures + tuple(client.failures),
+        reached_the_end=summary.reached_the_end,
+        stopped_at_budget=summary.stopped_at_budget,
     )
 
 
@@ -90,9 +95,30 @@ async def ingest_greenhouse(
     app_settings = settings if settings is not None else get_settings()
     database = Database(app_settings.database_url)
     resolved = config if config is not None else default_config()
+    started_at = datetime.now(UTC)
     try:
         async with GreenhouseClient(resolved, http_client=http_client) as client:
-            summary = await build_run(client, max_records).execute(database)
-            return with_board_failures(summary, client)
+            summary = with_board_failures(
+                await build_run(client, max_records).execute(database), client
+            )
+        await reconcile_after(database, summary, run_started_at=started_at)
+        return summary
     finally:
         await database.dispose()
+
+
+async def reconcile_after(
+    database: Database,
+    summary: IngestionSummary,
+    *,
+    run_started_at: datetime,
+) -> ReconciliationResult:
+    """Conclude what this run is entitled to conclude, if anything.
+
+    Run against the assembled summary rather than inside the run, so a failure
+    recorded after the last page still denies the conclusion.
+    """
+    async with database.session() as session:
+        result = await reconcile(session, summary, run_started_at=run_started_at)
+        await session.commit()
+    return result

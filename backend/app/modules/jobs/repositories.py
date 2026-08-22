@@ -50,6 +50,10 @@ async def observe_job_provenance(
                 excluded.raw_payload,
                 JobProvenance.raw_payload,
             ),
+            # Seeing it again undoes the conclusion that it was gone. A posting
+            # that comes back is the posting it was, not a new one, so this is
+            # cleared here rather than by anything that has to remember to.
+            "retired_at": None,
         },
     ).returning(JobProvenance)
 

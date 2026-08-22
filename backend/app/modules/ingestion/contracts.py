@@ -77,6 +77,12 @@ class IngestionSummary:
     updated: int = 0
     skipped: int = 0
     failures: tuple[RecordFailure, ...] = field(default_factory=tuple)
+    # Whether the provider ran out of records to give, rather than the run
+    # running out of room to take them. A client sets this only when it reached
+    # the end of everything it was asked to read.
+    reached_the_end: bool = False
+    # Whether the run stopped because it hit its own record budget.
+    stopped_at_budget: bool = False
 
     @property
     def persisted(self) -> int:
@@ -87,9 +93,32 @@ class IngestionSummary:
         return len(self.failures)
 
     @property
-    def is_complete(self) -> bool:
-        """Whether every fetched record reached a persistence outcome."""
+    def processing_complete(self) -> bool:
+        """Whether every record this run fetched reached a persistence outcome.
+
+        Says nothing about how much of the source was fetched. A run that read
+        a tenth of a board and handled all of it is processing-complete.
+        """
         return self.fetched == self.persisted + self.skipped and not self.failures
+
+    @property
+    def source_exhausted(self) -> bool:
+        """Whether this run saw everything the source has.
+
+        The stronger claim, and the only one that licenses concluding a posting
+        is gone because it was not seen. Absence is evidence only when the
+        alternative explanations are excluded, so every one of them is:
+
+        - a run that stopped at its record budget did not look at the rest
+        - a run that did not reach the end of the provider stopped early
+        - a run with any failure, at any stage, has a record it cannot account
+          for, and a posting it failed to read looks exactly like one that is
+          gone
+
+        A run may be processing-complete without being exhausted. The reverse
+        cannot happen, because a failure denies both.
+        """
+        return self.reached_the_end and not self.stopped_at_budget and self.processing_complete
 
 
 @runtime_checkable
@@ -98,6 +127,17 @@ class JobSourceClient(Protocol):
 
     @property
     def source_key(self) -> str: ...
+
+    @property
+    def reached_the_end(self) -> bool:
+        """Whether the last walk read everything the client was asked to read.
+
+        False until `fetch_pages` has run out of pages of its own accord. A
+        client that stopped at its own page limit, or skipped something it could
+        not read, has not reached the end and must say so: the lifecycle rule
+        treats an unseen posting as gone.
+        """
+        ...
 
     def fetch_pages(self) -> AsyncIterator[RawPage]:
         """Yield everything the provider has, within the client's own bound.

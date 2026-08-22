@@ -118,19 +118,23 @@ class IngestionRun[ProviderRecordT]:
         """
         tally = RunTally()
         failures: list[RecordFailure] = []
+        stopped_at_budget = False
 
         async with database.session() as session:
             try:
                 async for page in self.client.fetch_pages():
                     for raw in page.records:
                         if tally.fetched >= self.max_records:
-                            return self.summarize(tally, failures)
+                            # The rest of the source is unread, which is a
+                            # different thing from there being no rest.
+                            stopped_at_budget = True
+                            return self.summarize(tally, failures, stopped_at_budget=True)
                         tally.fetched += 1
                         await self.handle(session, raw, tally, failures, clock())
             except IngestionError as error:
                 failures.append(RecordFailure(stage=IngestionStage.FETCH, reason=error.message))
 
-        return self.summarize(tally, failures)
+        return self.summarize(tally, failures, stopped_at_budget=stopped_at_budget)
 
     async def handle(
         self,
@@ -153,7 +157,13 @@ class IngestionRun[ProviderRecordT]:
             failures.append(result.failure)
         await session.commit()
 
-    def summarize(self, tally: RunTally, failures: list[RecordFailure]) -> IngestionSummary:
+    def summarize(
+        self,
+        tally: RunTally,
+        failures: list[RecordFailure],
+        *,
+        stopped_at_budget: bool,
+    ) -> IngestionSummary:
         return IngestionSummary(
             source_key=self.source.key,
             fetched=tally.fetched,
@@ -161,4 +171,8 @@ class IngestionRun[ProviderRecordT]:
             updated=tally.updated,
             skipped=tally.skipped,
             failures=tuple(failures),
+            # Asked of the client rather than assumed: only it knows whether it
+            # ran out of pages or out of allowance.
+            reached_the_end=self.client.reached_the_end,
+            stopped_at_budget=stopped_at_budget,
         )

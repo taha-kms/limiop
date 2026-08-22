@@ -36,21 +36,28 @@ class FakeClient:
     def __init__(self, pages: dict[int, RawPage]) -> None:
         self.pages = pages
         self.requested: list[int] = []
+        self._reached_the_end = False
 
     @property
     def source_key(self) -> str:
         return SOURCE_KEY
+
+    @property
+    def reached_the_end(self) -> bool:
+        return self._reached_the_end
 
     async def fetch_page(self, page: int) -> RawPage:
         self.requested.append(page)
         return self.pages[page]
 
     async def fetch_pages(self) -> AsyncIterator[RawPage]:
+        self._reached_the_end = False
         page = 1
         while page in self.pages:
             fetched = await self.fetch_page(page)
             yield fetched
             if fetched.next_page is None:
+                self._reached_the_end = True
                 return
             page = fetched.next_page
 
@@ -146,7 +153,7 @@ def test_summary_starts_empty() -> None:
     assert summary.persisted == 0
     assert summary.failed == 0
     assert summary.failures == ()
-    assert summary.is_complete is True
+    assert summary.processing_complete is True
 
 
 def test_summary_counts_persisted_records() -> None:
@@ -154,7 +161,7 @@ def test_summary_counts_persisted_records() -> None:
 
     assert summary.persisted == 4
     assert summary.failed == 0
-    assert summary.is_complete is True
+    assert summary.processing_complete is True
 
 
 def test_summary_is_incomplete_while_any_record_failed() -> None:
@@ -166,14 +173,14 @@ def test_summary_is_incomplete_while_any_record_failed() -> None:
     )
 
     assert summary.failed == 1
-    assert summary.is_complete is False
+    assert summary.processing_complete is False
 
 
 def test_summary_is_incomplete_when_records_vanish_without_a_failure() -> None:
     summary = IngestionSummary(source_key=SOURCE_KEY, fetched=10, created=4)
 
     assert summary.failures == ()
-    assert summary.is_complete is False
+    assert summary.processing_complete is False
 
 
 @pytest.mark.parametrize(

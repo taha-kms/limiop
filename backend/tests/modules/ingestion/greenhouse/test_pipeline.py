@@ -65,7 +65,7 @@ def test_board_failures_are_added_to_what_the_run_reports() -> None:
     combined = with_board_failures(summary, client)
 
     assert combined.failures[0].reason == "board gone"
-    assert combined.is_complete is False
+    assert combined.processing_complete is False
 
 
 def test_a_run_with_every_board_read_reports_nothing_extra() -> None:
@@ -86,7 +86,7 @@ def test_a_board_ingests_into_the_catalogue(database_url: PostgresDsn) -> None:
 
         assert summary.fetched == 2
         assert summary.created == 2
-        assert summary.is_complete
+        assert summary.processing_complete
 
         async with database.session() as session:
             stored = (await session.scalars(select(Job))).all()
@@ -131,7 +131,7 @@ def test_one_failed_board_does_not_stop_the_others(database_url: PostgresDsn) ->
         assert summary.created == 2
         assert len(summary.failures) == 1
         # A run missing a whole company is not a complete run.
-        assert summary.is_complete is False
+        assert summary.processing_complete is False
 
     run_database_test(database_url, exercise)
 

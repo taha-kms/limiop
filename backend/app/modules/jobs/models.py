@@ -224,6 +224,9 @@ class JobProvenance(Base):
             name="ck_job_provenance_seen_order",
         ),
         Index("ix_job_provenance_job_id", "job_id"),
+        # Reconciliation asks one question of one source: which of its
+        # postings did this run not see.
+        Index("ix_job_provenance_source_id_retired_at", "source_id", "retired_at"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -254,6 +257,13 @@ class JobProvenance(Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
+    )
+    # When this source stopped listing the posting. Null while the source
+    # still carries it. Set per source rather than per job, because one source
+    # dropping a posting says nothing about whether another still has it.
+    retired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     raw_payload: Mapped[dict[str, object] | None] = mapped_column(
         JSONB(none_as_null=True),

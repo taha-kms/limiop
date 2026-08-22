@@ -206,3 +206,49 @@ and is visible, while a wrong merge deletes a job silently.
 All the same shape: one source names a single city while the other lists many,
 so the sets differ without disagreeing. `Freiburg` against a list of eleven
 offices including Freiburg. These are stored twice.
+
+
+## When a job stops being open
+
+Postings disappear from a board rather than announcing that they closed. Every
+source examined carries an expiry field in its schema and leaves it empty in
+practice, so absence between runs is the only signal there is.
+
+### Absence is only evidence when nothing else explains it
+
+A run reports two different things, and conflating them was the hazard:
+
+- **processing complete** — every record this run fetched reached an outcome.
+- **source exhausted** — this run saw everything the source has.
+
+Only the second licenses concluding that an unseen posting is gone. A run that
+stopped at its record budget, gave up on a board, or failed on a single record
+has postings it never looked at, and an unseen posting is indistinguishable
+from one that is gone.
+
+The two come apart constantly. A run capped at five records against a board of
+twenty-nine is processing-complete and not exhausted; treating it as licence
+would have withdrawn twenty-four open jobs.
+
+Reconciliation refuses to run at all without exhaustion, and says why rather
+than doing nothing quietly.
+
+### The conclusion is drawn twice
+
+**Per source.** A provenance record an exhausted run did not see is retired.
+That is a fact about one board: this employer stopped advertising this posting
+there.
+
+**Per job.** A job is marked `removed` only once no source still lists it. A
+job dropped by an aggregator but still on the employer's own board is still
+open, and saying otherwise would hide a real vacancy.
+
+Seeing a posting again reverses both steps, so a posting that returns is the
+job it was rather than a new one.
+
+### Expiry is not removal
+
+A job past a date it stated itself becomes `expired`. That is a stated fact
+rather than an inference from absence, so it needs no exhausted run and no
+provenance. A job that stated no date never expires on its own, which is every
+job the catalogue currently holds.

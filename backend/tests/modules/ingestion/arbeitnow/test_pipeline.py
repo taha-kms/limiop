@@ -112,7 +112,7 @@ def test_a_full_board_page_reaches_postgresql(database_url: PostgresDsn) -> None
         assert summary.updated == 0
         assert summary.skipped == 0
         assert summary.failures == ()
-        assert summary.is_complete is True
+        assert summary.processing_complete is True
         assert await stored_titles(database) == [
             "Senior Data Engineer",
             "Working Student Frontend",
@@ -146,7 +146,7 @@ def test_running_twice_creates_nothing_new(database_url: PostgresDsn) -> None:
         assert first.created == 2
         assert second.created == 0
         assert second.skipped == 2
-        assert second.is_complete is True
+        assert second.processing_complete is True
         assert len(await stored_titles(database)) == 2
 
     run_database_test(database_url, exercise)
@@ -186,7 +186,7 @@ def test_one_bad_record_does_not_hide_the_good_ones(database_url: PostgresDsn) -
         assert summary.fetched == 2
         assert summary.created == 1
         assert summary.failed == 1
-        assert summary.is_complete is False
+        assert summary.processing_complete is False
         assert summary.failures[0].stage is IngestionStage.VALIDATE
         assert "company_name" in summary.failures[0].reason
         assert await stored_titles(database) == ["Senior Data Engineer"]
@@ -227,7 +227,7 @@ def test_an_unreachable_provider_still_reports_what_was_processed(
         assert summary.failed == 1
         assert summary.failures[0].stage is IngestionStage.FETCH
         assert "timed out" in summary.failures[0].reason
-        assert summary.is_complete is False
+        assert summary.processing_complete is False
         assert len(await stored_titles(database)) == 2
 
     run_database_test(database_url, exercise)
@@ -298,7 +298,7 @@ def test_an_empty_board_is_a_complete_run(database_url: PostgresDsn) -> None:
         summary = await ingest(database, responding(page([])))
 
         assert summary.fetched == 0
-        assert summary.is_complete is True
+        assert summary.processing_complete is True
         assert summary.failures == ()
 
     run_database_test(database_url, exercise)
@@ -363,7 +363,7 @@ def test_a_record_persistence_refuses_is_reported_without_stopping_the_run(
         assert summary.failures[0].stage is IngestionStage.PERSIST
         assert summary.failures[0].source_job_id == "working-student-frontend-654321"
         assert "2 stored jobs" in summary.failures[0].reason
-        assert summary.is_complete is False
+        assert summary.processing_complete is False
 
     run_database_test(database_url, exercise)
 
@@ -388,7 +388,7 @@ def test_the_entry_point_runs_against_the_configured_database(database_url: Post
 
         assert summary.source_key == "arbeitnow"
         assert summary.created == 2
-        assert summary.is_complete is True
+        assert summary.processing_complete is True
         assert len(await stored_titles(database)) == 2
 
     run_database_test(database_url, exercise)
