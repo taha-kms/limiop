@@ -149,11 +149,78 @@ def test_an_unmapped_job_type_does_not_lose_a_mapped_one() -> None:
 
 
 def test_a_remote_flag_becomes_remote() -> None:
-    assert to_workplace_type(True) is WorkplaceType.REMOTE
+    assert to_workplace_type(True, None, ()) is WorkplaceType.REMOTE
 
 
-def test_an_unflagged_job_is_unspecified_rather_than_onsite() -> None:
-    assert to_workplace_type(False) is WorkplaceType.UNSPECIFIED
+def test_a_job_stating_nothing_anywhere_is_unspecified_rather_than_onsite() -> None:
+    """Silence is not a claim, whatever the fields it arrives in."""
+    assert to_workplace_type(False, "Berlin", ("python", "backend")) is WorkplaceType.UNSPECIFIED
+    assert to_workplace_type(False, None, ()) is WorkplaceType.UNSPECIFIED
+
+
+# The provider's `remote` flag is false on every one of these, which is why the
+# other fields have to be read. Taken from the live catalog.
+@pytest.mark.parametrize(
+    ("location", "expected"),
+    [
+        pytest.param("Germany Remote", WorkplaceType.REMOTE, id="remote after a country"),
+        pytest.param("Remote Deutschland", WorkplaceType.REMOTE, id="remote before a country"),
+        pytest.param("Remote (Germany)", WorkplaceType.REMOTE, id="remote with a qualifier"),
+        pytest.param("Remote (UTC+1 to UTC+2)", WorkplaceType.REMOTE, id="remote with an offset"),
+        pytest.param("Berlin, Hybrid", WorkplaceType.HYBRID, id="hybrid after a comma"),
+        pytest.param("Berlin Hybrid", WorkplaceType.HYBRID, id="hybrid after a city"),
+        pytest.param("Homeoffice", WorkplaceType.REMOTE, id="german home office"),
+        pytest.param("Home-Office, Köln", WorkplaceType.REMOTE, id="hyphenated home office"),
+        pytest.param("München, vor Ort", WorkplaceType.ONSITE, id="german on site"),
+        pytest.param("Teilweise Remote", WorkplaceType.HYBRID, id="partly remote is hybrid"),
+    ],
+)
+def test_an_arrangement_stated_in_the_location_is_read(
+    location: str,
+    expected: WorkplaceType,
+) -> None:
+    assert to_workplace_type(False, location, ()) is expected
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        pytest.param("remote", WorkplaceType.REMOTE, id="remote tag"),
+        pytest.param("homeoffice", WorkplaceType.REMOTE, id="home office tag"),
+        pytest.param("hybrid", WorkplaceType.HYBRID, id="hybrid tag"),
+    ],
+)
+def test_an_arrangement_stated_in_a_tag_is_read(tag: str, expected: WorkplaceType) -> None:
+    assert to_workplace_type(False, "Berlin", ("python", tag)) is expected
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        pytest.param("Remoteville", id="remote inside a place name"),
+        pytest.param("Bremen", id="a city that merely contains the letters"),
+        pytest.param("Hybridon", id="hybrid inside a longer word"),
+        pytest.param("Onsted", id="onsite inside a longer word"),
+    ],
+)
+def test_a_word_that_merely_contains_a_phrase_does_not_match(location: str) -> None:
+    assert to_workplace_type(False, location, ()) is WorkplaceType.UNSPECIFIED
+
+
+def test_the_most_specific_arrangement_wins_when_fields_disagree() -> None:
+    """Hybrid asserts both arrangements, so it survives a contradicting remote."""
+    assert to_workplace_type(True, "Berlin, Hybrid", ()) is WorkplaceType.HYBRID
+    assert to_workplace_type(False, "Remote", ("hybrid",)) is WorkplaceType.HYBRID
+
+
+def test_onsite_never_outranks_a_stated_remote_arrangement() -> None:
+    assert to_workplace_type(False, "Berlin, vor Ort", ("remote",)) is WorkplaceType.REMOTE
+
+
+def test_a_normalized_record_carries_the_arrangement_from_its_location() -> None:
+    assert normalize(remote=False, location="Berlin, Hybrid").workplace_type is (
+        WorkplaceType.HYBRID
+    )
 
 
 def test_a_blank_location_becomes_absent() -> None:

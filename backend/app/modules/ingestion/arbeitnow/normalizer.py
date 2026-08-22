@@ -4,6 +4,7 @@ Pure and deterministic: the same record always produces the same canonical job,
 and nothing here touches the network or the database.
 """
 
+import re
 from html.parser import HTMLParser
 
 from pydantic import ValidationError
@@ -70,6 +71,45 @@ EMPLOYMENT_PRECEDENCE = (
 # on its own, and this bound only exists so an unforeseen pass that grows the
 # text cannot loop forever.
 MAX_FLATTENING_PASSES = 10
+
+
+# Phrases a provider uses to name an arrangement, in the two languages this
+# board publishes in. Keys are already tokenized, so a phrase written with a
+# hyphen, an underscore, or extra spacing resolves to the same entry.
+WORKPLACE_BY_PHRASE = {
+    "remote": WorkplaceType.REMOTE,
+    "fully remote": WorkplaceType.REMOTE,
+    "home office": WorkplaceType.REMOTE,
+    "homeoffice": WorkplaceType.REMOTE,
+    "telearbeit": WorkplaceType.REMOTE,
+    "hybrid": WorkplaceType.HYBRID,
+    "teilweise remote": WorkplaceType.HYBRID,
+    "on site": WorkplaceType.ONSITE,
+    "onsite": WorkplaceType.ONSITE,
+    "vor ort": WorkplaceType.ONSITE,
+    "präsenz": WorkplaceType.ONSITE,
+}
+
+# Longest first, so `teilweise remote` is read as hybrid rather than matching
+# `remote` inside it. Word boundaries stop a phrase being found inside an
+# unrelated word.
+WORKPLACE_PATTERN = re.compile(
+    r"\b(?:"
+    + "|".join(
+        re.escape(phrase).replace(r"\ ", r"[\s_-]+")
+        for phrase in sorted(WORKPLACE_BY_PHRASE, key=len, reverse=True)
+    )
+    + r")\b",
+    re.IGNORECASE,
+)
+
+# Hybrid outranks remote because it is the more specific claim: it asserts both
+# arrangements, so a posting described as each is hybrid.
+WORKPLACE_PRECEDENCE = (
+    WorkplaceType.HYBRID,
+    WorkplaceType.REMOTE,
+    WorkplaceType.ONSITE,
+)
 
 
 class PlainTextExtractor(HTMLParser):
@@ -151,13 +191,42 @@ def to_employment_type(job_types: tuple[str, ...]) -> EmploymentType:
     return EmploymentType.UNSPECIFIED
 
 
-def to_workplace_type(remote: bool) -> WorkplaceType:
-    """Map the provider's only workplace signal.
+def stated_workplaces(text: str) -> set[WorkplaceType]:
+    """Every arrangement a piece of provider text names outright."""
+    return {WORKPLACE_BY_PHRASE[to_token(match)] for match in WORKPLACE_PATTERN.findall(text)}
 
-    Arbeitnow flags remote work and says nothing otherwise, so an unflagged job
-    is `unspecified` rather than `onsite`. Claiming onsite would invent a fact.
+
+def to_workplace_type(
+    remote: bool,
+    location: str | None,
+    tags: tuple[str, ...],
+) -> WorkplaceType:
+    """Read the arrangement from every field that states one.
+
+    The `remote` flag is the weakest signal the provider offers, not the only
+    one: it is false on postings whose own location reads `Germany Remote` or
+    `Berlin, Hybrid`. Taking it as authoritative left nine in ten jobs
+    unspecified.
+
+    Reading those words is extraction, not invention. The provider stated the
+    arrangement, just not in the field built for it. What would be invention is
+    concluding `onsite` from silence, so `onsite` is reachable only from words
+    that say it. Nothing observed uses those words, and a job that never becomes
+    onsite is the right outcome rather than a gap.
+
+    The most specific arrangement wins when fields disagree, because a posting
+    tagged remote whose location says hybrid has an on-site component and
+    `hybrid` is the claim that survives both.
     """
-    return WorkplaceType.REMOTE if remote else WorkplaceType.UNSPECIFIED
+    stated = {WorkplaceType.REMOTE} if remote else set()
+    stated |= stated_workplaces(location or "")
+    for tag in tags:
+        stated |= stated_workplaces(tag)
+
+    for candidate in WORKPLACE_PRECEDENCE:
+        if candidate in stated:
+            return candidate
+    return WorkplaceType.UNSPECIFIED
 
 
 class ArbeitnowNormalizer:
@@ -172,7 +241,9 @@ class ArbeitnowNormalizer:
                     "title": record.title,
                     "description": to_plain_text(record.description),
                     "location": location,
-                    "workplace_type": to_workplace_type(record.remote),
+                    "workplace_type": to_workplace_type(
+                        record.remote, record.location, record.tags
+                    ),
                     "employment_type": to_employment_type(record.job_types),
                     "application_url": str(record.url),
                     "published_at": record.created_at,
