@@ -40,7 +40,7 @@ def run_database_test(
 def test_job_uses_shared_metadata_and_canonical_columns() -> None:
     assert Job.metadata is Base.metadata
     assert set(Job.__table__.columns.keys()) == {
-        "fingerprint",
+        "match_key",
         "id",
         "company_id",
         "title",

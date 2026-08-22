@@ -18,7 +18,7 @@ from app.modules.ingestion.arbeitnow.pipeline import arbeitnow_run, ingest_arbei
 from app.modules.ingestion.arbeitnow.records import ArbeitnowValidator
 from app.modules.ingestion.contracts import IngestionStage, IngestionSummary
 from app.modules.ingestion.pipeline import utc_now
-from app.modules.jobs.fingerprint import fingerprint
+from app.modules.jobs.matching import match_key
 from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -334,20 +334,21 @@ def test_a_record_persistence_refuses_is_reported_without_stopping_the_run(
     async def exercise(database: Database) -> None:
         good, other = board_body()["data"]
         normalized = ArbeitnowNormalizer().normalize(ArbeitnowValidator().validate(other), other)
-        value = fingerprint(normalized)
+        value = match_key(normalized)
 
         # Two stored jobs already share the incoming record's canonical identity
         # and no provenance points at either, so persistence must refuse the
         # record rather than guess which one to update.
         async with database.session() as session:
             company = Company(display_name=normalized.company.display_name)
-            for index in range(2):
+            for _index in range(2):
                 session.add(
                     Job(
                         company=company,
-                        fingerprint=value,
+                        match_key=value,
                         title=normalized.title,
-                        description=f"Pre-existing twin {index}",
+                        location=normalized.location,
+                        description=normalized.description,
                         application_url=str(normalized.application_url),
                     )
                 )

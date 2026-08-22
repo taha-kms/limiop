@@ -14,7 +14,7 @@ from app.modules.ingestion.deduplication import (
     decide,
     has_material_change,
 )
-from app.modules.jobs.fingerprint import fingerprint
+from app.modules.jobs.matching import match_key
 from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import NormalizedJob
 
@@ -45,7 +45,7 @@ def incoming_job(**overrides: Any) -> NormalizedJob:
 def stored_job(incoming: NormalizedJob) -> Job:
     return Job(
         company=Company(display_name=incoming.company.display_name),
-        fingerprint=fingerprint(incoming),
+        match_key=match_key(incoming),
         title=incoming.title,
         description=incoming.description,
         location=incoming.location,
@@ -96,7 +96,7 @@ def test_an_unseen_job_is_new(database_url: PostgresDsn) -> None:
         assert decision.outcome is DeduplicationOutcome.NEW
         assert decision.job_id is None
         assert decision.matched_by is None
-        assert decision.fingerprint == fingerprint(incoming_job())
+        assert decision.match_key == match_key(incoming_job())
 
     run_database_test(database_url, exercise)
 
@@ -174,7 +174,7 @@ def test_provenance_wins_even_when_the_job_was_renamed(database_url: PostgresDsn
         async with database.session() as session:
             decision = await decide(session, renamed)
 
-        assert decision.fingerprint != fingerprint(original)
+        assert decision.match_key != match_key(original)
         assert decision.outcome is DeduplicationOutcome.CHANGED
         assert decision.matched_by is MatchBasis.PROVENANCE
         assert decision.job_id == job.id
@@ -183,7 +183,7 @@ def test_provenance_wins_even_when_the_job_was_renamed(database_url: PostgresDsn
 
 
 @pytest.mark.integration
-def test_the_same_posting_from_another_source_matches_by_fingerprint(
+def test_the_same_posting_from_another_source_matches_by_match_key(
     database_url: PostgresDsn,
 ) -> None:
     async def exercise(database: Database) -> None:
@@ -202,14 +202,14 @@ def test_the_same_posting_from_another_source_matches_by_fingerprint(
             decision = await decide(session, from_elsewhere)
 
         assert decision.outcome is DeduplicationOutcome.UNCHANGED
-        assert decision.matched_by is MatchBasis.FINGERPRINT
+        assert decision.matched_by is MatchBasis.IDENTITY
         assert decision.job_id == job.id
 
     run_database_test(database_url, exercise)
 
 
 @pytest.mark.integration
-def test_a_fingerprint_match_that_differs_is_a_change(database_url: PostgresDsn) -> None:
+def test_a_match_key_match_that_differs_is_a_change(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
         job = stored_job(incoming_job())
         await store(database, job)
@@ -227,7 +227,7 @@ def test_a_fingerprint_match_that_differs_is_a_change(database_url: PostgresDsn)
             decision = await decide(session, from_elsewhere)
 
         assert decision.outcome is DeduplicationOutcome.CHANGED
-        assert decision.matched_by is MatchBasis.FINGERPRINT
+        assert decision.matched_by is MatchBasis.IDENTITY
         assert decision.job_id == job.id
 
     run_database_test(database_url, exercise)
@@ -245,7 +245,7 @@ def test_several_matches_are_surfaced_rather_than_merged(database_url: PostgresD
             decision = await decide(session, incoming)
 
         assert decision.outcome is DeduplicationOutcome.AMBIGUOUS
-        assert decision.matched_by is MatchBasis.FINGERPRINT
+        assert decision.matched_by is MatchBasis.IDENTITY
         assert decision.job_id is None
         assert set(decision.candidate_job_ids) == {first.id, second.id}
 
@@ -253,7 +253,7 @@ def test_several_matches_are_surfaced_rather_than_merged(database_url: PostgresD
 
 
 @pytest.mark.integration
-def test_an_unregistered_source_falls_through_to_fingerprint_matching(
+def test_an_unregistered_source_falls_through_to_match_key_matching(
     database_url: PostgresDsn,
 ) -> None:
     async def exercise(database: Database) -> None:
@@ -263,7 +263,7 @@ def test_an_unregistered_source_falls_through_to_fingerprint_matching(
         async with database.session() as session:
             decision = await decide(session, incoming_job())
 
-        assert decision.matched_by is MatchBasis.FINGERPRINT
+        assert decision.matched_by is MatchBasis.IDENTITY
         assert decision.job_id == job.id
 
     run_database_test(database_url, exercise)

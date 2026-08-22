@@ -20,7 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from app.db.base import Base
-from app.modules.jobs.constants import FINGERPRINT_LENGTH
+from app.modules.jobs.constants import MATCH_KEY_LENGTH
 from app.modules.jobs.domain import (
     EmploymentType,
     JobStatus,
@@ -114,7 +114,7 @@ class Job(Base):
             "published_at IS NULL OR expires_at IS NULL OR expires_at >= published_at",
             name="ck_jobs_expiry_not_before_publication",
         ),
-        Index("ix_jobs_fingerprint", "fingerprint"),
+        Index("ix_jobs_match_key", "match_key"),
         # Stored in the order the listing reads it. See migration 0007.
         Index(
             "ix_jobs_status_published_at_id",
@@ -136,8 +136,10 @@ class Job(Base):
         ),
         nullable=False,
     )
-    fingerprint: Mapped[str] = mapped_column(
-        String(FINGERPRINT_LENGTH),
+    # Blocks candidates by employer and role. Not an identity on its own:
+    # `jobs.matching` explains why place and text decide among them.
+    match_key: Mapped[str] = mapped_column(
+        String(MATCH_KEY_LENGTH),
         nullable=False,
         server_default="",
     )

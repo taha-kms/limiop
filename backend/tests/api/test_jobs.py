@@ -89,7 +89,7 @@ def test_a_listing_never_carries_provenance_or_the_whole_posting(
     assert tail not in body
     assert "raw_payload" not in body
     assert "provenance" not in body
-    assert "fingerprint" not in body
+    assert "match_key" not in body
 
 
 def test_a_long_posting_is_excerpted_rather_than_served_whole(
@@ -551,7 +551,7 @@ def test_a_job_detail_never_carries_the_raw_provider_record(
     assert "untrusted-provider-prose" not in body
     assert "raw_payload" not in body
     assert "provider-internal-4242" not in body
-    assert "fingerprint" not in body
+    assert "match_key" not in body
 
 
 def test_a_job_with_no_recorded_source_still_serves(

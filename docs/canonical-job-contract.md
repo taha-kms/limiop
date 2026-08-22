@@ -120,18 +120,13 @@ A lower-ranked source that wins nothing still records that it saw the job, and
 still refreshes when it last did. Losing a disagreement is not the same as being
 ignored, and the lifecycle rule depends on knowing who saw what and when.
 
-The stored fingerprint is recomputed from the merged result rather than from the
+The stored match key is recomputed from the merged result rather than from the
 record that arrived. A job several sources contributed to holds values no single
 record carries, and a fingerprint describing the incoming record would describe
 a job that is not stored.
 
-### What this does not cover
-
-Ownership only applies once two records are recognised as the same job, and
-recognition runs on company, title, and location. Two sources that describe the
-location differently never reach this rule: they produce different fingerprints
-and two stored jobs. That is deduplication rather than ownership, and it is
-tracked separately.
+Ownership only applies once two records are recognised as the same job, which
+is what the next section decides.
 
 ### Alternatives considered
 
@@ -144,3 +139,70 @@ losing on description. Rejected as unjustified for now: it needs per-field
 ownership recorded somewhere, and no observed disagreement calls for it. The
 silence rule already delivers most of the benefit, since a source only loses
 fields it actually contests.
+
+
+## When two records are the same posting
+
+Identity is a two-stage test, and neither stage is enough on its own.
+
+**The match key blocks candidates.** It hashes the employer and the normalized
+title, and it deliberately answers only "might these be the same posting".
+
+**The place and the text decide among them.** Two records are the same posting
+when they name the same cities and read the same way.
+
+### Why the location is compared rather than hashed
+
+Twenty-nine cross-source duplicates were confirmed by their descriptions and
+then examined. **Every one of them described its location differently**:
+`London` against `London, UK`, `Berlin, Berlin` against
+`Berlin, Berlin, Germany`. An aggregator drops the country that the employer's
+own board keeps. A key containing the location matched none of them, so the
+catalogue stored each of those jobs twice.
+
+Removing the location entirely is worse. Replaying ten thousand real postings
+that way collapsed two thousand distinct openings into each other, because one
+employer runs the same role in Seoul, Tokyo, Sydney and Mumbai and those are
+four jobs, not one.
+
+So the cities are extracted and compared. A side that names no city matches
+anything, because it has made no claim to contradict, which covers the common
+case of one source saying only `Remote`.
+
+### Why the descriptions are compared too
+
+Comparing cities still merged distinct requisitions that share one: two Staff
+Engineer openings in Dublin with different text. Nothing in the employer, the
+title, or the place separates them.
+
+Requiring the descriptions to share at least 85% of their vocabulary removed
+every measured wrong merge. Confirmed duplicates share no less than 96.6%, and
+measured wrong merges reached 82%, so the threshold sits in a wide gap rather
+than on a boundary: recall was unchanged anywhere from 0% to 95%.
+
+**This assumes a source carries the employer's own words.** Both current sources
+do. A source that wrote its own summaries would fail this check on every record,
+and its duplicates would be missed silently. That makes it an assumption about
+how a source obtains its text, not a constant.
+
+### Measured
+
+Against a real corpus of 400 aggregator postings and 10,279 employer-board
+postings, with duplicates labelled independently by description similarity:
+
+| | cross-source duplicates found | wrong merges |
+| --- | --- | --- |
+| Location hashed into the key | 0 of 29 | 0 |
+| Location dropped entirely | 26 of 29 | 2,135 collapsed |
+| Cities compared, no text check | 24 of 29 | 12 |
+| **Cities compared, text compared** | **24 of 29** | **0** |
+
+Allowing one city set to be a subset of the other found three more duplicates
+and cost one wrong merge. It was rejected: a missed duplicate shows a job twice
+and is visible, while a wrong merge deletes a job silently.
+
+### The five it still misses
+
+All the same shape: one source names a single city while the other lists many,
+so the sets differ without disagreeing. `Freiburg` against a list of eleven
+offices including Freiburg. These are stored twice.
