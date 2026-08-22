@@ -42,6 +42,22 @@ Nothing serves that data yet. There is no jobs API and no frontend.
   importable modules.
 - **External job data is untrusted.** Validated at the boundary, never rendered
   as markup, never used to drive control flow.
+- **The job catalogue is public.** Anonymous visitors read the whole catalogue,
+  listings and detail pages alike. Authentication gates applying and the
+  personalized features, which additionally require a completed candidate
+  profile.
+- **A candidate profile is reachable two ways.** Uploading a CV and extracting
+  the profile from it, or manual step-by-step onboarding. Neither is the
+  fallback for the other; both must produce the same profile.
+- **Listings are cursor-paginated, twenty per batch.** The order is
+  `published_at DESC NULLS LAST, id DESC`, which is total, so every row has one
+  predecessor and infinite scroll never repeats or skips a job. A cursor is
+  meaningful only inside the filter set that produced it; changing a filter
+  restarts pagination.
+- **Phase A ships five filters:** company, location, workplace type, employment
+  type, and free-text search on title. Source filtering waits until a second
+  source exists to make it meaningful. Relevance-ranked search is a different
+  sort order and therefore a different cursor, so it stays out of Phase A.
 
 ### Open
 
@@ -53,15 +69,22 @@ Ordered by how expensive each is to reverse.
 | Multi-source conflict policy: which source owns a canonical field | Expensive: schema and pipeline | Phase A.5 |
 | Job lifecycle rule: when a job becomes expired or removed | Expensive: affects every query that filters on status | Phase A.5 |
 | Where match scores live: computed per request or precomputed | Expensive: schema and pipeline | Phase D |
-| Filter set, pagination style, sort order | Cheap: behind one query service | Phase A |
-| Whether the job catalog is public or requires an account | Cheap: one dependency | Phase A |
+| How applying works: a gated redirect, or a tracked application record | Expensive if tracked: new entity, migrations, and endpoints | Phase C |
+| What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | Authentication mechanism | Cheap: conventional and swappable | Phase C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
-| Caching | Premature: needs measured read patterns | Phase E |
+| Server-side caching | Premature: needs measured read patterns | Phase E |
 
 The skill model is the hinge. Free-text tokens, a curated list, and ESCO
 produce three different databases and three different products, and #47, #48,
-#49, #53, and the analytics tracker all consume whatever it decides.
+#49, #53, and the analytics tracker all consume whatever it decides. Manual
+onboarding now consumes it too: a form that asks a candidate for their skills
+has to offer a free-text box, an autocomplete over a curated list, or a
+taxonomy picker, and choosing that control is choosing the vocabulary.
+
+The client-side cache behind infinite scroll is not this table's kind of
+decision. Holding fetched batches so scrolling back up costs no request is part
+of building the listing page. Server-side caching is the deferred one.
 
 ## Phases
 
@@ -73,8 +96,7 @@ Serve stored jobs through the API and render them: query service, listing
 endpoint, detail endpoint, Next.js foundation, typed client, listing page,
 browser test.
 
-Decide only the cheap things: the filter set, the pagination style, and whether
-browsing requires an account.
+Every decision this phase depends on is settled above.
 
 This phase goes first because nothing in it depends on an open expensive
 decision, and because it forces the first real ingestion run. That run produces
@@ -119,15 +141,20 @@ the previous phases rather than in the abstract.
 
 ### Phase C — Identity and CV intake
 
-Issues #38 through #45.
+Issues #38 through #45, plus the candidate profile and applying.
 
 Accounts, authentication, the CV upload policy, CV metadata, storage, the upload
-endpoint, and PDF text extraction.
+endpoint, and PDF text extraction. On top of those: the candidate profile
+itself, the manual onboarding path into it, the rule that decides when it counts
+as complete, and what applying to a job actually does.
 
-This follows Phase B because CV skill extraction needs the skill model settled.
-Nothing before this point needs a user account to exist.
+This follows Phase B because both routes into a profile need the skill model
+settled. CV extraction has to write skills somewhere, and manual onboarding has
+to ask for them with some control. Nothing before this point needs a user
+account to exist, because the catalogue is public.
 
-**Exit:** a signed-in user can upload a CV and its text is extracted and stored.
+**Exit:** a signed-in user has a complete candidate profile, reached by either
+route, and can apply to a job.
 
 ### Phase D — Matching
 
@@ -174,4 +201,3 @@ pipeline in use today; all three become defects the moment a second source runs.
   It cannot be implemented until Phase B decides one.
 - **#43** presumes a CV storage abstraction. Whether an abstraction is
   warranted, rather than one concrete backend, is a Phase C decision.
-- **#31** leaves cursor and offset pagination open. Phase A decides it.
