@@ -16,7 +16,8 @@ from app.modules.ingestion.persistence import (
     SourceRegistration,
     persist_job,
 )
-from app.modules.jobs.fingerprint import fingerprint
+from app.modules.jobs.domain import EmploymentType, WorkplaceType
+from app.modules.jobs.fingerprint import fingerprint, fingerprint_of
 from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import NormalizedJob
 
@@ -391,5 +392,288 @@ def test_the_raw_payload_is_preserved_for_reproducing_transformations(
             provenance = (await session.scalars(select(JobProvenance))).one()
 
         assert provenance.raw_payload == {"slug": "external-42"}
+
+    run_database_test(database_url, exercise)
+
+
+# Two sources describing one job. The aggregator ranks below the employer's own
+# board, matching the ordering the second-source evaluation settled on.
+#
+# They agree on company, title, and location, because those three are the
+# fingerprint inputs and a job is only recognised as the same job when they
+# match. Disagreeing about them is a deduplication problem rather than an
+# ownership one, and #95 owns it; the last test here pins that boundary so it
+# is a known limit rather than a surprise.
+
+AGGREGATOR = SourceRegistration(
+    key="aggregator",
+    display_name="Aggregator",
+    base_url="https://aggregator.example.com",
+    precedence=10,
+)
+BOARD = SourceRegistration(
+    key="board",
+    display_name="Employer board",
+    base_url="https://board.example.com",
+    precedence=20,
+)
+
+
+def from_source(source: SourceRegistration, **overrides: Any) -> NormalizedJob:
+    """The same posting as one source describes it."""
+    payload: dict[str, Any] = {
+        "company": {"display_name": "Anthropic"},
+        "title": "Enterprise Account Executive, Insurance",
+        "description": "Sell things.",
+        "location": "London",
+        "workplace_type": "unspecified",
+        "employment_type": "unspecified",
+        "application_url": "https://anthropic.example.com/jobs/1",
+        "provenance": {
+            "source_key": source.key,
+            "source_job_id": f"{source.key}-1",
+            "source_url": f"{source.base_url}/jobs/1",
+        },
+    }
+    payload.update(overrides)
+    return NormalizedJob.model_validate(payload)
+
+
+async def ingest_from(
+    database: Database,
+    source: SourceRegistration,
+    incoming: NormalizedJob,
+    *,
+    seen_at: datetime = FIRST_SEEN,
+) -> PersistenceResult:
+    async with database.session() as session:
+        result = await persist_job(session, incoming, source=source, seen_at=seen_at)
+        await session.commit()
+    return result
+
+
+async def stored_job(database: Database) -> Job:
+    async with database.session() as session:
+        return (await session.scalars(select(Job))).one()
+
+
+@pytest.mark.integration
+def test_a_higher_ranked_source_owns_a_field_both_describe(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, AGGREGATOR, from_source(AGGREGATOR, description="Copied."))
+        await ingest_from(
+            database,
+            BOARD,
+            from_source(BOARD, description="Written by the employer."),
+            seen_at=LATER_SEEN,
+        )
+
+        assert (await stored_job(database)).description == "Written by the employer."
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_lower_ranked_source_cannot_take_a_field_back(database_url: PostgresDsn) -> None:
+    """The reason the rule exists: the runs alternate, the record must not."""
+
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, BOARD, from_source(BOARD, workplace_type="onsite"))
+        result = await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR, workplace_type="remote"),
+            seen_at=LATER_SEEN,
+        )
+
+        assert result.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).workplace_type is WorkplaceType.ONSITE
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("board_first", [True, False], ids=["board first", "aggregator first"])
+def test_the_record_is_the_same_whichever_source_ran_last(
+    database_url: PostgresDsn,
+    board_first: bool,
+) -> None:
+    async def exercise(database: Database) -> None:
+        board = from_source(BOARD, workplace_type="onsite", description="Employer copy.")
+        aggregator = from_source(AGGREGATOR, workplace_type="remote", description="Copied.")
+        order = [(BOARD, board), (AGGREGATOR, aggregator)]
+        if not board_first:
+            order.reverse()
+
+        # Several rounds, because a rule that only settles after one pass would
+        # still flip the record on every scheduled run.
+        for _ in range(3):
+            for source, incoming in order:
+                await ingest_from(database, source, incoming, seen_at=LATER_SEEN)
+
+        job = await stored_job(database)
+        assert job.workplace_type is WorkplaceType.ONSITE
+        assert job.description == "Employer copy."
+        assert await counts(database) == (1, 1, 2, 2)
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_silence_never_overwrites_something_another_source_said(
+    database_url: PostgresDsn,
+) -> None:
+    """Nothing tells a dropped field apart from one a provider never carried."""
+
+    async def exercise(database: Database) -> None:
+        await ingest_from(
+            database,
+            BOARD,
+            from_source(BOARD, workplace_type="onsite", employment_type="full-time"),
+        )
+        await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR),
+            seen_at=LATER_SEEN,
+        )
+
+        job = await stored_job(database)
+        assert job.workplace_type is WorkplaceType.ONSITE
+        assert job.employment_type is EmploymentType.FULL_TIME
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_lower_ranked_source_still_fills_a_field_nobody_had(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, BOARD, from_source(BOARD, workplace_type="onsite"))
+        result = await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR, workplace_type="remote", employment_type="internship"),
+            seen_at=LATER_SEEN,
+        )
+
+        job = await stored_job(database)
+        assert result.outcome is RecordOutcome.UPDATED
+        assert job.employment_type is EmploymentType.INTERNSHIP
+        assert job.workplace_type is WorkplaceType.ONSITE
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_lower_ranked_source_still_records_that_it_saw_the_job(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, BOARD, from_source(BOARD, workplace_type="onsite"))
+        await ingest_from(database, AGGREGATOR, from_source(AGGREGATOR), seen_at=LATER_SEEN)
+
+        async with database.session() as session:
+            provenance = (await session.scalars(select(JobProvenance))).all()
+
+        assert {p.source_job_id for p in provenance} == {"board-1", "aggregator-1"}
+        assert await counts(database) == (1, 1, 2, 2)
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_the_fingerprint_describes_what_is_stored_not_what_arrived(
+    database_url: PostgresDsn,
+) -> None:
+    """A merged job holds values no single record carries, and must hash as itself."""
+
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, BOARD, from_source(BOARD, title="Engineer"))
+        await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR, title="Engineer", description="Copied."),
+            seen_at=LATER_SEEN,
+        )
+
+        job = await stored_job(database)
+        assert job.fingerprint == fingerprint_of("Anthropic", "Engineer", "London")
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_one_source_can_still_correct_itself(database_url: PostgresDsn) -> None:
+    """Equal rank goes to the incoming record, or a source could never fix a typo."""
+
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, BOARD, from_source(BOARD, description="Sel things."))
+        result = await ingest_from(
+            database,
+            BOARD,
+            from_source(BOARD, description="Sell things."),
+            seen_at=LATER_SEEN,
+        )
+
+        assert result.outcome is RecordOutcome.UPDATED
+        assert (await stored_job(database)).description == "Sell things."
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_ranking_change_reaches_records_written_after_it(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, AGGREGATOR, from_source(AGGREGATOR, description="First."))
+        promoted = SourceRegistration(
+            key=AGGREGATOR.key,
+            display_name=AGGREGATOR.display_name,
+            base_url=AGGREGATOR.base_url,
+            precedence=99,
+        )
+
+        async with database.session() as session:
+            await persist_job(
+                session,
+                from_source(AGGREGATOR, description="Second."),
+                source=promoted,
+                seen_at=LATER_SEEN,
+            )
+            await session.commit()
+            assert (await session.scalars(select(JobSource))).one().precedence == 99
+
+        assert (await stored_job(database)).description == "Second."
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_disagreeing_about_a_fingerprint_field_still_stores_two_jobs(
+    database_url: PostgresDsn,
+) -> None:
+    """The boundary of this rule, pinned so it is a known limit and not a surprise.
+
+    Ownership only applies once two records are recognised as the same job, and
+    recognition runs on company, title, and location. Sources that describe the
+    location differently never reach the merge at all. #95 owns that.
+    """
+
+    async def exercise(database: Database) -> None:
+        await ingest_from(database, BOARD, from_source(BOARD, location="London, UK"))
+        await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR, location="London"),
+            seen_at=LATER_SEEN,
+        )
+
+        jobs, *_ = await counts(database)
+        assert jobs == 2
 
     run_database_test(database_url, exercise)

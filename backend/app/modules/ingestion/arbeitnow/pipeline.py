@@ -22,6 +22,11 @@ from app.modules.ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
 
 DISPLAY_NAME = "Arbeitnow"
 
+# Arbeitnow aggregates postings that employers publish on their own boards,
+# so where the two disagree the board is the better account. Ranked below
+# them, and above nothing, since it is the only source until one is added.
+PRECEDENCE = 10
+
 
 def build_run(client: ArbeitnowClient, max_records: int) -> IngestionRun[ArbeitnowJobRecord]:
     """Assemble the stages around an already-built client."""
@@ -33,6 +38,7 @@ def build_run(client: ArbeitnowClient, max_records: int) -> IngestionRun[Arbeitn
             key=SOURCE_KEY,
             display_name=DISPLAY_NAME,
             base_url=client.config.base_url,
+            precedence=PRECEDENCE,
         ),
         max_records=max_records,
     )

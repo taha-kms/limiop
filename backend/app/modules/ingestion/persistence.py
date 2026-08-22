@@ -12,14 +12,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.modules.ingestion.contracts import IngestionStage, RecordFailure, RecordOutcome
 from app.modules.ingestion.deduplication import DeduplicationOutcome, decide
-from app.modules.jobs.domain import normalize_company_name
-from app.modules.jobs.models import Company, Job, JobSource
+from app.modules.jobs.domain import EmploymentType, WorkplaceType, normalize_company_name
+from app.modules.jobs.fingerprint import fingerprint_of
+from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.repositories import observe_job_provenance
 from app.modules.jobs.schemas import NormalizedJob
 
@@ -35,6 +37,10 @@ class SourceRegistration:
     key: str
     display_name: str
     base_url: str
+    # Higher wins when two sources describe the same field differently. An
+    # employer's own board knows more about its posting than an aggregator that
+    # copied it, so aggregators rank below the boards they copy from.
+    precedence: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,12 +62,18 @@ async def ensure_source(session: AsyncSession, source: SourceRegistration) -> Jo
         await session.scalars(select(JobSource).where(JobSource.key == source.key))
     ).one_or_none()
     if existing is not None:
+        # Refreshed rather than left alone: a source's identity and its ranking
+        # are policy, and a policy change has to reach records written after it.
+        existing.display_name = source.display_name
+        existing.base_url = source.base_url
+        existing.precedence = source.precedence
         return existing
 
     created = JobSource(
         key=source.key,
         display_name=source.display_name,
         base_url=source.base_url,
+        precedence=source.precedence,
     )
     session.add(created)
     await session.flush()
@@ -92,17 +104,97 @@ async def ensure_company(session: AsyncSession, display_name: str) -> Company:
     return created
 
 
-def apply_fields(job: Job, incoming: NormalizedJob, fingerprint: str) -> None:
-    """Copy every canonical field from an incoming job onto a stored one."""
-    job.fingerprint = fingerprint
-    job.title = incoming.title
-    job.description = incoming.description
-    job.location = incoming.location
-    job.workplace_type = incoming.workplace_type
-    job.employment_type = incoming.employment_type
-    job.application_url = str(incoming.application_url)
-    job.published_at = incoming.published_at
-    job.expires_at = incoming.expires_at
+# A field a provider left empty, or filled with the fallback its vocabulary
+# uses for "no idea", is not an account of that field. It is silence.
+UNSTATED: tuple[object, ...] = (None, WorkplaceType.UNSPECIFIED, EmploymentType.UNSPECIFIED)
+
+
+def is_stated(value: object) -> bool:
+    """Whether a source actually said something about a field."""
+    return value not in UNSTATED
+
+
+def resolve(stored: object, incoming: object, *, incoming_outranks: bool) -> object:
+    """Pick the value that survives when two sources describe one field.
+
+    Silence never wins. A source that says nothing about a field cannot erase
+    what another source said, whatever their ranking, because nothing
+    distinguishes a provider that dropped a field from one that never carried
+    it. Ninety percent of Arbeitnow postings state no workplace arrangement,
+    so the alternative would be a catalogue that empties itself every run.
+
+    When both sources speak, rank decides, and an equal rank goes to the
+    incoming record so a single source can still correct itself.
+    """
+    if not is_stated(incoming):
+        return stored
+    if not is_stated(stored):
+        return incoming
+    return incoming if incoming_outranks else stored
+
+
+def merge_fields(job: Job, incoming: NormalizedJob, *, incoming_outranks: bool) -> None:
+    """Fold an incoming record into a stored job under the ownership rule.
+
+    The fingerprint is recomputed from what the merge produced rather than from
+    what arrived. A job several sources contributed to holds values no single
+    record matches, and a fingerprint describing the incoming record would
+    describe a job that is not stored.
+    """
+    keep = job.id is not None
+
+    def pick(stored: object, arriving: object) -> object:
+        if not keep:
+            return arriving
+        return resolve(stored, arriving, incoming_outranks=incoming_outranks)
+
+    job.title = str(pick(job.title, incoming.title))
+    job.description = str(pick(job.description, incoming.description))
+    location = pick(job.location, incoming.location)
+    job.location = None if location is None else str(location)
+    job.workplace_type = pick(job.workplace_type, incoming.workplace_type)  # type: ignore[assignment]
+    job.employment_type = pick(job.employment_type, incoming.employment_type)  # type: ignore[assignment]
+    job.application_url = str(pick(job.application_url, str(incoming.application_url)))
+    job.published_at = pick(job.published_at, incoming.published_at)  # type: ignore[assignment]
+    job.expires_at = pick(job.expires_at, incoming.expires_at)  # type: ignore[assignment]
+
+    job.fingerprint = fingerprint_of(
+        job.company.display_name,
+        job.title,
+        job.location,
+    )
+
+
+def canonical_values(job: Job) -> tuple[object, ...]:
+    """Everything the merge may change, for telling a real update from a no-op."""
+    return (
+        job.title,
+        job.description,
+        job.location,
+        job.workplace_type,
+        job.employment_type,
+        job.application_url,
+        job.published_at,
+        job.expires_at,
+        job.fingerprint,
+    )
+
+
+async def owner_precedence(session: AsyncSession, job_id: UUID) -> int | None:
+    """The highest rank among sources that have already seen this job.
+
+    Derived from provenance rather than stored on the job. The rows are already
+    there, one per source per job, so a separate owner column would be a second
+    copy of the same fact and a chance for the two to disagree.
+    """
+    statement = (
+        select(func.max(JobSource.precedence))
+        .select_from(JobProvenance)
+        .join(JobSource, JobProvenance.source_id == JobSource.id)
+        .where(JobProvenance.job_id == job_id)
+    )
+    highest: int | None = await session.scalar(statement)
+    return highest
 
 
 async def persist_job(
@@ -166,15 +258,33 @@ async def write(
 
     if decision.outcome is DeduplicationOutcome.NEW:
         job = Job(company=await ensure_company(session, incoming.company.display_name))
-        apply_fields(job, incoming, decision.fingerprint)
+        merge_fields(job, incoming, incoming_outranks=True)
         session.add(job)
         await session.flush()
         outcome = RecordOutcome.CREATED
     else:
-        job = (await session.scalars(select(Job).where(Job.id == decision.job_id))).one()
+        # The company is loaded with the job because the merge recomputes the
+        # fingerprint from it, and a lazy load there would run outside the
+        # async context and fail.
+        statement = select(Job).options(selectinload(Job.company)).where(Job.id == decision.job_id)
+        job = (await session.scalars(statement)).one()
         if decision.outcome is DeduplicationOutcome.CHANGED:
-            apply_fields(job, incoming, decision.fingerprint)
-            outcome = RecordOutcome.UPDATED
+            # An equal rank goes to the incoming record, so one source
+            # correcting itself still lands.
+            owner = await owner_precedence(session, job.id)
+            before = canonical_values(job)
+            merge_fields(
+                job,
+                incoming,
+                incoming_outranks=owner is None or registered.precedence >= owner,
+            )
+            # A record can differ from what is stored and still change nothing,
+            # because the merge may decline every field it disagrees about. That
+            # is a skip, not an update, or a lower-ranked source would report
+            # work it did not do on every run.
+            outcome = (
+                RecordOutcome.UPDATED if canonical_values(job) != before else RecordOutcome.SKIPPED
+            )
         else:
             outcome = RecordOutcome.SKIPPED
 
