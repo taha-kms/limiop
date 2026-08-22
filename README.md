@@ -73,9 +73,9 @@ Directories should be added only when an implementation requires them.
 
 ## Getting started
 
-The initial FastAPI backend includes typed environment configuration, PostgreSQL persistence infrastructure, Alembic migrations, and a health endpoint. See the [backend setup guide](backend/README.md) for native and Docker Compose workflows.
+The backend serves a public job catalogue over FastAPI and PostgreSQL, with Alembic migrations and an hourly Airflow ingestion pipeline behind it. See the [backend setup guide](backend/README.md) for native and Docker Compose workflows, and the [frontend setup guide](frontend/README.md) for the Next.js application.
 
-The repository does not yet contain frontend, Airflow, domain database models, or ML implementations. For the current product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md). The intended local-development direction is Docker Compose with reproducible environments for the web application, API, PostgreSQL, and Airflow services.
+Machine-learning code, accounts, and CV handling are not implemented yet. For what is built and what is decided next, read [the delivery plan](docs/delivery-plan.md); for product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md).
 
 ## Development workflow
 
