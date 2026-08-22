@@ -15,20 +15,23 @@ interface JobListProps {
   filters: JobFilters;
 }
 
+/**
+ * Accumulates batches for one filter set.
+ *
+ * The accumulated jobs belong to the filter set they were fetched for, so a new
+ * filter set has to start empty. That is done by remounting this component
+ * rather than resetting it from an effect: the caller keys it on the filter set,
+ * so state that belongs to the old listing cannot survive into the new one.
+ * Clearing it in an effect would render the stale batches once before the reset
+ * landed.
+ */
+
 export function JobList({ initial, filters }: JobListProps) {
   const [jobs, setJobs] = useState<JobSummary[]>(initial.items);
   const [cursor, setCursor] = useState<string | null>(initial.next_cursor);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sentinel = useRef<HTMLDivElement | null>(null);
-
-  // A new filter set is a different listing, so the accumulated batches belong
-  // to the previous one and are replaced rather than appended to.
-  useEffect(() => {
-    setJobs(initial.items);
-    setCursor(initial.next_cursor);
-    setError(null);
-  }, [initial]);
 
   const loadMore = useCallback(async () => {
     if (cursor === null || loading) return;

@@ -4,7 +4,7 @@ import { JobFilters } from "@/components/job-filters";
 import { JobList } from "@/components/job-list";
 import { listJobs } from "@/lib/api/client";
 import { DEFAULT_PAGE_SIZE } from "@/lib/api/types";
-import { parseFilters } from "@/lib/search-params";
+import { parseFilters, toQueryString } from "@/lib/search-params";
 
 export const metadata = {
   title: "Jobs · SkillSync",
@@ -35,7 +35,9 @@ export default async function JobsPage(props: PageProps<"/jobs">) {
         <JobFilters />
       </Suspense>
 
-      <JobList initial={page} filters={filters} />
+      {/* Keyed on the filter set, so changing a filter remounts the list and
+          the batches collected for the previous one are discarded. */}
+      <JobList key={toQueryString(filters)} initial={page} filters={filters} />
     </main>
   );
 }

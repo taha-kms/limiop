@@ -129,15 +129,17 @@ describe("JobList", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(/Something went wrong/);
   });
 
-  it("replaces the accumulated batches when the filters change", async () => {
+  it("starts empty for a new filter set rather than carrying batches over", async () => {
+    // The page keys this component on the filter set, so a filter change
+    // remounts it. Rerendering with a different key is what that looks like.
     const { rerender } = render(
-      <JobList initial={page([job("1"), job("2")], "cursor-1")} filters={{}} />,
+      <JobList key="" initial={page([job("1"), job("2")], "cursor-1")} filters={{}} />,
     );
     expect(screen.getAllByRole("article")).toHaveLength(2);
 
-    // A different filter set is a different listing, so what was collected for
-    // the previous one must not survive into it.
-    rerender(<JobList initial={page([job("9")], null)} filters={{ query: "engineer" }} />);
+    rerender(
+      <JobList key="q=engineer" initial={page([job("9")], null)} filters={{ query: "engineer" }} />,
+    );
 
     await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(1));
   });
