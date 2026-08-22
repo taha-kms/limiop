@@ -326,6 +326,135 @@ def test_the_summary_schema_has_no_path_to_a_description(catalog_client: TestCli
     assert "excerpt" in schemas["JobSummary"]["properties"]
 
 
+# The frontend types this contract by hand rather than generating it, which is
+# only defensible while something fails when the contract moves. Property names
+# are not enough: a field turning nullable, or a vocabulary gaining a member,
+# breaks a hand-written type without renaming anything.
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        pytest.param(
+            "JobSummary",
+            {
+                "id",
+                "company",
+                "title",
+                "excerpt",
+                "location",
+                "workplace_type",
+                "employment_type",
+                "application_url",
+                "published_at",
+            },
+            id="job summary",
+        ),
+        pytest.param(
+            "JobDetail",
+            {
+                "id",
+                "company",
+                "title",
+                "description",
+                "location",
+                "workplace_type",
+                "employment_type",
+                "application_url",
+                "published_at",
+                "expires_at",
+                "status",
+                "sources",
+            },
+            id="job detail",
+        ),
+        pytest.param("CompanyRead", {"id", "display_name", "website_url"}, id="company"),
+        pytest.param("SourceAttribution", {"key", "display_name", "url"}, id="attribution"),
+        pytest.param("JobListResponse", {"items", "next_cursor"}, id="listing"),
+    ],
+)
+def test_a_served_schema_carries_exactly_these_fields(
+    catalog_client: TestClient,
+    schema: str,
+    expected: set[str],
+) -> None:
+    schemas = catalog_client.get("/openapi.json").json()["components"]["schemas"]
+
+    assert set(schemas[schema]["properties"]) == expected
+
+
+@pytest.mark.parametrize(
+    ("schema", "nullable"),
+    [
+        pytest.param("JobSummary", {"location", "published_at"}, id="job summary"),
+        pytest.param("JobDetail", {"location", "published_at", "expires_at"}, id="job detail"),
+        pytest.param("CompanyRead", {"website_url"}, id="company"),
+        pytest.param("SourceAttribution", set(), id="attribution"),
+        pytest.param("JobListResponse", {"next_cursor"}, id="listing"),
+    ],
+)
+def test_exactly_these_fields_may_be_null(
+    catalog_client: TestClient,
+    schema: str,
+    nullable: set[str],
+) -> None:
+    """Nullability is what the frontend mirrors with a union, so it is contract."""
+    properties = catalog_client.get("/openapi.json").json()["components"]["schemas"][schema][
+        "properties"
+    ]
+    accepts_null = {
+        name
+        for name, definition in properties.items()
+        if any(option.get("type") == "null" for option in definition.get("anyOf", ()))
+    }
+
+    assert accepts_null == nullable
+
+
+@pytest.mark.parametrize(
+    ("schema", "members"),
+    [
+        pytest.param(
+            "WorkplaceType",
+            ["remote", "hybrid", "onsite", "unspecified"],
+            id="workplace type",
+        ),
+        pytest.param(
+            "EmploymentType",
+            ["full-time", "part-time", "contract", "internship", "temporary", "unspecified"],
+            id="employment type",
+        ),
+        pytest.param("JobStatus", ["active", "expired", "removed"], id="status"),
+    ],
+)
+def test_a_served_vocabulary_carries_exactly_these_members(
+    catalog_client: TestClient,
+    schema: str,
+    members: list[str],
+) -> None:
+    """A vocabulary gaining a member is the change most likely to slip past.
+
+    Written out rather than read from the domain enum. Comparing the served
+    schema against the enum it is generated from cannot fail: a new member
+    changes both sides at once. Only a literal list makes the addition stop
+    something, which is the point, because a hand-written frontend union does
+    not update itself.
+    """
+    schemas = catalog_client.get("/openapi.json").json()["components"]["schemas"]
+
+    assert schemas[schema]["enum"] == members
+
+
+def test_the_listing_bounds_its_page_size(catalog_client: TestClient) -> None:
+    """The client defaults and caps to these, so they are contract too."""
+    parameters = catalog_client.get("/openapi.json").json()["paths"]["/jobs"]["get"]["parameters"]
+    limit = next(parameter["schema"] for parameter in parameters if parameter["name"] == "limit")
+
+    assert limit["default"] == DEFAULT_PAGE_SIZE
+    assert limit["minimum"] == 1
+    assert limit["maximum"] == MAX_PAGE_SIZE
+
+
 def test_a_known_job_serves_the_detail_contract(
     catalog_client: TestClient,
     seed_catalog: Seed,
