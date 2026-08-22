@@ -1,12 +1,18 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import PostgresDsn
 
-from app.core.config import Environment, Settings
+from app.core.config import Environment, Settings, get_settings
 from app.main import create_app
+
+BACKEND_ROOT = Path(__file__).parents[1]
 
 SETTINGS_ENVIRONMENT_VARIABLES = (
     "SKILLSYNC_APP_NAME",
@@ -41,3 +47,20 @@ def application(settings: Settings) -> FastAPI:
 def client(application: FastAPI) -> Iterator[TestClient]:
     with TestClient(application) as test_client:
         yield test_client
+
+
+@pytest.fixture
+def database_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[PostgresDsn]:
+    """A migrated PostgreSQL database, or a skip when none is configured."""
+    value = os.getenv("SKILLSYNC_TEST_DATABASE_URL")
+    if value is None:
+        pytest.skip("SKILLSYNC_TEST_DATABASE_URL is not configured")
+
+    monkeypatch.setenv("SKILLSYNC_DATABASE_URL", value)
+    get_settings.cache_clear()
+    command.upgrade(Config(BACKEND_ROOT / "alembic.ini"), "head")
+
+    try:
+        yield PostgresDsn(value)
+    finally:
+        get_settings.cache_clear()

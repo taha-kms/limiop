@@ -47,6 +47,9 @@ markers = [
 [tool.coverage.run]
 branch = true
 source = ["app"]
+# SQLAlchemy's async layer resumes coroutines through a greenlet switch, and
+# without this the tracer loses every line after the first await in a route.
+concurrency = ["thread", "greenlet"]
 
 [tool.coverage.report]
 show_missing = true
@@ -61,7 +64,7 @@ target-version = "py312"
 select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["app"]
+known-first-party = ["app", "tests"]
 
 [tool.mypy]
 python_version = "3.12"

@@ -9,12 +9,18 @@ from pydantic import (
     AwareDatetime,
     BaseModel,
     ConfigDict,
+    Field,
     HttpUrl,
     StringConstraints,
     model_validator,
 )
 
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
+from app.modules.jobs.queries import (
+    DEFAULT_PAGE_SIZE,
+    MAX_PAGE_SIZE,
+    JobFilters,
+)
 
 MAX_SOURCE_KEY_LENGTH = 100
 MAX_NAME_LENGTH = 255
@@ -135,3 +141,76 @@ class JobRead(BaseModel):
     status: JobStatus
     created_at: datetime
     updated_at: datetime
+
+
+MAX_CURSOR_LENGTH = 512
+MAX_QUERY_LENGTH = 200
+
+SearchTerm = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_QUERY_LENGTH),
+]
+
+
+class JobSummary(BaseModel):
+    """A job as it appears in a listing.
+
+    Deliberately narrower than `JobRead`: no description. A batch of twenty full
+    postings is most of a megabyte of prose nobody reads while scrolling, and
+    the detail endpoint already serves it to the one job a reader opens.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    company: CompanyRead
+    title: str
+    location: str | None
+    workplace_type: WorkplaceType
+    employment_type: EmploymentType
+    application_url: HttpUrl
+    published_at: datetime | None
+
+
+class JobListQuery(BaseModel):
+    """Everything a caller may ask of the listing.
+
+    Unknown parameters are refused rather than ignored. A misspelled filter that
+    is silently dropped returns the whole catalog and looks like a filter that
+    matched everything, which is the kind of wrong answer nobody reports.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    cursor: str | None = Field(
+        default=None,
+        max_length=MAX_CURSOR_LENGTH,
+        description="Opaque position token from a previous response. Do not construct one.",
+    )
+    limit: int = Field(default=DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)
+    company_id: UUID | None = None
+    location: SearchTerm | None = None
+    workplace_type: list[WorkplaceType] = Field(default_factory=list)
+    employment_type: list[EmploymentType] = Field(default_factory=list)
+    q: SearchTerm | None = Field(default=None, description="Free-text search over job titles.")
+
+    def to_filters(self) -> JobFilters:
+        return JobFilters(
+            company_id=self.company_id,
+            location=self.location,
+            workplace_types=frozenset(self.workplace_type),
+            employment_types=frozenset(self.employment_type),
+            title_query=self.q,
+        )
+
+
+class JobListResponse(BaseModel):
+    """One batch of jobs and the token that continues it."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    items: list[JobSummary]
+    next_cursor: str | None = Field(
+        default=None,
+        description="Pass back as `cursor` for the next batch. Null when the listing ends.",
+    )
