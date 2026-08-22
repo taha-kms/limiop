@@ -19,15 +19,24 @@ sequence and open decisions.
 | Foundation | — | Done |
 | Canonical job model | #12 | Done |
 | First ingestion path | #13 | Done |
-| Jobs vertical slice | #14 | Not started |
+| Jobs vertical slice | #14 | Done |
 | CV processing and matching | #15 | Not started |
 | Analytics and production | #16 | Not started |
 
-Built so far: a source-independent job catalog in PostgreSQL, and one working
+Built so far: a source-independent job catalog in PostgreSQL, one working
 ingestion path that fetches Arbeitnow postings, validates them, normalizes them,
-deduplicates them, and stores them with provenance on an hourly schedule.
+deduplicates them, and stores them with provenance on an hourly schedule, and a
+public read path over the result. Jobs are queried through one cursor-paginated
+service, served by a listing and a detail endpoint, and rendered by a Next.js
+application with URL-backed filters and infinite scroll. A browser test covers
+the three layers together against a seeded catalog.
 
-Nothing serves that data yet. There is no jobs API and no frontend.
+Not built: accounts, CV handling, skills, matching, and analytics.
+
+The catalog has been proven against real postings, repeatedly, but only in
+throwaway databases. No environment holds them persistently yet, which is the
+one part of the Phase A exit criterion still outstanding and needs a decision
+about where that environment lives rather than more code.
 
 ## Decisions
 
@@ -54,6 +63,15 @@ Nothing serves that data yet. There is no jobs API and no frontend.
   predecessor and infinite scroll never repeats or skips a job. A cursor is
   meaningful only inside the filter set that produced it; changing a filter
   restarts pagination.
+- **The read path streams nothing on the listing route.** A route-level
+  loading file makes the route send a fallback first, and swapping the real
+  content in needs client JavaScript, so the page never rendered without it.
+  The catalog is public, so it renders complete on first byte instead.
+- **Cursors are opaque and versioned.** Base64, unsigned, refused rather than
+  reset when unreadable. Clients never construct one.
+- **The frontend types the API by hand.** Generating them needs a cross-stack
+  CI job or a schema snapshot; instead the backend asserts the exact fields,
+  nullability, and vocabulary members of every served schema against literals.
 - **Phase A ships five filters:** company, location, workplace type, employment
   type, and free-text search on title. Source filtering waits until a second
   source exists to make it meaningful. Relevance-ranked search is a different
@@ -88,22 +106,22 @@ of building the listing page. Server-side caching is the deferred one.
 
 ## Phases
 
-### Phase A — Prove the read path
+### Phase A — Prove the read path — done
 
-Issues #31, #32, #33, #34, #35, #36, #37. Tracker #14.
+Issues #31 through #37, plus #106, #108, and #113. Tracker #14.
 
-Serve stored jobs through the API and render them: query service, listing
-endpoint, detail endpoint, Next.js foundation, typed client, listing page,
-browser test.
+Query service, listing and detail endpoints, Next.js foundation, typed client,
+listing page, detail page, and a browser test over all three layers.
 
-Every decision this phase depends on is settled above.
+It did what the phase was for. Running the pipeline against the live board for
+the first time found two defects that fixtures could not: escaped provider
+markup was being turned into live markup rather than removed (#104), and the
+workplace arrangement was being read from the one field that states it least
+often (#108). Rendering real postings found two more: excerpts that were
+headings rather than prose, and a badge shown on every card that said nothing.
 
-This phase goes first because nothing in it depends on an open expensive
-decision, and because it forces the first real ingestion run. That run produces
-the corpus every later decision needs.
-
-**Exit:** a person can browse and filter real stored jobs in a browser, and the
-catalog holds real postings rather than fixtures.
+**Exit:** met, except that no persistent environment holds the real postings.
+That is a deployment decision rather than a coding one.
 
 ### Phase A.5 — Second source
 
@@ -183,6 +201,7 @@ insights from collected data.
 
 Found while reviewing the ingestion code. None affect the single-source
 pipeline in use today; all three become defects the moment a second source runs.
+Filed as #93, #94, and #95.
 
 - **Canonical fields are last-writer-wins.** Persistence overwrites every
   canonical field on update and no source precedence exists, so two sources
@@ -194,6 +213,14 @@ pipeline in use today; all three become defects the moment a second source runs.
 - **The fingerprint is weaker across sources than within one.** Company names,
   location formats, and title abbreviations are consistent within a provider
   and not between providers, so cross-source duplicates may be missed.
+
+## Open questions carried forward
+
+- **#98, what applying does.** A gated redirect or a tracked application
+  record. The second is a new entity and a migration, so it is a Phase C
+  decision rather than an implementation detail.
+- **Where a persistent environment lives.** Needed before the catalog can hold
+  real postings outside a test run.
 
 ## Issues that need rewriting before they are picked up
 
