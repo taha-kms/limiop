@@ -198,7 +198,7 @@ def test_job_query_indexes_exist(database_url: PostgresDsn) -> None:
             "ix_jobs_company_id",
             "ix_jobs_location",
             "ix_jobs_status_expires_at",
-            "ix_jobs_status_published_at",
+            "ix_jobs_status_published_at_id",
         } <= index_names
 
     run_database_test(database_url, exercise)
