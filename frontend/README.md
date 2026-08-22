@@ -21,10 +21,10 @@ to be reachable; see the backend setup guide for starting that.
 Two variables, neither of them a secret. The catalogue API is public and
 unauthenticated, so these are addresses rather than credentials.
 
-| Variable | Read by | Default |
-| --- | --- | --- |
-| `NEXT_PUBLIC_API_URL` | The browser | `http://localhost:8000` |
-| `SKILLSYNC_API_URL` | The server | Falls back to `NEXT_PUBLIC_API_URL` |
+| Variable              | Read by     | Default                             |
+| --------------------- | ----------- | ----------------------------------- |
+| `NEXT_PUBLIC_API_URL` | The browser | `http://localhost:8000`             |
+| `SKILLSYNC_API_URL`   | The server  | Falls back to `NEXT_PUBLIC_API_URL` |
 
 There are two because the browser and the server do not always reach the API at
 the same address. Inside Compose the server uses the service name while the
