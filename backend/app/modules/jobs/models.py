@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
@@ -104,7 +105,13 @@ class Job(Base):
             name="ck_jobs_expiry_not_before_publication",
         ),
         Index("ix_jobs_fingerprint", "fingerprint"),
-        Index("ix_jobs_status_published_at", "status", "published_at"),
+        # Stored in the order the listing reads it. See migration 0007.
+        Index(
+            "ix_jobs_status_published_at_id",
+            "status",
+            text("published_at DESC NULLS LAST"),
+            text("id DESC"),
+        ),
         Index("ix_jobs_status_expires_at", "status", "expires_at"),
         Index("ix_jobs_company_id", "company_id"),
         Index("ix_jobs_location", "location"),
