@@ -15,7 +15,7 @@ from pydantic import (
     model_validator,
 )
 
-from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
+from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType, to_excerpt
 from app.modules.jobs.queries import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -155,9 +155,14 @@ SearchTerm = Annotated[
 class JobSummary(BaseModel):
     """A job as it appears in a listing.
 
-    Deliberately narrower than `JobRead`: no description. A batch of twenty full
-    postings is most of a megabyte of prose nobody reads while scrolling, and
-    the detail endpoint already serves it to the one job a reader opens.
+    Deliberately narrower than `JobRead`: an excerpt rather than the
+    description. A batch of twenty full postings is most of a megabyte of prose
+    nobody reads while scrolling, and the detail endpoint already serves it to
+    the one job a reader opens. A card still needs a line or two, which is what
+    the excerpt is for.
+
+    The excerpt is derived on the way out rather than stored, so it cannot fall
+    out of step with the description it summarises.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -165,11 +170,26 @@ class JobSummary(BaseModel):
     id: UUID
     company: CompanyRead
     title: str
+    excerpt: str
     location: str | None
     workplace_type: WorkplaceType
     employment_type: EmploymentType
     application_url: HttpUrl
     published_at: datetime | None
+
+    @classmethod
+    def of(cls, job: Any) -> "JobSummary":
+        return cls(
+            id=job.id,
+            company=CompanyRead.model_validate(job.company),
+            title=job.title,
+            excerpt=to_excerpt(job.description),
+            location=job.location,
+            workplace_type=job.workplace_type,
+            employment_type=job.employment_type,
+            application_url=HttpUrl(job.application_url),
+            published_at=job.published_at,
+        )
 
 
 class JobListQuery(BaseModel):

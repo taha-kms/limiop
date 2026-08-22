@@ -53,6 +53,7 @@ def test_a_listed_job_carries_what_a_card_needs(
             "workplace_type": WorkplaceType.REMOTE,
             "employment_type": EmploymentType.FULL_TIME,
             "application_url": "https://acme.example.com/jobs/1",
+            "description": "Build reliable data pipelines.\nAnd a second paragraph.",
             "published_at": at(1),
         }
     )
@@ -66,21 +67,41 @@ def test_a_listed_job_carries_what_a_card_needs(
     assert item["employment_type"] == "full-time"
     assert item["application_url"] == "https://acme.example.com/jobs/1"
     assert item["published_at"] is not None
+    assert item["excerpt"] == "Build reliable data pipelines."
 
 
-def test_a_listing_never_carries_provenance_or_prose(
+def test_a_listing_never_carries_provenance_or_the_whole_posting(
     catalog_client: TestClient,
     seed_catalog: Seed,
 ) -> None:
     """Raw provider payloads have no field to travel in, at any depth."""
-    seed_catalog({"title": "Listable", "description": "Secret prose.", "published_at": at(1)})
+    tail = "Everything after the opening paragraph."
+    seed_catalog(
+        {
+            "title": "Listable",
+            "description": f"Opening line.\n{tail}",
+            "published_at": at(1),
+        }
+    )
 
     body = catalog_client.get("/jobs").text
 
-    assert "Secret prose." not in body
+    assert tail not in body
     assert "raw_payload" not in body
     assert "provenance" not in body
     assert "fingerprint" not in body
+
+
+def test_a_long_posting_is_excerpted_rather_than_served_whole(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    seed_catalog({"title": "Verbose", "description": "alpha " * 400, "published_at": at(1)})
+
+    item = catalog_client.get("/jobs").json()["items"][0]
+
+    assert item["excerpt"].endswith("\u2026")
+    assert len(item["excerpt"]) < 250
 
 
 def test_only_active_jobs_are_served(
@@ -302,6 +323,7 @@ def test_the_summary_schema_has_no_path_to_a_description(catalog_client: TestCli
     schemas = catalog_client.get("/openapi.json").json()["components"]["schemas"]
 
     assert "description" not in schemas["JobSummary"]["properties"]
+    assert "excerpt" in schemas["JobSummary"]["properties"]
 
 
 def test_a_known_job_serves_the_detail_contract(

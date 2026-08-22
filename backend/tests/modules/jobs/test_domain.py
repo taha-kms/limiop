@@ -2,7 +2,13 @@ from enum import StrEnum
 
 import pytest
 
-from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
+from app.modules.jobs.domain import (
+    EXCERPT_LENGTH,
+    EmploymentType,
+    JobStatus,
+    WorkplaceType,
+    to_excerpt,
+)
 
 
 @pytest.mark.parametrize(
@@ -57,3 +63,40 @@ def test_canonical_job_vocabulary_rejects_unsupported_input(
 def test_unspecified_classifications_are_explicit() -> None:
     assert WorkplaceType.UNSPECIFIED.value == "unspecified"
     assert EmploymentType.UNSPECIFIED.value == "unspecified"
+
+
+@pytest.mark.parametrize(
+    ("description", "expected"),
+    [
+        pytest.param("Short enough.", "Short enough.", id="shorter than the limit"),
+        pytest.param(
+            "Opening thought.\nSecond paragraph nobody sees.",
+            "Opening thought.",
+            id="stops at the paragraph break",
+        ),
+        pytest.param("  Padded.  \nMore.", "Padded.", id="trimmed"),
+        pytest.param("", "", id="empty"),
+    ],
+)
+def test_an_excerpt_keeps_what_fits(description: str, expected: str) -> None:
+    assert to_excerpt(description) == expected
+
+
+def test_a_long_excerpt_is_cut_at_a_word_boundary() -> None:
+    excerpt = to_excerpt("alpha " * 200)
+
+    assert excerpt.endswith("…")
+    assert len(excerpt) <= EXCERPT_LENGTH + 1
+    assert "alph…" not in excerpt
+    assert excerpt.removesuffix("…").strip().split()[-1] == "alpha"
+
+
+def test_an_unbroken_run_still_produces_a_bounded_excerpt() -> None:
+    """No space to cut at, so the word boundary rule cannot help here."""
+    excerpt = to_excerpt("x" * 400)
+
+    assert excerpt == "x" * EXCERPT_LENGTH + "…"
+
+
+def test_an_excerpt_respects_a_caller_supplied_limit() -> None:
+    assert to_excerpt("one two three four", limit=7) == "one two…"

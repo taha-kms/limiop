@@ -3,6 +3,9 @@
 import unicodedata
 from enum import StrEnum
 
+EXCERPT_LENGTH = 200
+ELLIPSIS = "\u2026"
+
 
 class WorkplaceType(StrEnum):
     """Canonical workplace arrangement.
@@ -45,6 +48,35 @@ class JobStatus(StrEnum):
     ACTIVE = "active"
     EXPIRED = "expired"
     REMOVED = "removed"
+
+
+def to_excerpt(description: str, *, limit: int = EXCERPT_LENGTH) -> str:
+    """Reduce a description to something a listing card can show.
+
+    Derived rather than stored, so it cannot fall out of step with the
+    description it summarises.
+
+    Descriptions are plain text with paragraph breaks, so the opening paragraph
+    is a better summary than a blind prefix: it ends where the writer ended a
+    thought instead of wherever the character count landed. Longer than that is
+    cut at a word boundary, because a word sliced in half reads as a bug.
+
+    The fallback matters for the case a word boundary cannot help with. A first
+    paragraph that is one unbroken run of characters has no space to cut at, and
+    must still come back bounded.
+    """
+    opening = description.split("\n", 1)[0].strip()
+    if len(opening) <= limit:
+        return opening
+
+    head = opening[:limit]
+    if opening[limit].isspace():
+        # The cut already landed between words, so trimming back to the last
+        # space here would drop a whole word that fitted.
+        return f"{head.rstrip()}{ELLIPSIS}"
+
+    cut = head.rfind(" ")
+    return f"{head if cut < 1 else head[:cut]}{ELLIPSIS}"
 
 
 def normalize_company_name(value: str) -> str:
