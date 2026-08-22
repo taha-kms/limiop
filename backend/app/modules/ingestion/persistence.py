@@ -20,7 +20,7 @@ from sqlalchemy.orm import selectinload
 from app.modules.ingestion.contracts import IngestionStage, RecordFailure, RecordOutcome
 from app.modules.ingestion.deduplication import DeduplicationOutcome, decide
 from app.modules.jobs.domain import EmploymentType, WorkplaceType, normalize_company_name
-from app.modules.jobs.fingerprint import fingerprint_of
+from app.modules.jobs.matching import match_key_of
 from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.repositories import observe_job_provenance
 from app.modules.jobs.schemas import NormalizedJob
@@ -136,10 +136,10 @@ def resolve(stored: object, incoming: object, *, incoming_outranks: bool) -> obj
 def merge_fields(job: Job, incoming: NormalizedJob, *, incoming_outranks: bool) -> None:
     """Fold an incoming record into a stored job under the ownership rule.
 
-    The fingerprint is recomputed from what the merge produced rather than from
+    The match key is recomputed from what the merge produced rather than from
     what arrived. A job several sources contributed to holds values no single
-    record matches, and a fingerprint describing the incoming record would
-    describe a job that is not stored.
+    record matches, and a key describing the incoming record would describe a
+    job that is not stored.
     """
     keep = job.id is not None
 
@@ -158,11 +158,7 @@ def merge_fields(job: Job, incoming: NormalizedJob, *, incoming_outranks: bool) 
     job.published_at = pick(job.published_at, incoming.published_at)  # type: ignore[assignment]
     job.expires_at = pick(job.expires_at, incoming.expires_at)  # type: ignore[assignment]
 
-    job.fingerprint = fingerprint_of(
-        job.company.display_name,
-        job.title,
-        job.location,
-    )
+    job.match_key = match_key_of(job.company.display_name, job.title)
 
 
 def canonical_values(job: Job) -> tuple[object, ...]:
@@ -176,7 +172,7 @@ def canonical_values(job: Job) -> tuple[object, ...]:
         job.application_url,
         job.published_at,
         job.expires_at,
-        job.fingerprint,
+        job.match_key,
     )
 
 
@@ -247,7 +243,8 @@ async def write(
             failure=RecordFailure(
                 stage=IngestionStage.PERSIST,
                 reason=(
-                    f"fingerprint matches {len(decision.candidate_job_ids)} stored jobs; "
+                    f"this record is indistinguishable from {len(decision.candidate_job_ids)} "
+                    "stored jobs; "
                     "resolve them before ingesting this record"
                 ),
                 source_job_id=incoming.provenance.source_job_id,
@@ -264,7 +261,7 @@ async def write(
         outcome = RecordOutcome.CREATED
     else:
         # The company is loaded with the job because the merge recomputes the
-        # fingerprint from it, and a lazy load there would run outside the
+        # match key from it, and a lazy load there would run outside the
         # async context and fail.
         statement = select(Job).options(selectinload(Job.company)).where(Job.id == decision.job_id)
         job = (await session.scalars(statement)).one()

@@ -74,7 +74,7 @@ async def seed(database: Database, *specs: dict[str, Any]) -> dict[str, UUID]:
             title = str(spec["title"])
             job = Job(
                 company=company,
-                fingerprint=f"v1:{uuid4().hex}",
+                match_key=f"v1:{uuid4().hex}",
                 title=title,
                 description=str(spec.get("description", "Work.")),
                 location=spec.get("location"),
