@@ -1,17 +1,15 @@
 import asyncio
 import base64
-from collections.abc import Awaitable, Callable, Sequence
-from datetime import UTC, datetime, timedelta
+from collections.abc import Sequence
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 import pytest
 from pydantic import PostgresDsn
-from sqlalchemy import delete
 
 from app.db.session import Database
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
+from app.modules.jobs.models import Job
 from app.modules.jobs.queries import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,
@@ -23,70 +21,23 @@ from app.modules.jobs.queries import (
     encode_cursor,
     list_jobs,
 )
+from tests.support.catalog import at, seed, with_empty_catalog
 
-EPOCH = datetime(2026, 8, 1, 12, tzinfo=UTC)
 MAX_REQUESTS = 50
-
-
-def at(days: int) -> datetime:
-    return EPOCH + timedelta(days=days)
 
 
 def run_database_test(
     database_url: PostgresDsn,
-    test: Callable[[Database], Awaitable[None]],
+    test: Any,
 ) -> None:
-    async def clear(database: Database) -> None:
-        async with database.session() as session:
-            await session.execute(delete(JobProvenance))
-            await session.execute(delete(Job))
-            await session.execute(delete(Company))
-            await session.execute(delete(JobSource))
-            await session.commit()
-
     async def run() -> None:
         database = Database(database_url)
         try:
-            await clear(database)
-            await test(database)
+            await with_empty_catalog(database, test)
         finally:
-            await clear(database)
             await database.dispose()
 
     asyncio.run(run())
-
-
-async def seed(database: Database, *specs: dict[str, Any]) -> dict[str, UUID]:
-    """Insert one job per spec and return their ids by title."""
-    companies: dict[str, Company] = {}
-    identifiers: dict[str, UUID] = {}
-
-    async with database.session() as session:
-        for spec in specs:
-            name = str(spec.get("company", "Acme GmbH"))
-            company = companies.get(name)
-            if company is None:
-                company = Company(display_name=name)
-                companies[name] = company
-            title = str(spec["title"])
-            job = Job(
-                company=company,
-                fingerprint=f"v1:{uuid4().hex}",
-                title=title,
-                description=str(spec.get("description", "Work.")),
-                location=spec.get("location"),
-                workplace_type=spec.get("workplace_type", WorkplaceType.UNSPECIFIED),
-                employment_type=spec.get("employment_type", EmploymentType.UNSPECIFIED),
-                application_url="https://acme.example.com/apply",
-                published_at=spec.get("published_at"),
-                status=spec.get("status", JobStatus.ACTIVE),
-            )
-            session.add(job)
-            await session.flush()
-            identifiers[title] = job.id
-        await session.commit()
-
-    return identifiers
 
 
 async def titles(database: Database, **kwargs: Any) -> tuple[list[str], JobPage]:
