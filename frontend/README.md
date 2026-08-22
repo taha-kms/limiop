@@ -41,11 +41,41 @@ npm run lint           # ESLint
 npm run typecheck      # Route type generation, then tsc
 npm run test           # Vitest
 npm run build          # Production build
+npm run test:e2e       # Playwright, against a running stack
 ```
 
-CI runs all five. `npm run typecheck` regenerates the route types first,
+CI runs all six, the browser test in its own job. `npm run typecheck` regenerates the route types first,
 because Next derives `PageProps` and `LayoutProps` from the files on disk and
 stale types would hide a broken route.
+
+## The browser test
+
+`npm run test:e2e` expects a built frontend and a real API already running, and
+a catalogue seeded by `backend/scripts/seed_catalog.py`. It does not start them,
+because it tests the pair as they ship rather than a dev server nobody deploys.
+
+Locally:
+
+```bash
+# with the database migrated and the API running
+cd ../backend && python -m scripts.seed_catalog
+cd ../frontend && npm run build && npx next start --port 3000 &
+npx playwright install chromium
+npm run test:e2e
+```
+
+Point it elsewhere with `E2E_BASE_URL`.
+
+The seeded catalogue is four fixed postings rather than live data, so the
+assertions are about behaviour and not about whatever the job board published
+this morning.
+
+## No route-level loading file
+
+`/jobs` deliberately has no `loading.tsx`. A route-level loading file makes the
+route stream a fallback first, and swapping the real content in needs client
+JavaScript, so the page showed "Loading jobs" forever without it. The browser
+test runs one case with JavaScript disabled to keep that from coming back.
 
 ## Conventions
 
