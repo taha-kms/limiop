@@ -49,7 +49,7 @@ async def list_job_postings(
             detail="The cursor is not a position in this listing. Start without one.",
         ) from error
 
-    items = [JobSummary.model_validate(job) for job in page.jobs]
+    items = [JobSummary.of(job) for job in page.jobs]
     return JobListResponse(items=items, next_cursor=page.next_cursor)
 
 
