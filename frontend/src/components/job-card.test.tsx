@@ -32,9 +32,18 @@ describe("JobCard", () => {
     expect(screen.getByText("Full time")).toBeInTheDocument();
   });
 
+  it("opens the job from its title", () => {
+    render(<JobCard job={job()} />);
+
+    expect(screen.getByRole("link", { name: "Senior Data Engineer" })).toHaveAttribute(
+      "href",
+      "/jobs/job-1",
+    );
+  });
+
   it("sends the reader to the employer, without a handle on this tab", () => {
     render(<JobCard job={job()} />);
-    const link = screen.getByRole("link");
+    const link = screen.getByRole("link", { name: /Apply on the/ });
 
     expect(link).toHaveAttribute("href", "https://acme.example.com/jobs/1");
     expect(link).toHaveAttribute("target", "_blank");

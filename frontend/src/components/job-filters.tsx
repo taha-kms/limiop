@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
@@ -101,12 +102,12 @@ export function JobFilters() {
         >
           {pending ? "Applying…" : "Apply filters"}
         </button>
-        <a
+        <Link
           href="/jobs"
           className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium dark:border-slate-700"
         >
           Clear
-        </a>
+        </Link>
       </div>
     </form>
   );

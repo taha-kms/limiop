@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import type { JobSummary } from "@/lib/api/types";
 import { employmentLabel, publishedLabel, workplaceLabel } from "@/lib/format";
 
@@ -26,7 +28,14 @@ export function JobCard({ job }: { job: JobSummary }) {
 
   return (
     <article className="rounded-lg border border-slate-200 p-5 dark:border-slate-800">
-      <h2 className="text-lg font-semibold">{job.title}</h2>
+      <h2 className="text-lg font-semibold">
+        <Link
+          href={`/jobs/${job.id}`}
+          className="underline-offset-4 hover:underline focus-visible:underline"
+        >
+          {job.title}
+        </Link>
+      </h2>
       <p className="mt-0.5 text-sm text-slate-600 dark:text-slate-400">
         {job.company.display_name}
         {job.location ? ` · ${job.location}` : ""}
