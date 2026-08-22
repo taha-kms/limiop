@@ -9,6 +9,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -38,6 +39,15 @@ class JobSource(Base):
     key: Mapped[str] = mapped_column(String(100), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     base_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # How much this source's account of a field is trusted against another's.
+    # Higher wins. Stored rather than held in code so the ordering that produced
+    # a stored record can be read back out of the database.
+    precedence: Mapped[int] = mapped_column(
+        SmallInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

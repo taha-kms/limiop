@@ -59,15 +59,34 @@ def normalize_title(value: str) -> str:
 
 def fingerprint_parts(job: NormalizedJob) -> tuple[str, str, str]:
     """Return the exact values that a fingerprint is computed from."""
+    return fingerprint_parts_of(job.company.display_name, job.title, job.location)
+
+
+def fingerprint_parts_of(
+    company_name: str,
+    title: str,
+    location: str | None,
+) -> tuple[str, str, str]:
+    """Return the fingerprint inputs for values not carried by a normalized job.
+
+    A stored job that several sources have contributed to holds values no single
+    incoming record matches, and its fingerprint has to describe what is stored
+    rather than what last arrived.
+    """
     return (
-        normalize_company_name(job.company.display_name),
-        normalize_title(job.title),
-        normalize_text(job.location) if job.location else "",
+        normalize_company_name(company_name),
+        normalize_title(title),
+        normalize_text(location) if location else "",
     )
+
+
+def fingerprint_of(company_name: str, title: str, location: str | None) -> str:
+    """Return the versioned fingerprint of a set of canonical values."""
+    joined = PART_SEPARATOR.join(fingerprint_parts_of(company_name, title, location))
+    digest = sha256(joined.encode("utf-8")).hexdigest()
+    return f"{FINGERPRINT_VERSION}:{digest}"
 
 
 def fingerprint(job: NormalizedJob) -> str:
     """Return the versioned fingerprint of one normalized job."""
-    joined = PART_SEPARATOR.join(fingerprint_parts(job))
-    digest = sha256(joined.encode("utf-8")).hexdigest()
-    return f"{FINGERPRINT_VERSION}:{digest}"
+    return fingerprint_of(job.company.display_name, job.title, job.location)
