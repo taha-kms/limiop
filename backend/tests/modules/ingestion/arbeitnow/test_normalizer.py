@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from app.modules.ingestion.arbeitnow import normalizer
 from app.modules.ingestion.arbeitnow.normalizer import (
     ArbeitnowNormalizer,
     to_employment_type,
@@ -191,3 +192,88 @@ def test_the_canonical_job_carries_no_provider_specific_fields() -> None:
     assert "tags" not in job.model_dump()
     assert "remote" not in job.model_dump()
     assert "slug" not in job.model_dump()
+
+
+# The provider escapes its own markup on a minority of postings, so a single
+# flattening pass decodes the entities and hands back the tags it should have
+# removed. These cover the shape seen in the live catalog.
+
+ESCAPED_POSTING = (
+    "&lt;p&gt;&lt;strong&gt;Working Student - Product Engineer&lt;/strong&gt;&lt;/p&gt;\n"
+    "&lt;p&gt;Over 4 million merchants use our card readers.&lt;/p&gt;"
+)
+
+
+def test_escaped_markup_becomes_text_rather_than_tags() -> None:
+    flattened = to_plain_text(ESCAPED_POSTING)
+
+    assert (
+        flattened
+        == "Working Student - Product Engineer\nOver 4 million merchants use our card readers."
+    )
+    assert "<" not in flattened
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        pytest.param("&lt;script&gt;alert(1)&lt;/script&gt;", id="escaped script"),
+        pytest.param("&amp;lt;script&amp;gt;alert(1)&amp;lt;/script&amp;gt;", id="twice escaped"),
+    ],
+)
+def test_an_escaped_script_body_cannot_reach_a_description(markup: str) -> None:
+    assert to_plain_text(markup) == ""
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        pytest.param("&lt;img src=x onerror=alert(1)&gt;", id="escaped event handler"),
+        pytest.param('&lt;div class="intro"&gt;Hello&lt;/div&gt;', id="escaped element"),
+        pytest.param('&lt;a href="javascript:alert(1)"&gt;click&lt;/a&gt;', id="escaped link"),
+    ],
+)
+def test_no_escaped_element_survives_as_markup(markup: str) -> None:
+    flattened = to_plain_text(markup)
+
+    assert "<" not in flattened
+    assert ">" not in flattened
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        pytest.param("Plain description with no markup at all.", id="plain prose"),
+        pytest.param("Salary: 50k & up", id="bare ampersand"),
+        pytest.param("Requires a < b reasoning", id="bare less-than"),
+        pytest.param("Line one\nLine two", id="paragraph break"),
+    ],
+)
+def test_text_that_is_already_plain_is_returned_unchanged(text: str) -> None:
+    assert to_plain_text(text) == text
+
+
+def test_flattening_settles_rather_than_repeating() -> None:
+    """Each changing pass shortens the text, so the result is its own fixed point."""
+    once = to_plain_text(ESCAPED_POSTING)
+
+    assert to_plain_text(once) == once
+
+
+def test_flattening_terminates_on_deeply_escaped_markup() -> None:
+    markup = "<p>text</p>"
+    for _ in range(4):
+        markup = markup.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    assert to_plain_text(markup) == "text"
+
+
+def test_flattening_gives_up_rather_than_looping(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bound is unreachable while passes shorten the text, so force it.
+
+    What it guarantees is termination, not a clean result: a pass budget spent
+    without settling returns what it had rather than running on.
+    """
+    monkeypatch.setattr(normalizer, "MAX_FLATTENING_PASSES", 1)
+
+    assert to_plain_text("&lt;p&gt;text&lt;/p&gt;") == "<p>text</p>"

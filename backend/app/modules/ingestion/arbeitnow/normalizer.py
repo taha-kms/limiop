@@ -65,6 +65,13 @@ EMPLOYMENT_PRECEDENCE = (
 )
 
 
+# A pass that changes anything strictly shortens the text: entities decode to
+# fewer characters and tags are removed outright. Flattening therefore settles
+# on its own, and this bound only exists so an unforeseen pass that grows the
+# text cannot loop forever.
+MAX_FLATTENING_PASSES = 10
+
+
 class PlainTextExtractor(HTMLParser):
     """Collects readable text from untrusted markup.
 
@@ -94,13 +101,36 @@ class PlainTextExtractor(HTMLParser):
             self.chunks.append(data)
 
 
-def to_plain_text(markup: str) -> str:
-    """Turn provider markup into plain text, keeping paragraph breaks."""
+def flatten_once(markup: str) -> str:
+    """Strip one layer of markup, keeping paragraph breaks."""
     extractor = PlainTextExtractor()
     extractor.feed(markup)
     extractor.close()
     lines = (" ".join(line.split()) for line in "".join(extractor.chunks).splitlines())
     return "\n".join(line for line in lines if line)
+
+
+def to_plain_text(markup: str) -> str:
+    """Turn provider markup into plain text, however it was encoded.
+
+    One pass is not enough. Some postings arrive with their markup
+    entity-escaped, and the parser sees no tags in `&lt;p&gt;text&lt;/p&gt;` at
+    all: it is character data, so the entities are decoded and the pass returns
+    `<p>text</p>`. Stripping nothing while producing tags is worse than doing
+    nothing, because the script and style dropping never runs on markup the
+    parser never recognised.
+
+    So flattening repeats until its own output stops changing. Each changing
+    pass strictly shortens the text, so this settles on its own; the bound is
+    a guard rather than the mechanism.
+    """
+    text = markup
+    for _ in range(MAX_FLATTENING_PASSES):
+        flattened = flatten_once(text)
+        if flattened == text:
+            return text
+        text = flattened
+    return text
 
 
 def to_token(value: str) -> str:
