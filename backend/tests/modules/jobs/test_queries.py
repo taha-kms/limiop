@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -24,6 +25,7 @@ from app.modules.jobs.queries import (
 )
 
 EPOCH = datetime(2026, 8, 1, 12, tzinfo=UTC)
+MAX_REQUESTS = 50
 
 
 def at(days: int) -> datetime:
@@ -94,15 +96,20 @@ async def titles(database: Database, **kwargs: Any) -> tuple[list[str], JobPage]
 
 
 async def drain(database: Database, **kwargs: Any) -> list[str]:
-    """Page all the way through and return every title in order."""
+    """Page all the way through and return every title in order.
+
+    Bounded on purpose. A predicate that stopped advancing would otherwise page
+    forever and hang the run instead of reporting a failure.
+    """
     seen: list[str] = []
     cursor: str | None = None
-    while True:
+    for _ in range(MAX_REQUESTS):
         names, page = await titles(database, cursor=cursor, **kwargs)
         seen.extend(names)
         if page.next_cursor is None:
             return seen
         cursor = page.next_cursor
+    pytest.fail(f"paging did not terminate within {MAX_REQUESTS} requests")
 
 
 def test_a_cursor_survives_a_round_trip() -> None:
@@ -154,8 +161,6 @@ def test_an_unreadable_cursor_is_refused(token: str) -> None:
 
 
 def test_a_cursor_from_a_different_ordering_is_refused() -> None:
-    import base64
-
     payload = f"99|{at(1).isoformat()}|{uuid4()}"
     token = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
@@ -164,8 +169,6 @@ def test_a_cursor_from_a_different_ordering_is_refused() -> None:
 
 
 def test_a_cursor_without_a_time_zone_is_refused() -> None:
-    import base64
-
     payload = f"1|2026-08-01T12:00:00|{uuid4()}"
     token = base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
 
@@ -266,6 +269,45 @@ def test_a_job_ingested_mid_scroll_never_duplicates_a_seen_job(
 
         assert second == ["Job 1", "Job 0"]
         assert "Arrived late" not in second
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_paging_breaks_ties_on_identical_publication_times(
+    database_url: PostgresDsn,
+) -> None:
+    """Bulk-posted jobs share a timestamp, so the boundary can land inside a tie.
+
+    Ids are random, so the property under test is that every job appears once
+    across the boundary, not that they appear in a fixed order.
+    """
+
+    async def exercise(database: Database) -> None:
+        await seed(
+            database,
+            *({"title": f"Job {index}", "published_at": at(1)} for index in range(5)),
+        )
+
+        seen = await drain(database, page_size=2)
+
+        assert sorted(seen) == [f"Job {index}" for index in range(5)]
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_tie_spanning_a_page_boundary_is_stable_across_requests(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await seed(
+            database,
+            *({"title": f"Tied {index}", "published_at": at(2)} for index in range(4)),
+            {"title": "Older", "published_at": at(1)},
+        )
+
+        assert await drain(database, page_size=2) == await drain(database, page_size=3)
 
     run_database_test(database_url, exercise)
 
@@ -555,12 +597,16 @@ def test_a_page_larger_than_the_ceiling_is_capped(database_url: PostgresDsn) -> 
     async def exercise(database: Database) -> None:
         await seed(
             database,
-            *({"title": f"Job {index}", "published_at": at(index)} for index in range(3)),
+            *(
+                {"title": f"Job {index:03d}", "published_at": at(index)}
+                for index in range(MAX_PAGE_SIZE + 1)
+            ),
         )
 
-        names, _ = await titles(database, page_size=MAX_PAGE_SIZE + 500)
+        names, page = await titles(database, page_size=MAX_PAGE_SIZE + 500)
 
-        assert len(names) == 3
+        assert len(names) == MAX_PAGE_SIZE
+        assert page.has_more is True
 
     run_database_test(database_url, exercise)
 
