@@ -5,8 +5,6 @@ concrete parts, owns their lifecycles, and folds in the boards that could not
 be read, which the generic run has no way to learn about.
 """
 
-import dataclasses
-
 import httpx2
 
 from app.core.config import Settings, get_settings
@@ -71,8 +69,12 @@ def with_board_failures(summary: IngestionSummary, client: GreenhouseClient) -> 
     """
     if not client.failures:
         return summary
-    return dataclasses.replace(
-        summary,
+    return IngestionSummary(
+        source_key=summary.source_key,
+        fetched=summary.fetched,
+        created=summary.created,
+        updated=summary.updated,
+        skipped=summary.skipped,
         failures=summary.failures + tuple(client.failures),
     )
 

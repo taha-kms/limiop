@@ -6,7 +6,7 @@ import pytest
 
 from app.modules.ingestion.errors import RecordValidationError
 from app.modules.ingestion.greenhouse.normalizer import GreenhouseNormalizer
-from app.modules.ingestion.greenhouse.records import GreenhouseValidator
+from app.modules.ingestion.greenhouse.records import GreenhouseJobRecord, GreenhouseValidator
 from app.modules.jobs.domain import EmploymentType, WorkplaceType
 from app.modules.jobs.schemas import NormalizedJob
 
@@ -22,6 +22,11 @@ def raw_record(**overrides: Any) -> dict[str, Any]:
     record = fixture_records()[0]
     record.update(overrides)
     return record
+
+
+def validate(record: dict[str, Any]) -> GreenhouseJobRecord:
+    """One call, so a raises block has a single thing that can throw."""
+    return GreenhouseValidator().validate(record)
 
 
 def normalize(**overrides: Any) -> NormalizedJob:
@@ -50,7 +55,10 @@ def test_normalization_is_deterministic() -> None:
     raw = raw_record()
     record = GreenhouseValidator().validate(raw)
 
-    assert normalizer.normalize(record, raw) == normalizer.normalize(record, raw)
+    first = normalizer.normalize(record, raw)
+    second = normalizer.normalize(record, raw)
+
+    assert first == second
 
 
 def test_the_identifier_names_the_board_as_well_as_the_posting() -> None:
@@ -181,7 +189,7 @@ def test_a_record_missing_something_essential_is_rejected(missing: str) -> None:
     del record[missing]
 
     with pytest.raises(RecordValidationError):
-        GreenhouseValidator().validate(record)
+        validate(record)
 
 
 def test_a_rejected_record_is_still_identifiable() -> None:
@@ -189,7 +197,7 @@ def test_a_rejected_record_is_still_identifiable() -> None:
     del record["title"]
 
     with pytest.raises(RecordValidationError) as raised:
-        GreenhouseValidator().validate(record)
+        validate(record)
 
     assert raised.value.source_job_id == f"hudl:{record['id']}"
 
@@ -200,7 +208,7 @@ def test_a_rejection_never_repeats_provider_data() -> None:
     del record["company_name"]
 
     with pytest.raises(RecordValidationError) as raised:
-        GreenhouseValidator().validate(record)
+        validate(record)
 
     assert secret not in raised.value.message
 
@@ -223,5 +231,6 @@ def test_a_record_the_canonical_contract_refuses_is_reported_not_raised_raw() ->
     with pytest.raises(RecordValidationError) as raised:
         normalize(title="x" * 400)
 
+    assert raised.value.source_job_id is not None
     assert raised.value.source_job_id.startswith("hudl:")
     assert "title" in raised.value.message

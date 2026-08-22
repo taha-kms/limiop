@@ -50,6 +50,11 @@ def ok(body: Any) -> httpx2.Response:
     return httpx2.Response(200, json=body)
 
 
+def fetch(fetcher: GreenhouseClient, board: str = "hudl") -> RawPage:
+    """One call, so a raises block has a single thing that can throw."""
+    return asyncio.run(fetcher.fetch_board(board))
+
+
 def collect(fetcher: GreenhouseClient) -> list[RawPage]:
     async def run() -> list[RawPage]:
         return [page async for page in fetcher.fetch_pages()]
@@ -151,7 +156,7 @@ def test_an_unusable_body_is_a_source_response_error(reply: httpx2.Response, exp
     fetcher = client(reply)
 
     with pytest.raises(SourceResponseError, match=expected):
-        asyncio.run(fetcher.fetch_board("hudl"))
+        fetch(fetcher)
 
 
 def test_a_board_that_never_answers_raises_after_its_attempts() -> None:
@@ -162,14 +167,14 @@ def test_a_board_that_never_answers_raises_after_its_attempts() -> None:
     )
 
     with pytest.raises(SourceUnavailableError, match="could not be reached"):
-        asyncio.run(fetcher.fetch_board("hudl"))
+        fetch(fetcher)
 
 
 def test_a_timeout_is_reported_as_a_timeout() -> None:
     fetcher = client(*[httpx2.TimeoutException("slow")] * 3)
 
     with pytest.raises(SourceUnavailableError, match="timed out"):
-        asyncio.run(fetcher.fetch_board("hudl"))
+        fetch(fetcher)
 
 
 def test_no_boards_configured_reads_nothing() -> None:
