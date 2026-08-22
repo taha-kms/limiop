@@ -214,3 +214,67 @@ class JobListResponse(BaseModel):
         default=None,
         description="Pass back as `cursor` for the next batch. Null when the listing ends.",
     )
+
+
+class SourceAttribution(BaseModel):
+    """Where a job was found, as shown to a reader.
+
+    Narrower than `ProvenanceRead`, which carries the provider's own record
+    identifier, our source identifier, and when ingestion last saw the posting.
+    A reader needs the board's name and the original posting; none of the rest
+    is theirs to know, so this shape has nowhere to put it.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    display_name: str
+    url: HttpUrl
+
+    @classmethod
+    def of(cls, provenance: Any) -> "SourceAttribution":
+        return cls(
+            key=provenance.source.key,
+            display_name=provenance.source.display_name,
+            url=HttpUrl(provenance.source_url),
+        )
+
+
+class JobDetail(BaseModel):
+    """One job, as served to a reader who opened it.
+
+    Carries no ingestion timestamps and no path to a raw payload. A job may
+    appear on several boards, so attribution is a list rather than one source.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    company: CompanyRead
+    title: str
+    description: str
+    location: str | None
+    workplace_type: WorkplaceType
+    employment_type: EmploymentType
+    application_url: HttpUrl
+    published_at: datetime | None
+    expires_at: datetime | None
+    status: JobStatus
+    sources: list[SourceAttribution]
+
+    @classmethod
+    def of(cls, job: Any) -> "JobDetail":
+        return cls(
+            id=job.id,
+            company=CompanyRead.model_validate(job.company),
+            title=job.title,
+            description=job.description,
+            location=job.location,
+            workplace_type=job.workplace_type,
+            employment_type=job.employment_type,
+            application_url=HttpUrl(job.application_url),
+            published_at=job.published_at,
+            expires_at=job.expires_at,
+            status=job.status,
+            sources=[SourceAttribution.of(record) for record in job.provenance_records],
+        )

@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -301,3 +302,158 @@ def test_the_summary_schema_has_no_path_to_a_description(catalog_client: TestCli
     schemas = catalog_client.get("/openapi.json").json()["components"]["schemas"]
 
     assert "description" not in schemas["JobSummary"]["properties"]
+
+
+def test_a_known_job_serves_the_detail_contract(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    identifiers = seed_catalog(
+        {
+            "title": "Senior Data Engineer",
+            "company": "Acme GmbH",
+            "description": "Build reliable data pipelines.",
+            "location": "Berlin",
+            "workplace_type": WorkplaceType.REMOTE,
+            "employment_type": EmploymentType.FULL_TIME,
+            "application_url": "https://acme.example.com/jobs/1",
+            "published_at": at(1),
+            "sources": [
+                {
+                    "key": "arbeitnow",
+                    "display_name": "Arbeitnow",
+                    "source_url": "https://arbeitnow.example.com/jobs/42",
+                }
+            ],
+        }
+    )
+
+    response = catalog_client.get(f"/jobs/{identifiers['Senior Data Engineer']}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["title"] == "Senior Data Engineer"
+    assert payload["description"] == "Build reliable data pipelines."
+    assert payload["company"]["display_name"] == "Acme GmbH"
+    assert payload["application_url"] == "https://acme.example.com/jobs/1"
+    assert payload["status"] == "active"
+    assert payload["sources"] == [
+        {
+            "key": "arbeitnow",
+            "display_name": "Arbeitnow",
+            "url": "https://arbeitnow.example.com/jobs/42",
+        }
+    ]
+
+
+def test_a_job_found_on_several_boards_attributes_all_of_them(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    identifiers = seed_catalog(
+        {
+            "title": "Listed twice",
+            "published_at": at(1),
+            "sources": [
+                {
+                    "key": "arbeitnow",
+                    "display_name": "Arbeitnow",
+                    "source_url": "https://arbeitnow.example.com/jobs/1",
+                },
+                {
+                    "key": "jobicy",
+                    "display_name": "Jobicy",
+                    "source_url": "https://jobicy.example.com/jobs/9",
+                },
+            ],
+        }
+    )
+
+    payload = catalog_client.get(f"/jobs/{identifiers['Listed twice']}").json()
+
+    assert {source["key"] for source in payload["sources"]} == {"arbeitnow", "jobicy"}
+
+
+def test_a_job_detail_never_carries_the_raw_provider_record(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    """The payload has no field to travel in, so nothing has to remember to drop it."""
+    identifiers = seed_catalog(
+        {
+            "title": "Listable",
+            "published_at": at(1),
+            "sources": [
+                {
+                    "key": "arbeitnow",
+                    "display_name": "Arbeitnow",
+                    "source_url": "https://arbeitnow.example.com/jobs/1",
+                    "source_job_id": "provider-internal-4242",
+                    "raw_payload": {"note": "untrusted-provider-prose"},
+                }
+            ],
+        }
+    )
+
+    body = catalog_client.get(f"/jobs/{identifiers['Listable']}").text
+
+    assert "untrusted-provider-prose" not in body
+    assert "raw_payload" not in body
+    assert "provider-internal-4242" not in body
+    assert "fingerprint" not in body
+
+
+def test_a_job_with_no_recorded_source_still_serves(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    identifiers = seed_catalog({"title": "Unattributed", "published_at": at(1)})
+
+    payload = catalog_client.get(f"/jobs/{identifiers['Unattributed']}").json()
+
+    assert payload["sources"] == []
+
+
+@pytest.mark.parametrize("state", [JobStatus.EXPIRED, JobStatus.REMOVED])
+def test_a_lapsed_job_is_served_with_its_status_rather_than_hidden(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+    state: JobStatus,
+) -> None:
+    """A saved link is the only route here, so saying the posting closed beats a 404."""
+    identifiers = seed_catalog({"title": "Lapsed", "published_at": at(1), "status": state})
+
+    response = catalog_client.get(f"/jobs/{identifiers['Lapsed']}")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == state.value
+    assert titles(catalog_client.get("/jobs").json()) == []
+
+
+def test_an_unknown_job_is_not_found(catalog_client: TestClient) -> None:
+    response = catalog_client.get(f"/jobs/{uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "No such job."
+
+
+def test_an_identifier_that_is_not_a_uuid_is_refused(catalog_client: TestClient) -> None:
+    assert catalog_client.get("/jobs/not-a-uuid").status_code == 422
+
+
+def test_the_detail_endpoint_is_documented(catalog_client: TestClient) -> None:
+    openapi = catalog_client.get("/openapi.json").json()
+
+    detail = openapi["paths"]["/jobs/{job_id}"]["get"]
+    schema = detail["responses"]["200"]["content"]["application/json"]["schema"]
+
+    assert schema == {"$ref": "#/components/schemas/JobDetail"}
+    assert "404" in detail["responses"]
+
+
+def test_the_detail_schema_has_no_path_to_provenance(catalog_client: TestClient) -> None:
+    schemas = catalog_client.get("/openapi.json").json()["components"]["schemas"]
+
+    assert set(schemas["SourceAttribution"]["properties"]) == {"key", "display_name", "url"}
+    assert "raw_payload" not in schemas["JobDetail"]["properties"]
+    assert "created_at" not in schemas["JobDetail"]["properties"]

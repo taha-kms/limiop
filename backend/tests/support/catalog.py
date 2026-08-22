@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import Database
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
@@ -34,6 +35,25 @@ async def clear(database: Database) -> None:
         await session.commit()
 
 
+def source_for(
+    sources: dict[str, JobSource],
+    session: AsyncSession,
+    attribution: dict[str, Any],
+) -> JobSource:
+    """Register a board once per seeding call, however many jobs name it."""
+    key = str(attribution["key"])
+    source = sources.get(key)
+    if source is None:
+        source = JobSource(
+            key=key,
+            display_name=str(attribution.get("display_name", key.title())),
+            base_url=str(attribution.get("base_url", f"https://{key}.example.com/api")),
+        )
+        session.add(source)
+        sources[key] = source
+    return source
+
+
 async def seed(database: Database, *specs: dict[str, Any]) -> dict[str, UUID]:
     """Insert one job per spec and return their ids by title.
 
@@ -41,6 +61,7 @@ async def seed(database: Database, *specs: dict[str, Any]) -> dict[str, UUID]:
     exercise the company filter without assembling the rows itself.
     """
     companies: dict[str, Company] = {}
+    sources: dict[str, JobSource] = {}
     identifiers: dict[str, UUID] = {}
 
     async with database.session() as session:
@@ -66,6 +87,18 @@ async def seed(database: Database, *specs: dict[str, Any]) -> dict[str, UUID]:
             session.add(job)
             await session.flush()
             identifiers[title] = job.id
+            for attribution in spec.get("sources", ()):
+                session.add(
+                    JobProvenance(
+                        job=job,
+                        source=source_for(sources, session, attribution),
+                        source_job_id=str(attribution.get("source_job_id", uuid4().hex)),
+                        source_url=str(attribution["source_url"]),
+                        first_seen_at=spec.get("published_at") or EPOCH,
+                        last_seen_at=spec.get("published_at") or EPOCH,
+                        raw_payload=attribution.get("raw_payload"),
+                    )
+                )
         await session.commit()
 
     return identifiers

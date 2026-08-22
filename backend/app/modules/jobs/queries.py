@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Job
+from app.modules.jobs.models import Job, JobProvenance
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
@@ -216,3 +216,23 @@ async def list_jobs(
         jobs=batch,
         next_cursor=encode_cursor(JobCursor(published_at=last.published_at, job_id=last.id)),
     )
+
+
+async def get_job(session: AsyncSession, job_id: UUID) -> Job | None:
+    """Read one job with everything a detail page renders, or nothing.
+
+    Unlike the listing, this does not filter on status. The only way to reach a
+    job that is no longer active is a link saved before it lapsed, which is
+    exactly the case where a page saying so beats a page saying the job never
+    existed. The status travels in the response so a caller can tell the
+    difference.
+    """
+    statement = (
+        select(Job)
+        .where(Job.id == job_id)
+        .options(
+            selectinload(Job.company),
+            selectinload(Job.provenance_records).selectinload(JobProvenance.source),
+        )
+    )
+    return (await session.scalars(statement)).one_or_none()
