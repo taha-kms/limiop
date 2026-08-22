@@ -3,17 +3,20 @@
 from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import (
     CompanyRead,
+    JobDetail,
     JobRead,
     NormalizedCompany,
     NormalizedJob,
     NormalizedProvenance,
     ProvenanceRead,
+    SourceAttribution,
 )
 
 __all__ = [
     "Company",
     "CompanyRead",
     "Job",
+    "JobDetail",
     "JobProvenance",
     "JobRead",
     "JobSource",
@@ -21,4 +24,5 @@ __all__ = [
     "NormalizedJob",
     "NormalizedProvenance",
     "ProvenanceRead",
+    "SourceAttribution",
 ]
