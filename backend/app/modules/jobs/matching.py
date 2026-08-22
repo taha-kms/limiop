@@ -63,10 +63,12 @@ PART_SEPARATOR = "\x1f"
 # German-market listings routinely append a gender notation to the title. The
 # same posting appears as both "Data Engineer" and "Data Engineer (m/w/d)", so
 # the notation is dropped before hashing.
-GENDER_NOTATION = re.compile(
-    r"\(\s*(?:[mwfdax](?:\s*[/|]\s*[mwfdax])+|all\s+genders?|any\s+gender)\s*\)",
-    re.IGNORECASE,
-)
+#
+# Two patterns rather than one alternation: the letter form and the spelled-out
+# form share nothing, and expressing them together produced an expression
+# nobody could read.
+LETTER_NOTATION = re.compile(r"\(\s*[mwfdax](?:\s*[/|]\s*[mwfdax])+\s*\)", re.IGNORECASE)
+SPELLED_NOTATION = re.compile(r"\(\s*(?:all|any)\s+genders?\s*\)", re.IGNORECASE)
 
 # Words that describe how work happens rather than where it happens. A location
 # reading only "Remote" names no place at all.
@@ -112,7 +114,8 @@ def normalize_text(value: str) -> str:
 
 def normalize_title(value: str) -> str:
     """Normalize a title and drop gender notation that does not change the role."""
-    return normalize_text(GENDER_NOTATION.sub(" ", value))
+    without_notation = SPELLED_NOTATION.sub(" ", LETTER_NOTATION.sub(" ", value))
+    return normalize_text(without_notation)
 
 
 def match_key_of(company_name: str, title: str) -> str:

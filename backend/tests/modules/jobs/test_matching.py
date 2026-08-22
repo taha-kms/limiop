@@ -37,7 +37,10 @@ class TestMatchKey:
         assert match_key(job()).startswith(f"{MATCH_KEY_VERSION}:")
 
     def test_the_same_job_always_produces_the_same_key(self) -> None:
-        assert match_key(job()) == match_key(job())
+        first = match_key(job())
+        second = match_key(job())
+
+        assert first == second
 
     def test_the_location_is_not_part_of_the_key(self) -> None:
         """Every confirmed cross-source duplicate described its location differently."""
