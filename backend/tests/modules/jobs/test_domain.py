@@ -70,16 +70,24 @@ def test_unspecified_classifications_are_explicit() -> None:
     [
         pytest.param("Short enough.", "Short enough.", id="shorter than the limit"),
         pytest.param(
-            "Opening thought.\nSecond paragraph nobody sees.",
-            "Opening thought.",
-            id="stops at the paragraph break",
+            "Opening thought.\nSecond paragraph.",
+            "Opening thought. Second paragraph.",
+            id="joins paragraphs",
         ),
-        pytest.param("  Padded.  \nMore.", "Padded.", id="trimmed"),
+        pytest.param("  Padded.  \n  More.  ", "Padded. More.", id="trimmed"),
+        pytest.param("One.\n\n\nTwo.", "One. Two.", id="blank lines collapse"),
         pytest.param("", "", id="empty"),
     ],
 )
 def test_an_excerpt_keeps_what_fits(description: str, expected: str) -> None:
     assert to_excerpt(description) == expected
+
+
+def test_an_excerpt_reaches_past_an_opening_heading() -> None:
+    """Real postings open with a heading, so the first paragraph is a label."""
+    excerpt = to_excerpt("Why Mozilla?\nWe build the open web for everyone.")
+
+    assert excerpt == "Why Mozilla? We build the open web for everyone."
 
 
 def test_a_long_excerpt_is_cut_at_a_word_boundary() -> None:

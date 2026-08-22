@@ -67,7 +67,7 @@ def test_a_listed_job_carries_what_a_card_needs(
     assert item["employment_type"] == "full-time"
     assert item["application_url"] == "https://acme.example.com/jobs/1"
     assert item["published_at"] is not None
-    assert item["excerpt"] == "Build reliable data pipelines."
+    assert item["excerpt"] == "Build reliable data pipelines. And a second paragraph."
 
 
 def test_a_listing_never_carries_provenance_or_the_whole_posting(
@@ -75,11 +75,11 @@ def test_a_listing_never_carries_provenance_or_the_whole_posting(
     seed_catalog: Seed,
 ) -> None:
     """Raw provider payloads have no field to travel in, at any depth."""
-    tail = "Everything after the opening paragraph."
+    tail = "Everything past the excerpt, which a card has no room for."
     seed_catalog(
         {
             "title": "Listable",
-            "description": f"Opening line.\n{tail}",
+            "description": f"Opening line. {'padding ' * 60}\n{tail}",
             "published_at": at(1),
         }
     )
