@@ -56,21 +56,24 @@ def to_excerpt(description: str, *, limit: int = EXCERPT_LENGTH) -> str:
     Derived rather than stored, so it cannot fall out of step with the
     description it summarises.
 
-    Descriptions are plain text with paragraph breaks, so the opening paragraph
-    is a better summary than a blind prefix: it ends where the writer ended a
-    thought instead of wherever the character count landed. Longer than that is
-    cut at a word boundary, because a word sliced in half reads as a bug.
+    Paragraphs are joined rather than stopping at the first one. Stopping there
+    was the original rule and real postings disproved it: they routinely open
+    with a heading, so the excerpt came out as `Why Mozilla?` or
+    `About Team & About Role`, which is a label rather than a summary. Joining
+    lets a short opening line be followed by the prose that explains it.
 
-    The fallback matters for the case a word boundary cannot help with. A first
-    paragraph that is one unbroken run of characters has no space to cut at, and
-    must still come back bounded.
+    Past the limit it cuts at a word boundary, because a word sliced in half
+    reads as a bug. Text with no space to cut at is cut on length alone: it
+    still has to come back bounded, which is the case a word boundary cannot
+    serve.
     """
-    opening = description.split("\n", 1)[0].strip()
-    if len(opening) <= limit:
-        return opening
+    paragraphs = (line.strip() for line in description.split("\n"))
+    joined = " ".join(line for line in paragraphs if line)
+    if len(joined) <= limit:
+        return joined
 
-    head = opening[:limit]
-    if opening[limit].isspace():
+    head = joined[:limit]
+    if joined[limit].isspace():
         # The cut already landed between words, so trimming back to the last
         # space here would drop a whole word that fitted.
         return f"{head.rstrip()}{ELLIPSIS}"
