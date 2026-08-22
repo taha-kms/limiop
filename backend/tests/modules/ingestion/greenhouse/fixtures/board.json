@@ -1,0 +1,62 @@
+{
+  "jobs": [
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/hudl/jobs/8102829",
+      "internal_job_id": 3510352,
+      "location": {
+        "name": "Lincoln, NE, United States; Omaha, NE, United States"
+      },
+      "metadata": [
+        {
+          "id": 17505,
+          "name": "Employment Type",
+          "value": "Regular",
+          "value_type": "single_select"
+        },
+        {
+          "id": 55188787,
+          "name": "Chapter",
+          "value": "Accounting & Finance",
+          "value_type": "single_select"
+        }
+      ],
+      "id": 8102829,
+      "updated_at": "2026-08-14T15:25:14-04:00",
+      "requisition_id": "R-102510",
+      "title": "Accountant ",
+      "company_name": "Hudl",
+      "first_published": "2026-08-04T13:46:58-04:00",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;At Hudl, we build great teams. We hire the best of the best to ensure you’re working with people you can constantly learn from. You’re trusted to get your work done your way while testing the limits of what’s possible and what’s next. We work hard to provide a culture where everyone feels supported, and our employees feel it—their votes helped us become one of &lt;a href=&quot;https://www.hudl.com/blog/newsweek-top-100-global-most-loved-workplaces-2023&quot;&gt;Newsweek&#39;s Top 100 Global Most Loved Workplaces&lt;/a&gt;.&amp;nbsp;&amp;nbsp;&lt;br&gt;&lt;br&gt;We think of ourselves as the team behind the team, supporting the lifelong impact sports can have: the lessons in teamwork and dedication; the influence of inspiring coaches; and the opportunities to reach new heights. That’s why we help teams from all over the world see their ga"
+    },
+    {
+      "absolute_url": "https://job-boards.greenhouse.io/hudl/jobs/8091988",
+      "internal_job_id": 3505501,
+      "location": {
+        "name": "Lincoln, NE, United States"
+      },
+      "metadata": [
+        {
+          "id": 17505,
+          "name": "Employment Type",
+          "value": "Regular",
+          "value_type": "single_select"
+        },
+        {
+          "id": 55188787,
+          "name": "Chapter",
+          "value": "Sales",
+          "value_type": "single_select"
+        }
+      ],
+      "id": 8091988,
+      "updated_at": "2026-08-14T15:25:14-04:00",
+      "requisition_id": "R-102503",
+      "title": "Account Executive - Club",
+      "company_name": "Hudl",
+      "first_published": "2026-08-04T09:50:39-04:00",
+      "application_deadline": null,
+      "content": "&lt;div class=&quot;content-intro&quot;&gt;&lt;p&gt;At Hudl, we build great teams. We hire the best of the best to ensure you’re working with people you can constantly learn from. You’re trusted to get your work done your way while testing the limits of what’s possible and what’s next. We work hard to provide a culture where everyone feels supported, and our employees feel it—their votes helped us become one of &lt;a href=&quot;https://www.hudl.com/blog/newsweek-top-100-global-most-loved-workplaces-2023&quot;&gt;Newsweek&#39;s Top 100 Global Most Loved Workplaces&lt;/a&gt;.&amp;nbsp;&amp;nbsp;&lt;br&gt;&lt;br&gt;We think of ourselves as the team behind the team, supporting the lifelong impact sports can have: the lessons in teamwork and dedication; the influence of inspiring coaches; and the opportunities to reach new heights. That’s why we help teams from all over the world see their ga"
+    }
+  ]
+}

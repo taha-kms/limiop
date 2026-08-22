@@ -99,16 +99,17 @@ class JobSourceClient(Protocol):
     @property
     def source_key(self) -> str: ...
 
-    async def fetch_page(self, page: int) -> RawPage:
-        """Return one page, or raise `SourceUnavailableError`/`SourceResponseError`."""
-        ...
-
     def fetch_pages(self) -> AsyncIterator[RawPage]:
-        """Yield pages in order, within the client's own bound.
+        """Yield everything the provider has, within the client's own bound.
 
-        Pagination lives here rather than in the pipeline because its shape is
-        provider-specific: page numbers, cursors, and continuation tokens all
-        satisfy this boundary.
+        How a provider is walked lives here rather than in the pipeline, because
+        its shape is provider-specific. Page numbers, cursors, continuation
+        tokens, and one request per company board all satisfy this boundary, and
+        the run cannot tell them apart.
+
+        A page number was once part of this contract. It was removed when a
+        provider arrived that has no pages: the run never called it, so it only
+        described how the first provider happened to work.
         """
         ...
 
