@@ -30,9 +30,11 @@ BASE = "https://ec.europa.eu/esco/api/resource/concept"
 SCHEME = "http://data.europa.eu/esco/concept-scheme/skills"
 TAXONOMY = "https://ec.europa.eu/esco/api/resource/taxonomy"
 
-# Deliberately modest. This is someone else's public service and the whole walk
-# is a one-off, so there is nothing to gain by being brisk about it.
-CONCURRENCY = 6
+# Enough to finish, not enough to be rude. A first attempt at 6 spent ninety
+# minutes CPU-bound on TLS handshakes rather than waiting on the network, so
+# the connection pool is now sized to match and the walk reports progress
+# instead of going silent for an hour.
+CONCURRENCY = 16
 MAX_ATTEMPTS = 5
 BACKOFF_SECONDS = 2.0
 TIMEOUT_SECONDS = 30.0
@@ -101,6 +103,8 @@ async def walk(client: httpx2.AsyncClient, roots: list[str]) -> Walk:
             state.failures.append(uri)
             return []
         state.concepts[uri] = record(payload)
+        if len(state.concepts) % 500 == 0:
+            print(f"    {len(state.concepts)} concepts", flush=True)
         return children_of(payload)
 
     while frontier:
@@ -113,7 +117,8 @@ async def walk(client: httpx2.AsyncClient, roots: list[str]) -> Walk:
 
 
 async def run(destination: Path) -> None:
-    async with httpx2.AsyncClient() as client:
+    limits = httpx2.Limits(max_connections=CONCURRENCY, max_keepalive_connections=CONCURRENCY)
+    async with httpx2.AsyncClient(limits=limits) as client:
         top = await get(client, TAXONOMY, {"uri": SCHEME, "language": "en"})
         if top is None:
             raise SystemExit("could not read the ESCO skills concept scheme")
