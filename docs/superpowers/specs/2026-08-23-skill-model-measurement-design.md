@@ -105,9 +105,22 @@ marked.
 
 Configure a wider Greenhouse board list of roughly fifteen boards, chosen to
 include employers outside engineering, as a snapshot-only configuration that
-does not change the shipped default and does not pre-empt #120. Every board is
-verified to respond before the run; a board that does not is replaced and the
-substitution recorded.
+does not change the shipped default and does not pre-empt #120. Every board
+token is verified against the boards API before the list is fixed, rather than
+assembled from remembered company names; a board that does not respond is
+replaced and the substitution recorded.
+
+The correction can fail, and what failure means is fixed now rather than
+afterwards. Greenhouse's install base skews heavily toward technology
+employers, so a list of fifteen responding boards may still be thirteen
+engineering shops, which would spend the ingest and buy none of the correction.
+The achieved mix is recorded by sector, not merely by count. **If fewer than
+five of the boards are employers outside engineering, the bias stands**: the
+corpus is reported as tech-heavy, coverage figures generalize only to a
+catalogue that looks like this one, and the limitation is stated in the results
+rather than quietly absorbed. A technical dictionary looks far better than it
+is on a corpus of technology employers, and that is the specific way this
+measurement could mislead the decision it exists to inform.
 
 Run both sources to exhaustion into a scratch database.
 
@@ -130,6 +143,14 @@ wins.
 The detector is itself checked. Annotators record the language they observe on
 each sampled posting, which yields a measured detector error rate over 80
 postings at no extra cost.
+
+The per-source split is read here, before sampling, because it decides what the
+sample can support. Arbeitnow is the German-heavy half, so the English filter
+falls on it unevenly, and proportional allocation could leave the Arbeitnow
+stratum at a dozen postings. That is enough for pooled recall and not enough for
+any per-source claim. If a stratum lands that thin it is reported as thin, and
+no per-source figure is drawn from it. A stratified sample must not be allowed
+to imply a balance it does not have.
 
 ### 3. Sampling
 
@@ -235,9 +256,40 @@ vocabulary that changes underneath the extractor cannot satisfy #47 and #48's
 requirement that extraction be deterministic and versioned, and the licence is
 negotiated per customer rather than open.
 
+### 9. Blind adjudication of false positives
+
+Precision needs every extracted pair that is not in the gold set judged: is it
+a real skill mention the annotators missed, or a false positive?
+
+It runs after the arms, because the arms produce the candidates. It carries the
+same contamination risk the gold set is protected from, and the presented design
+left it uncovered. An adjudicator who can see that ESCO
+proposed `communication` is not judging the mention, they are judging ESCO.
+
+So the candidates from all arms are pooled, stripped of which arm produced
+them, deduplicated, and shuffled under the recorded seed before being judged.
+The adjudicator sees a posting and a candidate skill, and nothing about where
+the candidate came from. Arm identity is rejoined afterwards, from the mapping
+kept aside.
+
+**Ordering matters here.** Pooling and stripping happen before any judgement,
+not after.
+
 ## Measurements
 
 All against the frozen gold set.
+
+### The unit is the (posting, skill) pair
+
+Recall and precision are computed over `(posting, skill label)` pairs. A posting
+that says `Python` three times contributes one pair, not three.
+
+This needs stating because the document defines a mention as a span, and span
+recall would answer a question nobody asked. What ships is a skill set per job
+with evidence attached — #47 and #48 store exactly that — so an extractor that
+finds one of three occurrences has lost nothing the product cares about. Spans
+remain the evidence, and they are scored, but only in the span-level agreement
+figure.
 
 | Measurement | What it decides |
 | --- | --- |
