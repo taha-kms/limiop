@@ -1,0 +1,61 @@
+pass A validation problems: 0
+postings A=80 B=80  mentions A=1553 B=1874
+
+label-exact set F1 (A as truth, B as prediction):
+  precision=0.490 recall=0.591 f1=0.536  (tp=918 fp=956 fn=634)
+span-overlap F1 (label-agnostic):
+  precision=0.633 recall=0.764 f1=0.693  (tp=1187 fp=687 fn=366)
+
+category agreement on shared labels: 830/918 = 0.904
+   A=skill        B=knowledge    36
+   A=skill        B=transversal  30
+   A=knowledge    B=skill        16
+   A=transversal  B=skill        5
+   A=transversal  B=knowledge    1
+requirement agreement on shared labels: 763/918 = 0.831
+
+distinct labels: A=928 B=756 shared=503
+language: A Counter({'en': 80})  B Counter({'en': 80})
+overlapping spans: 1225  same label: 775  different label: 450
+=> of mentions both annotators marked, 36.7% were given different names
+
+sample of the naming disagreements (A vs B on the same text):
+   sales cycle ownership                  | sales cycle management
+   product demonstration                  | product demos
+   german                                 | german fluent
+   english                                | english professional
+   financial statement preparation        | financial statements
+   statutory audit support                | statutory audits
+   cash flow reporting                    | cash flow management
+   english                                | english fluent
+   analytical skills                      | analytical thinking
+   make or buy analysis                   | make or buy decisions
+   category strategy                      | category management
+   supplier performance management        | supplier management
+   english                                | communication skills
+   stakeholder collaboration              | stakeholder management
+   api integration                        | apis
+   english                                | english fluent
+   german                                 | english fluent
+   technical architecture design          | software architecture
+   coding                                 | software development
+   english                                | communication skills
+   german                                 | german proficient
+   benchmarking                           | model evaluation
+   roadmap ownership                      | product roadmap
+   customer communication                 | client engagement
+   gis tools                              | gis
+   ai coding tools                        | ai tools
+   analytical skills                      | analytical thinking
+   collaboration                          | teamwork
+   english                                | english c1/c2
+   german                                 | german fluent
+
+one label contains the other: 92/450 = 20.4%
+
+top labels only A used: ['analytical skills', 'coaching', 'cross functional collaboration', 'organisational skills', 'kpi analysis', 'ambiguity tolerance', 'collaboration', 'sales cycle ownership', 'product demonstration', 'autonomy', 'roadmap ownership', 'written communication']
+top labels only B used: ['work under pressure', 'client engagement', 'analytical thinking', 'technical documentation', 'performance metrics', 'english fluent', 'product roadmap', 'organizational skills', 'supplier management', 'product demos', 'case escalation', 'continuous learning']
+
+top shared labels: ['communication skills', 'english', 'analytical skills', 'problem solving', 'german', 'influencing', 'coaching', 'saas', 'attention to detail', 'python', 'cross functional collaboration', 'people management', 'organisational skills', 'kpi analysis', 'ambiguity tolerance']
+
+labels used exactly once: A=698/928  B=480/756
