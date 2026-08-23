@@ -1,0 +1,365 @@
+{
+  "detector": "py3langid 0.3.0",
+  "seed": 20260823,
+  "postings": 3354,
+  "languages": {
+    "en": 2450,
+    "de": 867,
+    "other": 37
+  },
+  "share_english": 0.7305,
+  "share_not_servable_by_an_english_only_v1": 0.2695,
+  "by_source": {
+    "arbeitnow": {
+      "de": 833,
+      "en": 583
+    },
+    "greenhouse": {
+      "en": 1867,
+      "other": 37,
+      "de": 34
+    }
+  },
+  "sampling_frame": 2450,
+  "sample_size": 80,
+  "quota_by_stratum": {
+    "arbeitnow": 19,
+    "greenhouse:anthropic": 16,
+    "greenhouse:carta": 2,
+    "greenhouse:datadog": 14,
+    "greenhouse:discord": 1,
+    "greenhouse:duolingo": 2,
+    "greenhouse:everlane": 1,
+    "greenhouse:figma": 5,
+    "greenhouse:glossier": 1,
+    "greenhouse:hellofresh": 11,
+    "greenhouse:hudl": 2,
+    "greenhouse:khanacademy": 2,
+    "greenhouse:peloton": 1,
+    "greenhouse:sweetgreen": 1,
+    "greenhouse:talkspace": 1,
+    "greenhouse:wikimedia": 1
+  },
+  "sample": [
+    {
+      "posting": "arbeitnow:account-executive-dach-berlingermany-336912",
+      "description_sha256": "571625d16dc8c5c85e7d305efaa9f9995a29c058060e9968ded38a17e2366d2a"
+    },
+    {
+      "posting": "arbeitnow:accountant-freelance-temporary-berlin-105964",
+      "description_sha256": "865ba023115d3176cad15a8d55dd42f31a590d709796765817c15321d460d4e2"
+    },
+    {
+      "posting": "arbeitnow:category-manager-software-ai-digital-platforms-gilching-37786",
+      "description_sha256": "9e06468346640a17af85f846fe5b72271f4ea634b707bb21668c810e2036e453"
+    },
+    {
+      "posting": "arbeitnow:forward-deployed-engineer-software-engineer-germany-95589",
+      "description_sha256": "0b8f79be4b5ae3c08d8a44842a4ab21a5ee9a5e7385da06fbe367875798b33d3"
+    },
+    {
+      "posting": "arbeitnow:founding-engineer-full-stack-ai-munich-366587",
+      "description_sha256": "4daf886c068b837684edb286eaefc139542ecca849f523fd6553c8841f897ba8"
+    },
+    {
+      "posting": "arbeitnow:geospatial-data-analyst-in-the-field-of-ai-satellite-data-liveeo-gmbh-berlin-office-hybrid-257623",
+      "description_sha256": "691426c43272cf13381d1106e8e1cd4c3de0dc1ba4e40b35baa8d3416ed78517"
+    },
+    {
+      "posting": "arbeitnow:lca-working-student-munich-210314",
+      "description_sha256": "a51de91b4cd9955d0ecd1fc9e0f87d80ea904ffec7ac8d153044a6f71c77ffab"
+    },
+    {
+      "posting": "arbeitnow:remote-senior-product-manager-saas-platform-with-ai-focus-13126",
+      "description_sha256": "71544b73e52e313a509343ab417b0a57e6df1fe80a6a27e22edef0e23f0599f8"
+    },
+    {
+      "posting": "arbeitnow:robotics-software-engineer-counter-uav-systems-generalist-mid-level-munich-deu-206242",
+      "description_sha256": "54cc0efcdf81bee92dd8a6b33ab808df856a8bfbc85b61f23285b3f475a344b3"
+    },
+    {
+      "posting": "arbeitnow:sales-intern-italian-munich-488877",
+      "description_sha256": "762ee510e873266180a96eec510b50034d360b877dc37528039763630cef519c"
+    },
+    {
+      "posting": "arbeitnow:senior-accountant-consolidation-reporting-mfd-reutlingen-398886",
+      "description_sha256": "964e0ece13862e6f67c44a3d0f7aaf37c052d3aeb3cc6fa0e44584096e456b39"
+    },
+    {
+      "posting": "arbeitnow:senior-it-internal-auditor-berlin-486780",
+      "description_sha256": "54c58d0eb04a82938de85ce8d784b6856fef0386cc95d43b9cfca5aeca0a3d89"
+    },
+    {
+      "posting": "arbeitnow:senior-labour-relations-specialist-employee-relations-and-transitions-emea-140375",
+      "description_sha256": "a15ff0b68e8bb8d5558283b621455cdf63d243d670a0bf0d044741100ffd11ad"
+    },
+    {
+      "posting": "arbeitnow:senior-security-engineer-all-genders-munich-9202",
+      "description_sha256": "f0409e0abc2802b1a5b4eb8a464247ff8a66cd4328d921926b90c214937ada75"
+    },
+    {
+      "posting": "arbeitnow:software-engineer-data-infrastructure-acquisition-hamburg-germany-252312",
+      "description_sha256": "85cc2194127fb4d1abf0c0295f352458c373902e9b6243404c3b0c972e7fb294"
+    },
+    {
+      "posting": "arbeitnow:software-project-lead-warehouse-automation-munich-468728",
+      "description_sha256": "a744cd97bd005ba9e124dc46e3db7c3fb0f9f5c947456f8c4931b303a88a7c08"
+    },
+    {
+      "posting": "arbeitnow:software-support-technician-london-173023",
+      "description_sha256": "31124746d2c936af5e19b31e8111839afe77a4f75e91f223cfeb04e7f21491db"
+    },
+    {
+      "posting": "arbeitnow:technical-accounting-expert-berlin-298284",
+      "description_sha256": "8aac0ec9314967b9ad22048178030e900685026c8a6a57ae4f9261d6ce604f1e"
+    },
+    {
+      "posting": "arbeitnow:working-student-strategy-market-insights-essen-304084",
+      "description_sha256": "f0409e0abc2802b1a5b4eb8a464247ff8a66cd4328d921926b90c214937ada75"
+    },
+    {
+      "posting": "greenhouse:anthropic:4899511008",
+      "description_sha256": "004cf84a5a244f685243562ce8d59cbe61820a987a0b056a5ec085408c0bfaa9"
+    },
+    {
+      "posting": "greenhouse:anthropic:5066977008",
+      "description_sha256": "890e2bce74475a9e3b7e2f08b5f0096cd6d7d1918777381039af6ef4df755731"
+    },
+    {
+      "posting": "greenhouse:anthropic:5118189008",
+      "description_sha256": "e76d0fe86fb02979943ac7c8b3fce9e9e2cfe6948f2d1c82f8fd4f1412b1fecf"
+    },
+    {
+      "posting": "greenhouse:anthropic:5146298008",
+      "description_sha256": "3225999b8a6494bab024d4b745a75ac73e46dbea497df315e6d7bbf7f5a7d8f3"
+    },
+    {
+      "posting": "greenhouse:anthropic:5237923008",
+      "description_sha256": "a7f2030dab58248cacf8760c4b9e39432e9cd502dd7dbb6a7119f84228802986"
+    },
+    {
+      "posting": "greenhouse:anthropic:5254364008",
+      "description_sha256": "11fe376edc9dc4760aa0c8ea1ed8d271c983124128417c3ef677ddb75980f4df"
+    },
+    {
+      "posting": "greenhouse:anthropic:5274117008",
+      "description_sha256": "137d7c3fa686dc9ab50bcde28ea4ad54b5e18efa0aa4fa54880774d6f2a940c2"
+    },
+    {
+      "posting": "greenhouse:anthropic:5281348008",
+      "description_sha256": "a7a037bdda341f653a9443e51e9cdc7c85efcb369a15c69ae95dbec0c9a4d849"
+    },
+    {
+      "posting": "greenhouse:anthropic:5290838008",
+      "description_sha256": "4f8a6902a692171c497d4aa1075bddc163fe6f5de8c8167aed56ff06fb2963f4"
+    },
+    {
+      "posting": "greenhouse:anthropic:5319696008",
+      "description_sha256": "ef13ee7986ad9909e1f9587f0e5e4e4c2fd78e71c5b2c7acf4c6d83d8e396908"
+    },
+    {
+      "posting": "greenhouse:anthropic:5358148008",
+      "description_sha256": "ad8059e7859c142d8e1a4d355406214ec11fbdf105414ba49fc76893ac3b4dbd"
+    },
+    {
+      "posting": "greenhouse:anthropic:5369755008",
+      "description_sha256": "b1264bc9f1407066defc732acd77ce7fd5ecc286b35e00a4991acd1f615c9144"
+    },
+    {
+      "posting": "greenhouse:anthropic:5380377008",
+      "description_sha256": "d55d8dc9ab5b030916a24b6b5af6c4bcebcd918364f9603a5ed583ab8792a99e"
+    },
+    {
+      "posting": "greenhouse:anthropic:5385626008",
+      "description_sha256": "9334abe696b44ffbaba9e3226d446d04928c73159e3f3eaf54466bf637e8403b"
+    },
+    {
+      "posting": "greenhouse:anthropic:5391102008",
+      "description_sha256": "7979525591c704e3000c5669f8a1a2aa361503a0fd2f8ef6e8c494047886b374"
+    },
+    {
+      "posting": "greenhouse:anthropic:5397749008",
+      "description_sha256": "788543db7bad3f84e2dcdac33ee01ea0840fb67532eb58c6908a82944e928939"
+    },
+    {
+      "posting": "greenhouse:carta:5705558003",
+      "description_sha256": "dca1f11c088502f6e4a2dd1bf7a1a467263557a700ad7372569902a5579fefb1"
+    },
+    {
+      "posting": "greenhouse:carta:6294044003",
+      "description_sha256": "42ae2fe484229735bb6b6481e21ca17c6977763860dd9e08e6a093fce87c208b"
+    },
+    {
+      "posting": "greenhouse:datadog:6685931",
+      "description_sha256": "6e68ee24c4c1b923436ccc603bc61ff482465fe78bfcd1c1512938a3980bd3fa"
+    },
+    {
+      "posting": "greenhouse:datadog:6759702",
+      "description_sha256": "3e33a3ea96c80e163278cd06e8749328f897e96706f3b066f565a4e232cecb18"
+    },
+    {
+      "posting": "greenhouse:datadog:6798820",
+      "description_sha256": "2fd9cdc1ebf275e8ae8baa3e3a0bd5855a067cc2e6941f086d96c42c2c6055d3"
+    },
+    {
+      "posting": "greenhouse:datadog:7129425",
+      "description_sha256": "f259de0d27a65d3d0629e5924f198ee64f2498b308d22912d72cdc11cf863a08"
+    },
+    {
+      "posting": "greenhouse:datadog:7314667",
+      "description_sha256": "8fb7d3418c6c68088ce1873454768568fbfc1f3ccd4afa64b14ec2757dfb4346"
+    },
+    {
+      "posting": "greenhouse:datadog:7576831",
+      "description_sha256": "79829cb064002d622db682d676dc3570ae46fb28d53cb43f18e659f3b97eb9bf"
+    },
+    {
+      "posting": "greenhouse:datadog:7584250",
+      "description_sha256": "23c70babc68e5f4b70d715a30c22a3bdee1ba57d66f66e567ff62553c0db2934"
+    },
+    {
+      "posting": "greenhouse:datadog:7762722",
+      "description_sha256": "0781a0b8caf6840c6b3de67b7f514d4b14e8c1e4ed183a8fa02cfec0acb3a7d6"
+    },
+    {
+      "posting": "greenhouse:datadog:7792033",
+      "description_sha256": "9c31a631f0cb5425df6097da205f2440d0c9a2dc573f83871acaa9a030064e13"
+    },
+    {
+      "posting": "greenhouse:datadog:7868711",
+      "description_sha256": "271fe88f99061a8b5bb5674162298b1ceb4306b8070a27f940d893456c679065"
+    },
+    {
+      "posting": "greenhouse:datadog:7926141",
+      "description_sha256": "81bfda61d9ef6e9a57f0d422e521575f089d73abc6600de30706de058bf87968"
+    },
+    {
+      "posting": "greenhouse:datadog:7927485",
+      "description_sha256": "a88676f010a2fd92899115190ac1e2c42abd21ee86535eb3d979db3330f948d7"
+    },
+    {
+      "posting": "greenhouse:datadog:8038652",
+      "description_sha256": "86a0e1d2a7fb936b13aa1a93d9cd97b04bf8eeda6366e667bed11c4400a452ff"
+    },
+    {
+      "posting": "greenhouse:datadog:8064226",
+      "description_sha256": "6d1793350c731e1be2951aa6d66b40d544b8d1f2b876a262ec8b2e9a36053604"
+    },
+    {
+      "posting": "greenhouse:discord:8637688002",
+      "description_sha256": "d93da3fc6944d45c18fdce99814861629052b03abf6a55d0ada220e037af9496"
+    },
+    {
+      "posting": "greenhouse:duolingo:8701378002",
+      "description_sha256": "f3d0163ba87ce44826f3153e07fcb76214279abb9f4b7f7b4d5b897a2ac0a6da"
+    },
+    {
+      "posting": "greenhouse:duolingo:8734207002",
+      "description_sha256": "5bba04e0d80d6dbc8a29359c67d491c745e9d3b548654a46b698bf92b559ddcf"
+    },
+    {
+      "posting": "greenhouse:everlane:7813377003",
+      "description_sha256": "f43fde28e0a719815613a83e7a2503ffa9ecd4553337bb2c7e8a9b8342cc2602"
+    },
+    {
+      "posting": "greenhouse:figma:5415515004",
+      "description_sha256": "7348e62fbb1b973a44b5dcbcea1f8cfb101f7dfb9082449ac77b9daeb7ad7351"
+    },
+    {
+      "posting": "greenhouse:figma:5505263004",
+      "description_sha256": "c9b370f0d9e5d935332db7941169f948baa716f8a2fd3a5c55b2417e41938484"
+    },
+    {
+      "posting": "greenhouse:figma:6019700004",
+      "description_sha256": "bffb0eb1f1f356188e92969f9980d2e42b10c29abd11bec78f1f9ca2a487a9be"
+    },
+    {
+      "posting": "greenhouse:figma:6132269004",
+      "description_sha256": "deb35c8e8b6ca9bbae0e7bb92f6a46708b1ad36bbdecfd223f7ea1481d66910c"
+    },
+    {
+      "posting": "greenhouse:figma:6150563004",
+      "description_sha256": "a08dbb13b72dafbce691f2b6b403a54974ab2076e8c5bd21ffaed600ac17cfb5"
+    },
+    {
+      "posting": "greenhouse:glossier:8088323",
+      "description_sha256": "2c95e74da0381663aee4f862689d4cbafe83de839bdcc82c12f8a8144a882337"
+    },
+    {
+      "posting": "greenhouse:hellofresh:5742556",
+      "description_sha256": "cfa4650a981f4142cc2cce1736c3bdf0a2e589039b77058384332d822e41db4e"
+    },
+    {
+      "posting": "greenhouse:hellofresh:7742572",
+      "description_sha256": "84fea4897d07cfbf484a5e8d7713f15b90e4ca4b359723d757a39cdd05ce2092"
+    },
+    {
+      "posting": "greenhouse:hellofresh:7967828",
+      "description_sha256": "734f66b19302ca75af8761ead3c99620e5a8d8298b90d857d7ad44e2f9d67f6e"
+    },
+    {
+      "posting": "greenhouse:hellofresh:7974427",
+      "description_sha256": "5164568a749878bd7117cff2715f238e0511aeeff3d300207e8aa71b68311b6b"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8029057",
+      "description_sha256": "fd5e38de0277706caae143cbc3d0155b24d0fb6a7b7b400df2adeca8612dc73f"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8063645",
+      "description_sha256": "78020726e482a7596284a40a07c714daeeb2461141db4852da6d0cfd68030779"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8076093",
+      "description_sha256": "3c6af57f90c31643b61b21e34f8ade80a03ac8d2ee57717211dd6cc53a6cb639"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8079724",
+      "description_sha256": "4963bb5b8e7c8ad5da664e300dc0847159571f65be410709749454c052d92c6f"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8090717",
+      "description_sha256": "0f0f902053149dbb58e136a6dc32a00d080a3c694fa88da998c1f659fcbbf3b5"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8102836",
+      "description_sha256": "f503d185f2d198b42f2959eea0bdb3ed40f86e7024b16ddd15e7c0dacb3b6874"
+    },
+    {
+      "posting": "greenhouse:hellofresh:8104473",
+      "description_sha256": "e48e3c712c9fb6a707eed492f2ca9a0da385460441fe2455bcc13ad601e977a8"
+    },
+    {
+      "posting": "greenhouse:hudl:8102508",
+      "description_sha256": "22d5b592e3f99c9fe81e7425f6c7b146ce88295d4c174619abc9b8d2aa29231f"
+    },
+    {
+      "posting": "greenhouse:hudl:8104902",
+      "description_sha256": "2fcb03e5b20e8c7f216d5f49a356294e0ebc8120fb23bc9ef84e9424b6b92a04"
+    },
+    {
+      "posting": "greenhouse:khanacademy:7767902",
+      "description_sha256": "b94debe2ec875279d134e39ece32247d31137f120ef99017a6bf208356e7b2a8"
+    },
+    {
+      "posting": "greenhouse:khanacademy:7892974",
+      "description_sha256": "eb2081f0cb49ed7cb383745e2c438ddf149cd5bf4a39caee70628f8e7a20415b"
+    },
+    {
+      "posting": "greenhouse:peloton:8125482",
+      "description_sha256": "794be0d789a093ad07af2531f6ca0fc0f88897979cfdfbb95ff350b90fcbec67"
+    },
+    {
+      "posting": "greenhouse:sweetgreen:7838826",
+      "description_sha256": "8891d1ca9a818a5778fadccd6f1c299ce02f7e20ae4154106a9a71237eb215e6"
+    },
+    {
+      "posting": "greenhouse:talkspace:6147630004",
+      "description_sha256": "97b26b20ad3fec2d0a3eaed7a0c0f5200cce5db6ebec3853b50334654d17d916"
+    },
+    {
+      "posting": "greenhouse:wikimedia:8059457",
+      "description_sha256": "7eb3c06228a30c264beab203a2fd81c149eec27f392e70a72b283b87df17827e"
+    }
+  ]
+}
