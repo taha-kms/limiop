@@ -207,8 +207,20 @@ guide is at fault and gets revised and re-run rather than adjudicated over.
 
 ### 7. Adjudication and freeze
 
-Disagreements are resolved in a third pass with both label sets visible. The
-adjudicated result is the gold set.
+Disagreements are resolved in a third pass. Two things about how.
+
+**A gold mention carries every name it was given, not one winning name.** It is
+a span, a category, a requirement, and the set of labels both annotators used
+for it. Adjudication therefore never picks between `product demonstration` and
+`product demos`; it only decides the contested question, which is whether a span
+is a skill mention at all. This matters because one of the two annotators is
+also the party who will build the curated arm, and letting that annotator choose
+the canonical names would hand their arm an advantage that has nothing to do
+with coverage. The alias sets are a result in their own right.
+
+**Contested spans are adjudicated blind.** A span marked by only one annotator
+is stripped of which annotator marked it, shuffled under the recorded seed, and
+judged against the guide alone by a third fresh-context agent.
 
 Committed together: the gold set, the guide, the sample, and the seed. Everything
 downstream quotes that commit SHA.
@@ -258,8 +270,16 @@ negotiated per customer rather than open.
 
 ### 9. Blind adjudication of false positives
 
-Precision needs every extracted pair that is not in the gold set judged: is it
-a real skill mention the annotators missed, or a false positive?
+Precision needs extracted pairs that are not in the gold set judged: is each a
+real skill mention the annotators missed, or a false positive?
+
+**Sampled, not exhaustive, and the cap is recorded.** Three arms over eighty
+postings, one of them emitting every 1-to-3-gram in a frequency band, can
+produce thousands of candidates, and judging all of them would cost more than
+the answer is worth. Up to 200 candidates per arm are drawn at random under the
+recorded seed and judged; precision is reported as an estimate with a confidence
+interval rather than as a census. The number drawn and the number skipped are
+both reported, because a cap nobody mentions reads as full coverage.
 
 It runs after the arms, because the arms produce the candidates. It carries the
 same contamination risk the gold set is protected from, and the presented design
@@ -279,10 +299,30 @@ not after.
 
 All against the frozen gold set.
 
-### The unit is the (posting, skill) pair
+### The unit is the (posting, skill) pair, matched by span
 
-Recall and precision are computed over `(posting, skill label)` pairs. A posting
-that says `Python` three times contributes one pair, not three.
+Recall and precision are computed over `(posting, gold mention)` pairs. A
+posting that says `Python` three times contributes one pair, not three.
+
+**An arm finds a gold mention when its matched span overlaps the gold span.**
+Not when its label matches the gold label.
+
+This fills a hole the design left rather than revising a pre-registered choice:
+the matching rule was never specified, and it is fixed here on principle, before
+any arm has been built or scored. It has to be label-agnostic, because the
+annotation itself showed that names are not stable — where both annotators
+marked the same span, 36.7% of the time they named it differently. Scoring by
+label would have measured naming convention rather than coverage, and it would
+have done so asymmetrically: ESCO's preferred labels are written in ESCO's
+register and would rarely string-match an annotator's wording, while a
+hand-built list assembled by one of the annotators inherits that annotator's
+naming for free. The comparison would have been decided by an artifact.
+
+Span overlap is lenient in one direction worth naming: a free-text arm can claim
+a hit for matching `management` inside `supplier performance management`. That
+bias favours the free-text arm, which is to say it runs against the conclusion
+the naming evidence already points toward, so it is a conservative error here
+rather than a flattering one.
 
 This needs stating because the document defines a mention as a span, and span
 recall would answer a question nobody asked. What ships is a skill set per job
