@@ -20,23 +20,30 @@ sequence and open decisions.
 | Canonical job model | #12 | Done |
 | First ingestion path | #13 | Done |
 | Jobs vertical slice | #14 | Done |
+| Second source | #93, #94, #95, #122 | Done |
 | CV processing and matching | #15 | Not started |
 | Analytics and production | #16 | Not started |
 
-Built so far: a source-independent job catalog in PostgreSQL, one working
-ingestion path that fetches Arbeitnow postings, validates them, normalizes them,
-deduplicates them, and stores them with provenance on an hourly schedule, and a
-public read path over the result. Jobs are queried through one cursor-paginated
-service, served by a listing and a detail endpoint, and rendered by a Next.js
-application with URL-backed filters and infinite scroll. A browser test covers
-the three layers together against a seeded catalog.
+Built so far: a source-independent job catalog in PostgreSQL, two ingestion
+paths that fetch postings from Arbeitnow and from configured Greenhouse company
+boards, validate them, normalize them, deduplicate them within and across
+sources, and store them with per-source provenance, and a public read path over
+the result. When two sources describe one posting, precedence decides which owns
+each canonical field, and a posting is only withdrawn when a run that reached
+the end of its source stops listing it and no other source still does. Jobs are
+queried through one cursor-paginated service, served by a listing and a detail
+endpoint, and rendered by a Next.js application with URL-backed filters and
+infinite scroll. A browser test covers the three layers together against a
+seeded catalog.
 
 Not built: accounts, CV handling, skills, matching, and analytics.
 
 The catalog has been proven against real postings, repeatedly, but only in
 throwaway databases. No environment holds them persistently yet, which is the
 one part of the Phase A exit criterion still outstanding and needs a decision
-about where that environment lives rather than more code.
+about where that environment lives rather than more code. Only Arbeitnow is
+scheduled; Greenhouse runs on demand, because scheduling it without somewhere
+to schedule it into would be scheduling into nothing.
 
 ## Decisions
 
@@ -76,6 +83,24 @@ about where that environment lives rather than more code.
   type, and free-text search on title. Source filtering waits until a second
   source exists to make it meaningful. Relevance-ranked search is a different
   sort order and therefore a different cursor, so it stays out of Phase A.
+- **A source owns a canonical field by rank, and silence never wins.** Sources
+  carry a precedence. An unstated value never overwrites a stated one whatever
+  the rank, so a source that omits a field cannot erase it. Between two stated
+  values the higher rank decides, and equal ranks go to the incoming one.
+- **Two postings are the same posting by employer and title, confirmed by
+  place and prose.** The match key blocks candidates on employer and title
+  alone; a candidate is only merged when the cities agree and the descriptions
+  read the same. Location is deliberately outside the key, because the two
+  sources write places differently for the same job.
+- **Absence only means gone when a run was entitled to say so.** A run is
+  processing-complete when it handled everything it fetched, and
+  source-exhausted only when it also reached the end of the source without a
+  budget cap, a skipped board, or a failure. Only exhausted runs may withdraw.
+  A stated expiry date needs no such run: a date the posting asserts about
+  itself is a fact, while absence is an inference.
+- **A posting is retired per source and withdrawn per job.** An unseen posting
+  retires that source's provenance row. The job itself is only marked removed
+  once no un-retired provenance remains.
 
 ### Open
 
@@ -84,8 +109,6 @@ Ordered by how expensive each is to reverse.
 | Decision | Reversibility | Decide in |
 | --- | --- | --- |
 | What a skill is, and where the vocabulary comes from | Expensive: determines the skill tables, extraction, matching, and analytics | Phase B |
-| Multi-source conflict policy: which source owns a canonical field | Expensive: schema and pipeline | Phase A.5 |
-| Job lifecycle rule: when a job becomes expired or removed | Expensive: affects every query that filters on status | Phase A.5 |
 | Where match scores live: computed per request or precomputed | Expensive: schema and pipeline | Phase D |
 | How applying works: a gated redirect, or a tracked application record | Expensive if tracked: new entity, migrations, and endpoints | Phase C |
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
@@ -123,7 +146,7 @@ headings rather than prose, and a badge shown on every card that said nothing.
 **Exit:** met, except that no persistent environment holds the real postings.
 That is a deployment decision rather than a coding one.
 
-### Phase A.5 — Second source
+### Phase A.5 — Second source — done
 
 Add a second provider, decide the conflict policy, and decide the lifecycle
 rule.
@@ -133,8 +156,9 @@ several sources, and fingerprinting exists so the same posting from two boards
 collapses into one job. A new provider needs a client, a validator, and a
 normalizer, and no new orchestration.
 
-What is not built is covered under [known gaps](#known-gaps) below. All three
-must be resolved here, before a second source runs against real data.
+Three gaps found while reviewing the ingestion code had to close first, and
+did: canonical fields were last-writer-wins (#93), no job was ever expired
+(#94), and the fingerprint was weaker across sources than within one (#95).
 
 This phase is early rather than late for two reasons. Deduplication is only
 theoretically exercised while one source exists, and the cheapest moment to
@@ -143,9 +167,27 @@ analytics dashboard read off the catalog. It also multiplies the corpus feeding
 the Phase B decision, so the skill vocabulary is not derived from a single
 job board.
 
-**Exit:** two sources ingest concurrently, the same posting from both resolves
-to one job, and a job absent from one source but present in another keeps the
-correct status.
+Issues #93, #122, #95, and #94, worked in that order. Precedence first,
+because a merge rule is needed before two sources may write one row. Then the
+Greenhouse client, validator, and normalizer over explicitly configured boards,
+with discovery deferred to #120. Then cross-source matching, then lifecycle.
+
+**Exit:** met. Both sources ingest into one catalog, a posting listed by both
+resolves to a single job carrying two provenance rows, and a job absent from one
+source keeps its status while another still lists it.
+
+The order was not cosmetic. Writing the precedence tests surfaced a posting that
+two sources placed in different cities, and matching refused it outright, which
+is why #93 had to precede #95. Measuring #95 against a labelled set rather than
+by inspection mattered too: the first count of duplicate pairs was wrong, and
+the corrected set of 29 is what the rule was tuned against. It recovers 24 of
+them, up from none, with no wrong merges. The remaining five differ by more than
+the rule is willing to overlook.
+
+The lifecycle split earned itself immediately. A run capped at five records is
+processing-complete and not source-exhausted, and against a real board that
+single distinction was the difference between withdrawing twenty-four open jobs
+and withdrawing none.
 
 ### Phase B — Decide the skill model
 
@@ -154,6 +196,15 @@ Reshapes #46, and consequently #47 and #48.
 A design phase, not a build phase. Decide what a skill is, where the vocabulary
 comes from, and how job text maps onto it, judged against the real corpus from
 the previous phases rather than in the abstract.
+
+That corpus does not exist yet. Every run so far has been verified in a database
+that was then deleted, so the phase begins by producing one: a full ingest from
+both sources whose measurements are written down and committed, rather than the
+database itself being kept. What has to be measured is coverage. A curated list
+either captures most of the skill mentions in real postings or it does not, and
+the shape of what it misses decides between a curated list, free text, and a
+taxonomy. Measuring that needs a snapshot, not a hosted environment, so this
+phase does not wait on the deployment decision.
 
 **Exit:** an approved written spec, before any skill table exists.
 
@@ -197,22 +248,24 @@ Caching is decided here, against measured read patterns.
 **Exit:** the application is deployed, observable, and reports job-market
 insights from collected data.
 
-## Known gaps
+## Known gaps — closed
 
-Found while reviewing the ingestion code. None affect the single-source
-pipeline in use today; all three become defects the moment a second source runs.
-Filed as #93, #94, and #95.
+Three gaps found while reviewing the single-source ingestion code, each
+harmless until a second source ran and a defect the moment one did. All three
+closed in the second-source phase, and the rules that replaced them are in
+[the canonical job contract](canonical-job-contract.md).
 
-- **Canonical fields are last-writer-wins.** Persistence overwrites every
-  canonical field on update and no source precedence exists, so two sources
-  describing one job would overwrite each other on every run.
-- **No job is ever expired.** `expired` and `removed` exist in the vocabulary
-  and are never assigned. Status is effectively write-once. With several
-  sources the rule must read every provenance row for a job, because absence
-  from one source does not mean the posting is gone.
-- **The fingerprint is weaker across sources than within one.** Company names,
-  location formats, and title abbreviations are consistent within a provider
-  and not between providers, so cross-source duplicates may be missed.
+- **Canonical fields were last-writer-wins** (#93). Every update overwrote
+  every field and no source precedence existed. Replaced by rank, with silence
+  never overwriting a stated value.
+- **No job was ever expired** (#94). `expired` and `removed` existed in the
+  vocabulary and were never assigned. Replaced by per-source retirement,
+  withdrawal only when no source still lists the job, and only from runs that
+  reached the end of their source.
+- **The fingerprint was weaker across sources than within one** (#95). Company
+  names, location formats, and title abbreviations are consistent within a
+  provider and not between providers. Replaced by a two-stage rule that blocks
+  on employer and title and confirms on place and prose.
 
 ## Open questions carried forward
 
@@ -220,7 +273,15 @@ Filed as #93, #94, and #95.
   record. The second is a new entity and a migration, so it is a Phase C
   decision rather than an implementation detail.
 - **Where a persistent environment lives.** Needed before the catalog can hold
-  real postings outside a test run.
+  real postings outside a test run. It is not needed to decide the skill model,
+  which needs a measured snapshot rather than a running system.
+- **Whether Greenhouse gets scheduled, and how boards are found.** Only
+  Arbeitnow runs on a schedule. The board list is three names in code until
+  #120 replaces it with discovery, and scheduling a hand-written list into a
+  database nobody keeps would prove nothing.
+- **Source filtering on the listing.** Deferred in Phase A on the condition
+  that a second source exists to make it meaningful. It now does, so the
+  condition is met and the deferral is a choice rather than a consequence.
 
 ## Issues that need rewriting before they are picked up
 
