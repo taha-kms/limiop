@@ -4,7 +4,7 @@ ESCO is still downloading, so this is not the result. It is the two arms that
 could be scored, recorded so the numbers exist before the third arrives and
 cannot be quietly re-derived afterwards.
 
-Scored against the gold set frozen at commit `868bc12`: 2059 mentions over 78
+Scored against the gold set frozen at commit `d505459`: 2059 mentions over 78
 postings. An arm finds a gold mention when a span it matched overlaps the gold
 span. Intervals are cluster bootstraps over postings, 10000 resamples.
 

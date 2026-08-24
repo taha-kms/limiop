@@ -1,6 +1,6 @@
 # Results — which skill vocabulary covers real postings
 
-Scored against the gold set frozen at commit `868bc12`, before any arm was
+Scored against the gold set frozen at commit `d505459`, before any arm was
 built or run. 2059 mentions over 78 of 80 sampled postings. Methodology and
 decision rule: `../superpowers/specs/2026-08-23-skill-model-measurement-design.md`.
 
