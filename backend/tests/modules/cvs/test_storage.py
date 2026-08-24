@@ -1,6 +1,7 @@
 import asyncio
 import os
 from collections.abc import Coroutine
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -14,6 +15,7 @@ from app.modules.cvs.storage import (
     CVStorageError,
     FilesystemCVStorage,
     InvalidCVStorageKey,
+    StoredCVObject,
 )
 
 
@@ -21,12 +23,23 @@ def run[T](awaitable: Coroutine[Any, Any, T]) -> T:
     return asyncio.run(awaitable)
 
 
+def store(
+    storage: FilesystemCVStorage,
+    owner_id: UUID,
+    content: bytes,
+    *,
+    max_bytes: int | None = None,
+) -> StoredCVObject:
+    limit = len(content) if max_bytes is None else max_bytes
+    return run(storage.write(owner_id, BytesIO(content), max_bytes=max(1, limit)))
+
+
 def test_a_write_generates_an_opaque_key_and_integrity_metadata(tmp_path: Path) -> None:
     owner_id = uuid4()
     object_id = uuid4()
     storage = FilesystemCVStorage(tmp_path, object_id_factory=lambda: object_id)
 
-    stored = run(storage.write(owner_id, b"%PDF-private"))
+    stored = store(storage, owner_id, b"%PDF-private")
 
     assert stored.key == f"{owner_id.hex}/{object_id.hex}.pdf"
     assert stored.checksum_sha256 == (
@@ -40,7 +53,7 @@ def test_a_write_generates_an_opaque_key_and_integrity_metadata(tmp_path: Path) 
 def test_storage_directories_are_private_to_the_process_user(tmp_path: Path) -> None:
     owner_id = uuid4()
     storage = FilesystemCVStorage(tmp_path, object_id_factory=uuid4)
-    stored = run(storage.write(owner_id, b"content"))
+    stored = store(storage, owner_id, b"content")
 
     assert tmp_path.stat().st_mode & 0o077 == 0
     assert (tmp_path / owner_id.hex).stat().st_mode & 0o077 == 0
@@ -75,10 +88,10 @@ def test_a_key_collision_never_overwrites_the_first_object(tmp_path: Path) -> No
     owner_id = uuid4()
     object_id = uuid4()
     storage = FilesystemCVStorage(tmp_path, object_id_factory=lambda: object_id)
-    first = run(storage.write(owner_id, b"first"))
+    first = store(storage, owner_id, b"first")
 
     with pytest.raises(CVStorageCollision):
-        run(storage.write(owner_id, b"second-private-content"))
+        store(storage, owner_id, b"second-private-content")
 
     assert run(storage.read(first.key, max_bytes=5)) == b"first"
     assert not list(tmp_path.rglob(".upload-*"))
@@ -86,7 +99,7 @@ def test_a_key_collision_never_overwrites_the_first_object(tmp_path: Path) -> No
 
 def test_delete_is_explicit_and_idempotent(tmp_path: Path) -> None:
     storage = FilesystemCVStorage(tmp_path)
-    stored = run(storage.write(uuid4(), b"content"))
+    stored = store(storage, uuid4(), b"content")
 
     assert run(storage.delete(stored.key)) is None
     assert run(storage.delete(stored.key)) is None
@@ -96,7 +109,7 @@ def test_delete_is_explicit_and_idempotent(tmp_path: Path) -> None:
 
 def test_reads_stop_at_the_caller_limit(tmp_path: Path) -> None:
     storage = FilesystemCVStorage(tmp_path)
-    stored = run(storage.write(uuid4(), b"sensitive content"))
+    stored = store(storage, uuid4(), b"sensitive content")
 
     with pytest.raises(CVObjectTooLarge) as raised:
         run(storage.read(stored.key, max_bytes=4))
@@ -104,6 +117,23 @@ def test_reads_stop_at_the_caller_limit(tmp_path: Path) -> None:
     assert "sensitive content" not in str(raised.value)
     with pytest.raises(ValueError, match="positive"):
         run(storage.read(stored.key, max_bytes=0))
+
+
+def test_writes_stop_at_the_caller_limit_and_leave_no_partial_object(tmp_path: Path) -> None:
+    storage = FilesystemCVStorage(tmp_path)
+
+    with pytest.raises(CVObjectTooLarge):
+        store(storage, uuid4(), b"sensitive content", max_bytes=4)
+
+    assert not [path for path in tmp_path.rglob("*") if path.is_file()]
+
+
+def test_writes_reject_a_non_positive_limit(tmp_path: Path) -> None:
+    storage = FilesystemCVStorage(tmp_path)
+    write = storage.write(uuid4(), BytesIO(b"content"), max_bytes=0)
+
+    with pytest.raises(ValueError, match="positive"):
+        run(write)
 
 
 def test_a_failed_publish_cleans_up_and_hides_paths_and_content(
@@ -117,7 +147,7 @@ def test_a_failed_publish_cleans_up_and_hides_paths_and_content(
 
     monkeypatch.setattr(os, "link", refuse_link)
     with pytest.raises(CVStorageError) as raised:
-        run(storage.write(uuid4(), b"private bytes"))
+        store(storage, uuid4(), b"private bytes")
 
     assert str(private_root) not in str(raised.value)
     assert "private bytes" not in str(raised.value)
@@ -140,7 +170,7 @@ def test_a_storage_setup_failure_is_generic(tmp_path: Path) -> None:
     storage = FilesystemCVStorage(root_that_is_a_file)
 
     with pytest.raises(CVStorageError) as raised:
-        run(storage.write(uuid4(), b"sensitive content"))
+        store(storage, uuid4(), b"sensitive content")
 
     assert not isinstance(raised.value, CVStorageCollision)
     assert str(root_that_is_a_file) not in str(raised.value)

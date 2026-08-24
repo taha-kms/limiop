@@ -9,10 +9,18 @@ from fastapi.responses import JSONResponse
 from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.db.session import Database
+from app.modules.cvs.storage import CVStorage, FilesystemCVStorage
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    cv_storage: CVStorage | None = None,
+) -> FastAPI:
     app_settings = settings if settings is not None else get_settings()
+    selected_cv_storage = (
+        cv_storage if cv_storage is not None else FilesystemCVStorage(app_settings.cv_storage_root)
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
@@ -29,6 +37,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.state.settings = app_settings
+    application.state.cv_storage = selected_cv_storage
 
     @application.exception_handler(RequestValidationError)
     async def scrub_validation_errors(

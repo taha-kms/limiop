@@ -8,13 +8,14 @@ from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Protocol
+from typing import IO, Protocol
 from uuid import UUID, uuid4
 
 from anyio import to_thread
 
 KEY_PART = re.compile(r"^[0-9a-f]{32}$")
 OBJECT_NAME = re.compile(r"^[0-9a-f]{32}\.pdf$")
+WRITE_CHUNK_BYTES = 64 * 1024
 
 
 class CVStorageError(Exception):
@@ -45,7 +46,9 @@ class StoredCVObject:
 
 
 class CVStorage(Protocol):
-    async def write(self, owner_id: UUID, content: bytes) -> StoredCVObject: ...
+    async def write(
+        self, owner_id: UUID, content: IO[bytes], *, max_bytes: int
+    ) -> StoredCVObject: ...
 
     async def read(self, key: str, *, max_bytes: int) -> bytes: ...
 
@@ -64,8 +67,10 @@ class FilesystemCVStorage:
         self._root = root
         self._object_id_factory = object_id_factory
 
-    async def write(self, owner_id: UUID, content: bytes) -> StoredCVObject:
-        return await to_thread.run_sync(self._write, owner_id, content)
+    async def write(self, owner_id: UUID, content: IO[bytes], *, max_bytes: int) -> StoredCVObject:
+        if max_bytes < 1:
+            raise ValueError("CV write limit must be positive")
+        return await to_thread.run_sync(self._write, owner_id, content, max_bytes)
 
     async def read(self, key: str, *, max_bytes: int) -> bytes:
         if max_bytes < 1:
@@ -75,10 +80,12 @@ class FilesystemCVStorage:
     async def delete(self, key: str) -> None:
         await to_thread.run_sync(self._delete, key)
 
-    def _write(self, owner_id: UUID, content: bytes) -> StoredCVObject:
+    def _write(self, owner_id: UUID, content: IO[bytes], max_bytes: int) -> StoredCVObject:
         key = f"{owner_id.hex}/{self._object_id_factory().hex}.pdf"
         destination = self._path_for_key(key)
         temporary_path: Path | None = None
+        checksum = hashlib.sha256()
+        size_bytes = 0
         try:
             try:
                 self._root.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -91,7 +98,12 @@ class FilesystemCVStorage:
                 )
                 temporary_path = Path(temporary_name)
                 with os.fdopen(descriptor, "wb") as temporary:
-                    temporary.write(content)
+                    while chunk := content.read(min(WRITE_CHUNK_BYTES, max_bytes - size_bytes + 1)):
+                        size_bytes += len(chunk)
+                        if size_bytes > max_bytes:
+                            raise CVObjectTooLarge("the CV object exceeds the write limit")
+                        temporary.write(chunk)
+                        checksum.update(chunk)
                     temporary.flush()
                     os.fsync(temporary.fileno())
             except OSError:
@@ -112,8 +124,8 @@ class FilesystemCVStorage:
 
         return StoredCVObject(
             key=key,
-            checksum_sha256=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content),
+            checksum_sha256=checksum.hexdigest(),
+            size_bytes=size_bytes,
         )
 
     def _read(self, key: str, max_bytes: int) -> bytes:
