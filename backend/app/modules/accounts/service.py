@@ -1,6 +1,7 @@
 """Account operations, kept out of the route so they can be tested directly."""
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.accounts.models import User, normalize_email
@@ -20,7 +21,15 @@ async def register(session: AsyncSession, request: RegistrationRequest) -> User:
 
     user = User(email=request.email, password_hash=hash_password(request.password))
     session.add(user)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # The pre-check above only catches an address that was already
+        # committed. A second registration for the same address that reaches
+        # this commit before the first one lands still slips past it, and
+        # hits the unique constraint here instead -- the window this closes.
+        await session.rollback()
+        raise EmailAlreadyRegistered(normalized) from None
     await session.refresh(user)
     return user
 

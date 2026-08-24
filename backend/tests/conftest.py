@@ -80,3 +80,25 @@ def migrated_client(database_url: PostgresDsn) -> Iterator[TestClient]:
     with engine.begin() as connection:
         connection.execute(text("DELETE FROM users"))
     engine.dispose()
+
+
+@pytest.fixture
+def production_like_client(database_url: PostgresDsn) -> Iterator[TestClient]:
+    """Like `migrated_client`, but under `Environment.PRODUCTION` -- the only
+    way to observe `Secure` on the session cookie, since it is off by design
+    in local and test."""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(str(database_url))
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM users"))
+    settings = Settings(
+        environment=Environment.PRODUCTION,
+        session_secret="s" * 32,
+        database_url=database_url,
+    )
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM users"))
+    engine.dispose()
