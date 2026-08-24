@@ -11,6 +11,7 @@ from app.core.config import (
     Settings,
 )
 from app.main import create_app
+from app.modules.cvs.policy import DEFAULT_CV_MAX_UPLOAD_BYTES, CVFormat
 
 
 def test_settings_use_safe_defaults() -> None:
@@ -20,6 +21,8 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.environment is Environment.LOCAL
     assert settings.debug is False
     assert str(settings.database_url) == "postgresql+psycopg://localhost/skillsync"
+    assert settings.cv_max_upload_bytes == DEFAULT_CV_MAX_UPLOAD_BYTES
+    assert settings.cv_allowed_formats == (CVFormat.PDF,)
 
 
 def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) -> None:
@@ -31,6 +34,8 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
         "postgresql+psycopg://app@database.example/skillsync",
     )
     monkeypatch.setenv("SKILLSYNC_SESSION_SECRET", "s" * 32)
+    monkeypatch.setenv("SKILLSYNC_CV_MAX_UPLOAD_BYTES", "1048576")
+    monkeypatch.setenv("SKILLSYNC_CV_ALLOWED_FORMATS", '["pdf"]')
 
     settings = Settings()
 
@@ -38,6 +43,25 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
     assert settings.environment is Environment.STAGING
     assert settings.debug is True
     assert str(settings.database_url) == "postgresql+psycopg://app@database.example/skillsync"
+    assert settings.cv_max_upload_bytes == 1048576
+    assert settings.cv_allowed_formats == (CVFormat.PDF,)
+
+
+@pytest.mark.parametrize(
+    ("variable", "value"),
+    [
+        ("SKILLSYNC_CV_MAX_UPLOAD_BYTES", "0"),
+        ("SKILLSYNC_CV_ALLOWED_FORMATS", "[]"),
+        ("SKILLSYNC_CV_ALLOWED_FORMATS", '["docx"]'),
+    ],
+)
+def test_settings_reject_an_unusable_cv_policy(
+    monkeypatch: MonkeyPatch, variable: str, value: str
+) -> None:
+    monkeypatch.setenv(variable, value)
+
+    with pytest.raises(ValidationError):
+        Settings()
 
 
 def test_settings_load_dotenv_file(tmp_path: Path) -> None:
