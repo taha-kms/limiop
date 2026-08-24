@@ -9,12 +9,17 @@ export default function HomePage() {
           Find jobs that match the skills you already have.
         </p>
       </div>
-      <Link
-        href="/jobs"
-        className="w-fit rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white dark:bg-slate-100 dark:text-slate-900"
-      >
-        Browse the job catalogue
-      </Link>
+      <div className="flex flex-wrap gap-3">
+        <Link href="/jobs" className="primary-button">
+          Browse the job catalogue
+        </Link>
+        <Link
+          href="/onboarding"
+          className="w-fit rounded-md border border-slate-300 px-4 py-2 text-sm font-medium dark:border-slate-700"
+        >
+          Build your profile
+        </Link>
+      </div>
     </main>
   );
 }
