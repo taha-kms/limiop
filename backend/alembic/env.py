@@ -9,6 +9,7 @@ from app.core.config import get_settings
 # Imported for its side effect of registering the table on the shared
 # metadata below, not for direct use.
 from app.modules.accounts.models import User  # noqa: F401
+from app.modules.cvs.models import CV  # noqa: F401
 from app.modules.jobs.models import JobSource
 from app.modules.profiles.models import CandidateProfile  # noqa: F401
 from app.modules.skills.models import SkillConcept  # noqa: F401
