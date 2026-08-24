@@ -22,6 +22,7 @@ sequence and open decisions.
 | Jobs vertical slice | #14 | Done |
 | Second source | #93, #94, #95, #122 | Done |
 | Skill model decision | #46 | Done |
+| Identity and sessions | #38, #39, #40 | Done |
 | CV processing and matching | #15 | Not started |
 | Analytics and production | #16 | Not started |
 
@@ -121,7 +122,6 @@ Ordered by how expensive each is to reverse.
 | Where match scores live: computed per request or precomputed | Expensive: schema and pipeline | Phase D |
 | How applying works: a gated redirect, or a tracked application record | Expensive if tracked: new entity, migrations, and endpoints | Phase C |
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
-| Authentication mechanism | Cheap: conventional and swappable | Phase C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
 | What makes an unknown skill legitimate enough to store | Expensive: without it the design re-admits the 85% junk that got free text rejected | Before #46 ships |
@@ -248,8 +248,30 @@ settled. CV extraction has to write skills somewhere, and manual onboarding has
 to ask for them with some control. Nothing before this point needs a user
 account to exist, because the catalogue is public.
 
+Three tracks, and only the third is serial. Identity comes first and blocks
+nothing: #38, #39, #40. The profile track starts once the user row exists and
+runs beside the CV work, because skills do not gate completeness. The CV track
+waits on the session.
+
+**Identity is done.** Accounts, argon2id hashing, registration, login, the
+current-user dependency, and logout here versus everywhere. Sessions are a
+token in an HttpOnly cookie, which is as much a rendering decision as a
+security one: a token held in JavaScript cannot be read by a server component,
+so every personalized page would have become a client fetch and undone the
+first-byte rendering Phase A chose. Revocation is a version claim on the user
+row — ordinary logout clears one device, while a password change or a disabled
+account ends every session.
+
+What review caught there is worth carrying into the remaining tracks, because
+none of it was visible in a passing test suite at 100% coverage: a validation
+error returned the submitted password in the response body, a shared exception
+object leaked request state on every rejection, and password hashing ran on the
+event loop where ten concurrent logins stalled the public catalogue for the best
+part of a second.
+
 **Exit:** a signed-in user has a complete candidate profile, reached by either
-route, and can apply to a job.
+route, and can apply to a job. Identity is met; the profile and CV tracks
+remain.
 
 ### Phase D — Matching
 
