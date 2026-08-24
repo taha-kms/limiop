@@ -64,3 +64,19 @@ def database_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[PostgresDsn]:
         yield PostgresDsn(value)
     finally:
         get_settings.cache_clear()
+
+
+@pytest.fixture
+def migrated_client(database_url: PostgresDsn) -> Iterator[TestClient]:
+    """A client wired to a migrated database, with accounts cleared around it."""
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(str(database_url))
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM users"))
+    settings = Settings(environment=Environment.TEST, database_url=database_url)
+    with TestClient(create_app(settings)) as test_client:
+        yield test_client
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM users"))
+    engine.dispose()
