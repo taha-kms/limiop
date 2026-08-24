@@ -56,3 +56,23 @@ def test_a_validly_signed_token_with_a_malformed_expiry_is_refused() -> None:
         algorithm=ALGORITHM,
     )
     assert read_token(token, secret=SECRET, now=NOW) is None
+
+
+def test_an_unsigned_alg_none_token_is_refused() -> None:
+    claims = {
+        "sub": str(uuid4()),
+        "ver": 1,
+        "exp": int((NOW + timedelta(minutes=60)).timestamp()),
+    }
+    token = jwt.encode(claims, key=None, algorithm="none")
+    assert read_token(token, secret=SECRET, now=NOW) is None
+
+
+def test_a_token_signed_with_a_different_algorithm_is_refused() -> None:
+    claims = {
+        "sub": str(uuid4()),
+        "ver": 1,
+        "exp": int((NOW + timedelta(minutes=60)).timestamp()),
+    }
+    token = jwt.encode(claims, SECRET, algorithm="HS512")
+    assert read_token(token, secret=SECRET, now=NOW) is None

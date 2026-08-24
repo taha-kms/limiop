@@ -12,6 +12,12 @@ class Environment(StrEnum):
     PRODUCTION = "production"
 
 
+# A secret shorter than this is guessable by brute force against an HMAC, so
+# staging and production are refused one below this length the same way they
+# are refused an empty one.
+MIN_SESSION_SECRET_LENGTH = 32
+
+
 class Settings(BaseSettings):
     app_name: str = "SkillSync API"
     environment: Environment = Environment.LOCAL
@@ -37,12 +43,21 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def require_a_session_secret_outside_development(self) -> "Settings":
-        if self.session_secret:
-            return self
+        # Stripped so a whitespace-only value (e.g. an env var set to a
+        # single space) is treated exactly like an empty one, rather than
+        # passing the truthiness check below and becoming the signing key.
+        secret = self.session_secret.strip()
         if self.environment in (Environment.LOCAL, Environment.TEST):
-            object.__setattr__(self, "session_secret", "development-only-session-secret")
+            if not secret:
+                object.__setattr__(self, "session_secret", "development-only-session-secret")
             return self
-        raise ValueError("a session secret is required outside local and test")
+        if not secret:
+            raise ValueError("a session secret is required outside local and test")
+        if len(secret) < MIN_SESSION_SECRET_LENGTH:
+            raise ValueError(
+                f"a session secret must be at least {MIN_SESSION_SECRET_LENGTH} characters"
+            )
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",

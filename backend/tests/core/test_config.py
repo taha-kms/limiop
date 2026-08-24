@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from app.core.config import Environment, Settings
+from app.core.config import MIN_SESSION_SECRET_LENGTH, Environment, Settings
 from app.main import create_app
 
 
@@ -95,3 +95,25 @@ def test_production_accepts_a_supplied_secret() -> None:
 
 def test_the_session_lasts_an_hour_by_default() -> None:
     assert Settings(environment=Environment.LOCAL).session_lifetime_minutes == 60
+
+
+def test_a_whitespace_only_secret_is_refused_outside_development() -> None:
+    with pytest.raises(ValueError, match="session secret"):
+        Settings(environment=Environment.PRODUCTION, session_secret="   ")
+
+
+def test_a_secret_shorter_than_the_minimum_is_refused_outside_development() -> None:
+    short_secret = "s" * (MIN_SESSION_SECRET_LENGTH - 1)
+    with pytest.raises(ValueError, match="session secret"):
+        Settings(environment=Environment.PRODUCTION, session_secret=short_secret)
+
+
+def test_a_secret_of_exactly_the_minimum_length_is_accepted() -> None:
+    secret = "s" * MIN_SESSION_SECRET_LENGTH
+    settings = Settings(environment=Environment.PRODUCTION, session_secret=secret)
+    assert settings.session_secret == secret
+
+
+def test_local_keeps_an_explicitly_supplied_secret_rather_than_the_default() -> None:
+    settings = Settings(environment=Environment.LOCAL, session_secret="s" * 32)
+    assert settings.session_secret == "s" * 32
