@@ -21,6 +21,7 @@ sequence and open decisions.
 | First ingestion path | #13 | Done |
 | Jobs vertical slice | #14 | Done |
 | Second source | #93, #94, #95, #122 | Done |
+| Skill model decision | #46 | Done |
 | CV processing and matching | #15 | Not started |
 | Analytics and production | #16 | Not started |
 
@@ -98,6 +99,15 @@ to schedule it into would be scheduling into nothing.
   budget cap, a skipped board, or a failure. Only exhausted runs may withdraw.
   A stated expiry date needs no such run: a date the posting asserts about
   itself is a fact, while absence is an inference.
+- **The skill model is hybrid.** Known skills normalize to canonical
+  concepts, ESCO is an optional mapping layer where confident, and legitimate
+  unknown skills are preserved. Matching combines pretrained multilingual
+  embeddings with explicit skill overlap and structured profile signals. Job
+  embeddings are precomputed at ingestion, candidate embeddings from the
+  canonical profile, and the first version is a measurable baseline rather than
+  a trained model. Decided against measurement rather than in the abstract:
+  [the decision](superpowers/specs/2026-08-24-skill-model-decision.md),
+  [the evidence](skill-model-measurement/results.md).
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
   once no un-retired provenance remains.
@@ -108,20 +118,21 @@ Ordered by how expensive each is to reverse.
 
 | Decision | Reversibility | Decide in |
 | --- | --- | --- |
-| What a skill is, and where the vocabulary comes from | Expensive: determines the skill tables, extraction, matching, and analytics | Phase B |
 | Where match scores live: computed per request or precomputed | Expensive: schema and pipeline | Phase D |
 | How applying works: a gated redirect, or a tracked application record | Expensive if tracked: new entity, migrations, and endpoints | Phase C |
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | Authentication mechanism | Cheap: conventional and swappable | Phase C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
+| What makes an unknown skill legitimate enough to store | Expensive: without it the design re-admits the 85% junk that got free text rejected | Before #46 ships |
+| Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Phase C |
 
-The skill model is the hinge. Free-text tokens, a curated list, and ESCO
-produce three different databases and three different products, and #47, #48,
-#49, #53, and the analytics tracker all consume whatever it decides. Manual
-onboarding now consumes it too: a form that asks a candidate for their skills
-has to offer a free-text box, an autocomplete over a curated list, or a
-taxonomy picker, and choosing that control is choosing the vocabulary.
+The skill model was the hinge and is now decided. It went to a hybrid because
+each single option failed differently and the failures were measured: free text
+found almost everything by matching almost everything, at 0.151 precision, and
+the two disciplined vocabularies missed more than half. Manual onboarding
+follows from it — a candidate picks canonical concepts with a free-text escape,
+rather than a bare box or a taxonomy picker.
 
 The client-side cache behind infinite scroll is not this table's kind of
 decision. Holding fetched batches so scrolling back up costs no request is part
@@ -189,7 +200,7 @@ processing-complete and not source-exhausted, and against a real board that
 single distinction was the difference between withdrawing twenty-four open jobs
 and withdrawing none.
 
-### Phase B — Decide the skill model
+### Phase B — Decide the skill model — done
 
 Reshapes #46, and consequently #47 and #48.
 
@@ -206,7 +217,22 @@ the shape of what it misses decides between a curated list, free text, and a
 taxonomy. Measuring that needs a snapshot, not a hosted environment, so this
 phase does not wait on the deployment decision.
 
-**Exit:** an approved written spec, before any skill table exists.
+**Exit:** met. The spec is
+[the skill model decision](superpowers/specs/2026-08-24-skill-model-decision.md),
+approved before any skill table exists.
+
+The phase cost more than a design phase normally would, because it had to build
+its own evidence first: a 3354-posting corpus, 80 postings annotated twice by
+independent annotators, 1053 contested spans adjudicated blind, and three
+vocabularies scored against the result. What that bought is a decision with
+numbers behind it rather than three plausible arguments.
+
+It also produced findings the decision rests on. Two annotators following one
+frozen guide named the same span differently 36.7% of the time, which is why
+canonical concepts are not optional. 184 hand-written surface forms beat 65850
+ESCO labels by 12.7 points of recall, which is why ESCO is a mapping layer
+rather than the vocabulary. And 28 of the 38 mentions no arm found were named
+products and standards, which is why unknowns are preserved.
 
 ### Phase C — Identity and CV intake
 
@@ -285,7 +311,9 @@ closed in the second-source phase, and the rules that replaced them are in
 
 ## Issues that need rewriting before they are picked up
 
-- **#46** asks for deterministic skill normalization and names no vocabulary.
-  It cannot be implemented until Phase B decides one.
+- **#46** asked for deterministic skill normalization and named no vocabulary.
+  Phase B has now decided one, so it is rewritten as the canonical-concept
+  model: concepts, surface forms, aliases, and the gate that decides which
+  unknown skills are legitimate enough to store.
 - **#43** presumes a CV storage abstraction. Whether an abstraction is
   warranted, rather than one concrete backend, is a Phase C decision.
