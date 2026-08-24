@@ -24,6 +24,9 @@ def test_settings_use_safe_defaults() -> None:
     assert settings.cv_max_upload_bytes == DEFAULT_CV_MAX_UPLOAD_BYTES
     assert settings.cv_allowed_formats == (CVFormat.PDF,)
     assert settings.cv_storage_root == Path("uploads/cvs")
+    assert settings.cv_pdf_max_pages == 20
+    assert settings.cv_pdf_max_text_characters == 100_000
+    assert settings.cv_pdf_timeout_seconds == 5.0
 
 
 def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) -> None:
@@ -38,6 +41,9 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
     monkeypatch.setenv("SKILLSYNC_CV_MAX_UPLOAD_BYTES", "1048576")
     monkeypatch.setenv("SKILLSYNC_CV_ALLOWED_FORMATS", '["pdf"]')
     monkeypatch.setenv("SKILLSYNC_CV_STORAGE_ROOT", "/private/cvs")
+    monkeypatch.setenv("SKILLSYNC_CV_PDF_MAX_PAGES", "12")
+    monkeypatch.setenv("SKILLSYNC_CV_PDF_MAX_TEXT_CHARACTERS", "50000")
+    monkeypatch.setenv("SKILLSYNC_CV_PDF_TIMEOUT_SECONDS", "2.5")
 
     settings = Settings()
 
@@ -48,6 +54,9 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
     assert settings.cv_max_upload_bytes == 1048576
     assert settings.cv_allowed_formats == (CVFormat.PDF,)
     assert settings.cv_storage_root == Path("/private/cvs")
+    assert settings.cv_pdf_max_pages == 12
+    assert settings.cv_pdf_max_text_characters == 50_000
+    assert settings.cv_pdf_timeout_seconds == 2.5
 
 
 @pytest.mark.parametrize(
@@ -56,6 +65,9 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
         ("SKILLSYNC_CV_MAX_UPLOAD_BYTES", "0"),
         ("SKILLSYNC_CV_ALLOWED_FORMATS", "[]"),
         ("SKILLSYNC_CV_ALLOWED_FORMATS", '["docx"]'),
+        ("SKILLSYNC_CV_PDF_MAX_PAGES", "0"),
+        ("SKILLSYNC_CV_PDF_MAX_TEXT_CHARACTERS", "0"),
+        ("SKILLSYNC_CV_PDF_TIMEOUT_SECONDS", "0"),
     ],
 )
 def test_settings_reject_an_unusable_cv_policy(

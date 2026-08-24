@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     cv_max_upload_bytes: int = Field(default=DEFAULT_CV_MAX_UPLOAD_BYTES, gt=0)
     cv_allowed_formats: Annotated[tuple[CVFormat, ...], Field(min_length=1)] = (CVFormat.PDF,)
     cv_storage_root: Path = Path("uploads/cvs")
+    cv_pdf_max_pages: int = Field(default=20, gt=0)
+    cv_pdf_max_text_characters: int = Field(default=100_000, gt=0)
+    cv_pdf_timeout_seconds: float = Field(default=5.0, gt=0)
 
     @field_validator("database_url")
     @classmethod
