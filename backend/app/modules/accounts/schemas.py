@@ -30,3 +30,14 @@ class AccountRead(BaseModel):
 
     id: UUID
     email: str
+
+
+class LoginRequest(BaseModel):
+    """Credentials offered at login. Deliberately not length-validated: the
+    rules that apply when choosing a password must not leak into checking one,
+    or a rejected length becomes a hint about the stored value."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: EmailStr
+    password: str

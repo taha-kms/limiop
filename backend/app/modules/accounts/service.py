@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.accounts.models import User, normalize_email
-from app.modules.accounts.passwords import hash_password
+from app.modules.accounts.passwords import hash_password, verify_password
 from app.modules.accounts.schemas import RegistrationRequest
 
 
@@ -22,4 +22,24 @@ async def register(session: AsyncSession, request: RegistrationRequest) -> User:
     session.add(user)
     await session.commit()
     await session.refresh(user)
+    return user
+
+
+# A hash to check against when no account matches, so a missing address costs
+# the same time as a wrong password and cannot be told apart by timing.
+_ABSENT_ACCOUNT_HASH = hash_password("no account with this address exists")
+
+
+async def authenticate(session: AsyncSession, email: str, password: str) -> User | None:
+    """The account these credentials belong to, or None."""
+    normalized = normalize_email(email)
+    found = await session.execute(select(User).where(User.normalized_email == normalized))
+    user = found.scalars().first()
+    if user is None:
+        verify_password(password, _ABSENT_ACCOUNT_HASH)
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    if not user.is_active:
+        return None
     return user
