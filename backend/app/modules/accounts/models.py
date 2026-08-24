@@ -8,7 +8,7 @@ cannot both register.
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 from app.db.base import Base
@@ -26,7 +26,22 @@ class User(Base):
     """One account. Owns a profile, CVs, and sessions."""
 
     __tablename__ = "users"
-    __table_args__ = (UniqueConstraint("normalized_email", name="uq_users_normalized_email"),)
+    __table_args__ = (
+        UniqueConstraint("normalized_email", name="uq_users_normalized_email"),
+        # The `@validates` hook below keeps this in sync on ORM attribute
+        # assignment, but it is bypassed by Core-level statements (a bulk
+        # `update(User).values(email=...)`, `insert(User)`, etc). Since this
+        # column carries the uniqueness guarantee on identity, a desync would
+        # let two accounts share an email address, so the relationship is
+        # enforced again here at the database layer. The SQL must keep
+        # mirroring `normalize_email()`: if that function's normalization
+        # ever changes (e.g. unicode folding), this constraint needs a
+        # migration to match.
+        CheckConstraint(
+            "normalized_email = lower(btrim(email))",
+            name="ck_users_normalized_email",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(String(EMAIL_LENGTH), nullable=False)

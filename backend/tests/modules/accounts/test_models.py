@@ -3,7 +3,7 @@ from collections.abc import Awaitable, Callable
 
 import pytest
 from pydantic import PostgresDsn
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import Database
@@ -43,6 +43,21 @@ def test_the_same_address_cannot_register_twice(database_url: PostgresDsn) -> No
         with pytest.raises(IntegrityError):
             async with database.session() as session:
                 session.add(User(email="ada@example.COM", password_hash="y"))
+                await session.commit()
+
+    run_database_test(database_url, test)
+
+
+def test_a_bulk_update_that_desyncs_normalization_is_rejected(database_url: PostgresDsn) -> None:
+    # A Core-level statement bypasses the `@validates` hook entirely, so this
+    # proves the guarantee holds at the database layer, not just in the ORM.
+    async def test(database: Database) -> None:
+        async with database.session() as session:
+            session.add(User(email="ada@example.com", password_hash="x"))
+            await session.commit()
+        with pytest.raises(IntegrityError):
+            async with database.session() as session:
+                await session.execute(update(User).values(email="changed@example.com"))
                 await session.commit()
 
     run_database_test(database_url, test)
