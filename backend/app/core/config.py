@@ -17,6 +17,12 @@ class Environment(StrEnum):
 # are refused an empty one.
 MIN_SESSION_SECRET_LENGTH = 32
 
+# Not a secret: it is in the repository, and it exists only so local
+# development and the test suite have *a* signing key. It is over the floor
+# above because PyJWT warns on every encode with a shorter HMAC key, and a
+# warning on every request is a warning readers stop reading.
+DEVELOPMENT_SESSION_SECRET = "local-development-only-session-secret"
+
 
 class Settings(BaseSettings):
     app_name: str = "SkillSync API"
@@ -49,7 +55,7 @@ class Settings(BaseSettings):
         secret = self.session_secret.strip()
         if self.environment in (Environment.LOCAL, Environment.TEST):
             if not secret:
-                object.__setattr__(self, "session_secret", "development-only-session-secret")
+                object.__setattr__(self, "session_secret", DEVELOPMENT_SESSION_SECRET)
             return self
         if not secret:
             raise ValueError("a session secret is required outside local and test")

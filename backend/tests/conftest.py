@@ -14,11 +14,13 @@ from app.main import create_app
 
 BACKEND_ROOT = Path(__file__).parents[1]
 
-SETTINGS_ENVIRONMENT_VARIABLES = (
-    "SKILLSYNC_APP_NAME",
-    "SKILLSYNC_ENVIRONMENT",
-    "SKILLSYNC_DEBUG",
-    "SKILLSYNC_DATABASE_URL",
+# Derived rather than listed. The hand-written list went stale the moment the
+# session settings were added: nothing cleared SKILLSYNC_SESSION_SECRET, so on
+# a machine where it was exported the suite both failed spuriously and signed
+# its integration tokens with the operator's real key. Deriving it means a
+# setting added tomorrow is isolated the day it lands.
+SETTINGS_ENVIRONMENT_VARIABLES = tuple(
+    f"SKILLSYNC_{field.upper()}" for field in Settings.model_fields
 )
 
 

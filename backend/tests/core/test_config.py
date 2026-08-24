@@ -4,7 +4,12 @@ import pytest
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from app.core.config import MIN_SESSION_SECRET_LENGTH, Environment, Settings
+from app.core.config import (
+    DEVELOPMENT_SESSION_SECRET,
+    MIN_SESSION_SECRET_LENGTH,
+    Environment,
+    Settings,
+)
 from app.main import create_app
 
 
@@ -79,7 +84,15 @@ def test_application_factory_uses_injected_settings() -> None:
 
 
 def test_local_gets_a_development_secret() -> None:
-    assert Settings(environment=Environment.LOCAL).session_secret
+    assert Settings(environment=Environment.LOCAL).session_secret == DEVELOPMENT_SESSION_SECRET
+
+
+def test_the_development_secret_satisfies_the_floor_this_file_defines() -> None:
+    """The fallback used to be a character under the minimum declared beside
+    it, which is not a real weakness -- it is only ever used locally -- but it
+    made PyJWT warn on every encode, and the file that sets the rule was the
+    one breaking it."""
+    assert len(DEVELOPMENT_SESSION_SECRET) >= MIN_SESSION_SECRET_LENGTH
 
 
 def test_production_refuses_to_start_without_a_secret() -> None:

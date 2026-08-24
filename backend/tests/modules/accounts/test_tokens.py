@@ -74,5 +74,8 @@ def test_a_token_signed_with_a_different_algorithm_is_refused() -> None:
         "ver": 1,
         "exp": int((NOW + timedelta(minutes=60)).timestamp()),
     }
-    token = jwt.encode(claims, SECRET, algorithm="HS512")
+    # Doubled only to clear PyJWT's 64-byte recommendation for SHA512, so
+    # forging the token does not warn. What is pinned is the algorithm, not
+    # the key.
+    token = jwt.encode(claims, SECRET * 2, algorithm="HS512")
     assert read_token(token, secret=SECRET, now=NOW) is None
