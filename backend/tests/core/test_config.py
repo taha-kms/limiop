@@ -25,6 +25,7 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
         "SKILLSYNC_DATABASE_URL",
         "postgresql+psycopg://app@database.example/skillsync",
     )
+    monkeypatch.setenv("SKILLSYNC_SESSION_SECRET", "s" * 32)
 
     settings = Settings()
 
@@ -75,3 +76,22 @@ def test_application_factory_uses_injected_settings() -> None:
     assert application.title == "Factory API"
     assert application.debug is True
     assert application.state.settings is settings
+
+
+def test_local_gets_a_development_secret() -> None:
+    assert Settings(environment=Environment.LOCAL).session_secret
+
+
+def test_production_refuses_to_start_without_a_secret() -> None:
+    with pytest.raises(ValueError, match="session secret"):
+        Settings(environment=Environment.PRODUCTION)
+
+
+def test_production_accepts_a_supplied_secret() -> None:
+    settings = Settings(environment=Environment.PRODUCTION, session_secret="s" * 32)
+    assert settings.session_secret == "s" * 32
+    assert settings.session_cookie_secure is True
+
+
+def test_the_session_lasts_an_hour_by_default() -> None:
+    assert Settings(environment=Environment.LOCAL).session_lifetime_minutes == 60
