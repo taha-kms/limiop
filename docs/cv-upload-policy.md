@@ -47,3 +47,16 @@ the hostile filename or file content. A rejected file is never parsed, and
 parser failures never return extracted document content. CV text is plain text
 only and must be escaped by any renderer; it is never accepted or served as
 markup.
+
+## PDF parsing
+
+Accepted storage does not make a PDF safe to parse. Text extraction runs in a
+disposable subprocess and terminates that process at the configured deadline.
+It independently enforces the stored-file checksum and size, page count, and
+normalized text length. The defaults are 20 pages, 100,000 text characters,
+and five seconds; the `SKILLSYNC_CV_PDF_*` settings configure them.
+
+Encrypted, malformed, over-limit, timed-out, and image-only documents return
+distinct content-free failure reasons. Successful extraction returns normalized
+plain text and a page count. It does not render PDF content, interpret markup,
+extract skills, or update a candidate profile.
