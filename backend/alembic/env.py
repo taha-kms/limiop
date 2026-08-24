@@ -5,6 +5,10 @@ from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.core.config import get_settings
+
+# Imported for its side effect of registering the table on the shared
+# metadata below, not for direct use.
+from app.modules.accounts.models import User  # noqa: F401
 from app.modules.jobs.models import JobSource
 
 config = context.config

@@ -4,7 +4,12 @@ import pytest
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
-from app.core.config import Environment, Settings
+from app.core.config import (
+    DEVELOPMENT_SESSION_SECRET,
+    MIN_SESSION_SECRET_LENGTH,
+    Environment,
+    Settings,
+)
 from app.main import create_app
 
 
@@ -25,6 +30,7 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
         "SKILLSYNC_DATABASE_URL",
         "postgresql+psycopg://app@database.example/skillsync",
     )
+    monkeypatch.setenv("SKILLSYNC_SESSION_SECRET", "s" * 32)
 
     settings = Settings()
 
@@ -75,3 +81,52 @@ def test_application_factory_uses_injected_settings() -> None:
     assert application.title == "Factory API"
     assert application.debug is True
     assert application.state.settings is settings
+
+
+def test_local_gets_a_development_secret() -> None:
+    assert Settings(environment=Environment.LOCAL).session_secret == DEVELOPMENT_SESSION_SECRET
+
+
+def test_the_development_secret_satisfies_the_floor_this_file_defines() -> None:
+    """The fallback used to be a character under the minimum declared beside
+    it, which is not a real weakness -- it is only ever used locally -- but it
+    made PyJWT warn on every encode, and the file that sets the rule was the
+    one breaking it."""
+    assert len(DEVELOPMENT_SESSION_SECRET) >= MIN_SESSION_SECRET_LENGTH
+
+
+def test_production_refuses_to_start_without_a_secret() -> None:
+    with pytest.raises(ValueError, match="session secret"):
+        Settings(environment=Environment.PRODUCTION)
+
+
+def test_production_accepts_a_supplied_secret() -> None:
+    settings = Settings(environment=Environment.PRODUCTION, session_secret="s" * 32)
+    assert settings.session_secret == "s" * 32
+    assert settings.session_cookie_secure is True
+
+
+def test_the_session_lasts_an_hour_by_default() -> None:
+    assert Settings(environment=Environment.LOCAL).session_lifetime_minutes == 60
+
+
+def test_a_whitespace_only_secret_is_refused_outside_development() -> None:
+    with pytest.raises(ValueError, match="session secret"):
+        Settings(environment=Environment.PRODUCTION, session_secret="   ")
+
+
+def test_a_secret_shorter_than_the_minimum_is_refused_outside_development() -> None:
+    short_secret = "s" * (MIN_SESSION_SECRET_LENGTH - 1)
+    with pytest.raises(ValueError, match="session secret"):
+        Settings(environment=Environment.PRODUCTION, session_secret=short_secret)
+
+
+def test_a_secret_of_exactly_the_minimum_length_is_accepted() -> None:
+    secret = "s" * MIN_SESSION_SECRET_LENGTH
+    settings = Settings(environment=Environment.PRODUCTION, session_secret=secret)
+    assert settings.session_secret == secret
+
+
+def test_local_keeps_an_explicitly_supplied_secret_rather_than_the_default() -> None:
+    settings = Settings(environment=Environment.LOCAL, session_secret="s" * 32)
+    assert settings.session_secret == "s" * 32
