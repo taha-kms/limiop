@@ -42,6 +42,9 @@ Configuration uses environment variables with the `SKILLSYNC_` prefix. Local val
 | `SKILLSYNC_CV_MAX_UPLOAD_BYTES` | `5242880` | Maximum accepted CV file size in bytes |
 | `SKILLSYNC_CV_ALLOWED_FORMATS` | `["pdf"]` | JSON list of enabled CV formats; currently only `pdf` is supported |
 | `SKILLSYNC_CV_STORAGE_ROOT` | `uploads/cvs` | Private local-development directory for CV objects |
+| `SKILLSYNC_CV_PDF_MAX_PAGES` | `20` | Maximum pages the PDF parser will inspect |
+| `SKILLSYNC_CV_PDF_MAX_TEXT_CHARACTERS` | `100000` | Maximum normalized characters returned from one CV |
+| `SKILLSYNC_CV_PDF_TIMEOUT_SECONDS` | `5` | Hard subprocess deadline for PDF parsing |
 
 The default database URL is a credential-free local development placeholder. Override it in `.env` to match your PostgreSQL authentication setup. URL-encode special characters in credentials.
 
@@ -58,6 +61,10 @@ Version one accepts a PDF within the configured size limit and returns only the
 new record's public metadata; storage keys and checksums stay internal. The
 boundary and retention rules are documented in the
 [CV upload policy](../docs/cv-upload-policy.md).
+
+PDF text extraction runs in a disposable subprocess with file, page, output,
+and time limits. It returns normalized plain text only. Skill extraction and
+candidate-profile updates are separate downstream work.
 
 ## Docker Compose
 
