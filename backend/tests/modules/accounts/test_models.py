@@ -63,6 +63,22 @@ def test_a_bulk_update_that_desyncs_normalization_is_rejected(database_url: Post
     run_database_test(database_url, test)
 
 
+def test_an_address_with_a_tab_is_normalized_not_rejected(database_url: PostgresDsn) -> None:
+    # `str.strip()` (used by `normalize_email()`) trims tabs; a bare `btrim`
+    # trims only spaces. The database constraint's trim set must match, or a
+    # value Python considers already-normalized is rejected as a false
+    # desync.
+    async def test(database: Database) -> None:
+        async with database.session() as session:
+            session.add(User(email="\tada@example.com\t", password_hash="x"))
+            await session.commit()
+        async with database.session() as session:
+            user = (await session.execute(select(User))).scalars().one()
+            assert user.normalized_email == "ada@example.com"
+
+    run_database_test(database_url, test)
+
+
 def test_a_new_account_starts_active_at_version_one(database_url: PostgresDsn) -> None:
     async def test(database: Database) -> None:
         async with database.session() as session:

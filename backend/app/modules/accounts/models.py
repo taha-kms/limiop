@@ -33,12 +33,18 @@ class User(Base):
         # `update(User).values(email=...)`, `insert(User)`, etc). Since this
         # column carries the uniqueness guarantee on identity, a desync would
         # let two accounts share an email address, so the relationship is
-        # enforced again here at the database layer. The SQL must keep
-        # mirroring `normalize_email()`: if that function's normalization
-        # ever changes (e.g. unicode folding), this constraint needs a
-        # migration to match.
+        # enforced again here at the database layer. The trim set
+        # (space, tab, newline, carriage return, form feed, vertical tab)
+        # is chosen to match Python's `str.strip()`, which `normalize_email()`
+        # uses — a plain `btrim(email)` only trims spaces and would reject
+        # an address `str.strip()` considers already-normalized. This is a
+        # known, accepted limit, not the full match: `str.strip()` also
+        # removes unicode whitespace (e.g. a non-breaking space), which this
+        # expression does not, so such an address would still be rejected.
+        # If `normalize_email()`'s normalization ever changes, this
+        # constraint needs a migration to match.
         CheckConstraint(
-            "normalized_email = lower(btrim(email))",
+            r"normalized_email = lower(btrim(email, E' \t\n\r\f\v'))",
             name="ck_users_normalized_email",
         ),
     )

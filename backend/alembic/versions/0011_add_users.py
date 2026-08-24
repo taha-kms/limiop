@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("normalized_email", name="uq_users_normalized_email"),
         # Mirrors `normalize_email()`. See the comment on `User.__table_args__`.
         sa.CheckConstraint(
-            "normalized_email = lower(btrim(email))",
+            r"normalized_email = lower(btrim(email, E' \t\n\r\f\v'))",
             name="ck_users_normalized_email",
         ),
     )
