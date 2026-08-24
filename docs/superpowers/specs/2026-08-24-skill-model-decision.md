@@ -4,7 +4,7 @@ Approved 2026-08-24. This is the Phase B exit: the spec that exists before any
 skill table does.
 
 Evidence: `../../skill-model-measurement/results.md`, measured against a gold
-set frozen at commit `868bc12` before any candidate vocabulary was built.
+set frozen at commit `d505459` before any candidate vocabulary was built.
 
 ## The decision
 
