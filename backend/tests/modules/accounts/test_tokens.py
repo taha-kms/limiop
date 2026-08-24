@@ -5,7 +5,11 @@ import jwt
 
 from app.modules.accounts.tokens import ALGORITHM, SessionClaims, issue_token, read_token
 
-SECRET = "s" * 32
+# 64 bytes so neither SHA256 nor SHA512 draws PyJWT's key-length warning.
+# The HS512 forgery below has to sign with this same key: if it signed with a
+# different one, the signature check alone would reject it and the test would
+# pass against a server that had been widened to accept HS512.
+SECRET = "s" * 64
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
 
 
@@ -74,8 +78,8 @@ def test_a_token_signed_with_a_different_algorithm_is_refused() -> None:
         "ver": 1,
         "exp": int((NOW + timedelta(minutes=60)).timestamp()),
     }
-    # Doubled only to clear PyJWT's 64-byte recommendation for SHA512, so
-    # forging the token does not warn. What is pinned is the algorithm, not
-    # the key.
-    token = jwt.encode(claims, SECRET * 2, algorithm="HS512")
+    # Signed with the very key read_token verifies against, so the algorithm is
+    # the only thing wrong with this token. That is what makes the assertion
+    # below a test of the algorithm allowlist rather than of the signature.
+    token = jwt.encode(claims, SECRET, algorithm="HS512")
     assert read_token(token, secret=SECRET, now=NOW) is None
