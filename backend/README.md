@@ -39,6 +39,8 @@ Configuration uses environment variables with the `SKILLSYNC_` prefix. Local val
 | `SKILLSYNC_ENVIRONMENT` | `local` | Runtime environment: `local`, `test`, `staging`, or `production` |
 | `SKILLSYNC_DEBUG` | `false` | Enables FastAPI debug behavior |
 | `SKILLSYNC_DATABASE_URL` | `postgresql+psycopg://localhost/skillsync` | Async-capable PostgreSQL connection URL |
+| `SKILLSYNC_CV_MAX_UPLOAD_BYTES` | `5242880` | Maximum accepted CV file size in bytes |
+| `SKILLSYNC_CV_ALLOWED_FORMATS` | `["pdf"]` | JSON list of enabled CV formats; currently only `pdf` is supported |
 
 The default database URL is a credential-free local development placeholder. Override it in `.env` to match your PostgreSQL authentication setup. URL-encode special characters in credentials.
 

@@ -1,8 +1,11 @@
 from enum import StrEnum
 from functools import lru_cache
+from typing import Annotated
 
-from pydantic import PostgresDsn, field_validator, model_validator
+from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from app.modules.cvs.policy import DEFAULT_CV_MAX_UPLOAD_BYTES, CVFormat
 
 
 class Environment(StrEnum):
@@ -34,6 +37,8 @@ class Settings(BaseSettings):
     # without one rather than quietly signing tokens with a known key.
     session_secret: str = ""
     session_lifetime_minutes: int = 60
+    cv_max_upload_bytes: int = Field(default=DEFAULT_CV_MAX_UPLOAD_BYTES, gt=0)
+    cv_allowed_formats: Annotated[tuple[CVFormat, ...], Field(min_length=1)] = (CVFormat.PDF,)
 
     @field_validator("database_url")
     @classmethod
