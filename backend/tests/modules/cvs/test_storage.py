@@ -126,8 +126,14 @@ def test_writes_stop_at_the_caller_limit_and_leave_no_partial_object(tmp_path: P
         store(storage, uuid4(), b"sensitive content", max_bytes=4)
 
     assert not [path for path in tmp_path.rglob("*") if path.is_file()]
+
+
+def test_writes_reject_a_non_positive_limit(tmp_path: Path) -> None:
+    storage = FilesystemCVStorage(tmp_path)
+    write = storage.write(uuid4(), BytesIO(b"content"), max_bytes=0)
+
     with pytest.raises(ValueError, match="positive"):
-        run(storage.write(uuid4(), BytesIO(b"content"), max_bytes=0))
+        run(write)
 
 
 def test_a_failed_publish_cleans_up_and_hides_paths_and_content(

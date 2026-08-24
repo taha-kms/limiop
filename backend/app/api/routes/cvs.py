@@ -20,7 +20,6 @@ router = APIRouter(prefix="/api/v1/cvs", tags=["cvs"])
 
 @router.post(
     "",
-    response_model=CVRead,
     status_code=status.HTTP_201_CREATED,
     summary="Upload a CV",
     responses={
