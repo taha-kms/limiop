@@ -1,0 +1,157 @@
+{
+  "taken_at": "2026-08-23T20:09:00.702068+00:00",
+  "corpus_digest": "73cf06bd0a5111fcd8022119f79db4bc7abc28a9084a649ec0f200fb935c63da",
+  "jobs": 3354,
+  "employer_count": 761,
+  "jobs_with_two_sources": 10,
+  "published_at_range": {
+    "earliest": "2019-04-17T18:46:26+00:00",
+    "latest": "2026-08-23T19:30:29+00:00",
+    "postings_without_a_date": 0
+  },
+  "by_source": {
+    "arbeitnow": 1447,
+    "greenhouse": 1955
+  },
+  "greenhouse_boards": {
+    "anthropic": {
+      "postings": 518,
+      "sector": "technology"
+    },
+    "carta": {
+      "postings": 60,
+      "sector": "financial technology"
+    },
+    "datadog": {
+      "postings": 447,
+      "sector": "technology"
+    },
+    "discord": {
+      "postings": 51,
+      "sector": "technology"
+    },
+    "duolingo": {
+      "postings": 69,
+      "sector": "education technology"
+    },
+    "everlane": {
+      "postings": 41,
+      "sector": "apparel retail"
+    },
+    "figma": {
+      "postings": 161,
+      "sector": "technology"
+    },
+    "glossier": {
+      "postings": 21,
+      "sector": "beauty retail"
+    },
+    "hellofresh": {
+      "postings": 400,
+      "sector": "food retail and logistics"
+    },
+    "hudl": {
+      "postings": 29,
+      "sector": "sports technology"
+    },
+    "khanacademy": {
+      "postings": 26,
+      "sector": "education nonprofit"
+    },
+    "peloton": {
+      "postings": 49,
+      "sector": "consumer fitness"
+    },
+    "sweetgreen": {
+      "postings": 47,
+      "sector": "restaurants"
+    },
+    "talkspace": {
+      "postings": 18,
+      "sector": "healthcare"
+    },
+    "wikimedia": {
+      "postings": 18,
+      "sector": "nonprofit"
+    }
+  },
+  "boards_configured": 15,
+  "boards_that_returned_postings": 15,
+  "employers_outside_engineering": {
+    "configured": [
+      "hellofresh",
+      "sweetgreen",
+      "peloton",
+      "everlane",
+      "glossier",
+      "khanacademy",
+      "wikimedia",
+      "talkspace"
+    ],
+    "returned_postings": [
+      "hellofresh",
+      "sweetgreen",
+      "peloton",
+      "everlane",
+      "glossier",
+      "khanacademy",
+      "wikimedia",
+      "talkspace"
+    ],
+    "floor": 5,
+    "floor_met": true
+  },
+  "largest_employers": {
+    "Anthropic": 518,
+    "Datadog": 447,
+    "hellofresh": 395,
+    "Figma": 161,
+    "Duolingo": 69,
+    "Carta": 60,
+    "Discord": 51,
+    "Peloton": 49,
+    "sweetgreen": 47,
+    "Taxtalente.de": 39,
+    "Everlane": 39,
+    "MY Humancapital GmbH": 38,
+    "Hudl": 29,
+    "Khan Academy": 26,
+    "Cordes Consulting GmbH": 25,
+    "Enpal": 23,
+    "Glossier": 21,
+    "Wikimedia Foundation": 18,
+    "Talkspace": 18,
+    "speechify": 14,
+    "Alexander Thamm GmbH": 13,
+    "sumup": 11,
+    "Pammys\u2122 (dieseo GmbH)": 10,
+    "wppmedia": 10,
+    "DeepL": 8,
+    "virtual7 GmbH": 8,
+    "Jobbusters\u00ae GmbH": 7,
+    "1Komma5Grad": 7,
+    "Westwing Group SE": 7,
+    "Teampicnic": 7
+  },
+  "ingest_runs_observed": [
+    {
+      "source": "arbeitnow",
+      "fetched": 1450,
+      "reached_the_end": false,
+      "source_exhausted": false,
+      "failure_reasons": [
+        "fetch: page 11 returned status 429",
+        "persist: this record is indistinguishable from 2 stored jobs; resolve them before ingesting this record"
+      ]
+    },
+    {
+      "source": "greenhouse",
+      "fetched": 1956,
+      "reached_the_end": true,
+      "source_exhausted": false,
+      "failure_reasons": [
+        "normalize: location: String should have at most 255 characters"
+      ]
+    }
+  ]
+}

@@ -25,6 +25,11 @@ dev = [
   "pytest-cov>=7.1.0,<8.0.0",
   "ruff>=0.16.3,<1.0.0",
 ]
+# Only the measurement tooling under `scripts/` needs these, and the served
+# application must not grow a dependency because a one-off study wanted one.
+research = [
+  "py3langid>=0.3.0,<1.0.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]
@@ -70,3 +75,9 @@ known-first-party = ["app", "tests"]
 python_version = "3.12"
 strict = true
 files = ["app", "scripts", "tests"]
+
+[[tool.mypy.overrides]]
+# py3langid ships no type information. It is used only by the measurement
+# tooling, behind one wrapper that gives it a typed surface.
+module = ["py3langid.*"]
+ignore_missing_imports = true
