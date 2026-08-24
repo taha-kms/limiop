@@ -8,5 +8,9 @@ describe("HomePage", () => {
     render(<HomePage />);
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("SkillSync");
+    expect(screen.getByRole("link", { name: "Build your profile" })).toHaveAttribute(
+      "href",
+      "/onboarding",
+    );
   });
 });
