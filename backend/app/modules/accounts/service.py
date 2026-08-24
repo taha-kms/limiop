@@ -5,7 +5,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.accounts.models import User, normalize_email
-from app.modules.accounts.passwords import hash_password, verify_password
+from app.modules.accounts.passwords import (
+    hash_password,
+    hash_password_in_thread,
+    verify_password_in_thread,
+)
 from app.modules.accounts.schemas import RegistrationRequest
 
 
@@ -19,7 +23,7 @@ async def register(session: AsyncSession, request: RegistrationRequest) -> User:
     if existing.scalars().first() is not None:
         raise EmailAlreadyRegistered(normalized)
 
-    user = User(email=request.email, password_hash=hash_password(request.password))
+    user = User(email=request.email, password_hash=await hash_password_in_thread(request.password))
     session.add(user)
     try:
         await session.commit()
@@ -45,9 +49,9 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> User
     found = await session.execute(select(User).where(User.normalized_email == normalized))
     user = found.scalars().first()
     if user is None:
-        verify_password(password, _ABSENT_ACCOUNT_HASH)
+        await verify_password_in_thread(password, _ABSENT_ACCOUNT_HASH)
         return None
-    if not verify_password(password, user.password_hash):
+    if not await verify_password_in_thread(password, user.password_hash):
         return None
     if not user.is_active:
         return None
