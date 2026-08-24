@@ -15,6 +15,10 @@ name.
 Rate limiting is treated as a wait rather than a failure. That is the same
 mistake #129 records in the Arbeitnow client, and it would be a poor showing to
 repeat it against someone else's API while holding the issue open.
+
+The walk checkpoints to disk and resumes from it. A first attempt lost ninety
+minutes to a killed process holding everything in memory, which is a bad trade
+against a few seconds of writing a file every few hundred concepts.
 """
 
 import argparse
@@ -35,6 +39,7 @@ TAXONOMY = "https://ec.europa.eu/esco/api/resource/taxonomy"
 # the connection pool is now sized to match and the walk reports progress
 # instead of going silent for an hour.
 CONCURRENCY = 16
+CHECKPOINT_EVERY = 400
 MAX_ATTEMPTS = 5
 BACKOFF_SECONDS = 2.0
 TIMEOUT_SECONDS = 30.0
@@ -47,6 +52,7 @@ class Walk:
     seen: set[str] = field(default_factory=set)
     concepts: dict[str, dict[str, Any]] = field(default_factory=dict)
     failures: list[str] = field(default_factory=list)
+    frontier: list[str] = field(default_factory=list)
 
 
 async def get(
@@ -91,9 +97,37 @@ def record(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def walk(client: httpx2.AsyncClient, roots: list[str]) -> Walk:
-    state = Walk()
-    frontier = list(roots)
+def load_checkpoint(path: Path) -> Walk:
+    """Whatever a previous run got through, or an empty walk."""
+    if not path.exists():
+        return Walk()
+    saved = json.loads(path.read_text())
+    return Walk(
+        seen=set(saved["seen"]),
+        concepts=saved["concepts"],
+        failures=saved["failures"],
+        frontier=saved["frontier"],
+    )
+
+
+def save_checkpoint(path: Path, state: Walk, frontier: list[str]) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "seen": sorted(state.seen),
+                "concepts": state.concepts,
+                "failures": state.failures,
+                "frontier": frontier,
+            }
+        )
+    )
+
+
+async def walk(client: httpx2.AsyncClient, roots: list[str], checkpoint: Path) -> Walk:
+    state = load_checkpoint(checkpoint)
+    frontier = state.frontier or list(roots)
+    if state.concepts:
+        print(f"resuming: {len(state.concepts)} concepts already fetched", flush=True)
     limiter = asyncio.Semaphore(CONCURRENCY)
 
     async def visit(uri: str) -> list[str]:
@@ -103,16 +137,22 @@ async def walk(client: httpx2.AsyncClient, roots: list[str]) -> Walk:
             state.failures.append(uri)
             return []
         state.concepts[uri] = record(payload)
-        if len(state.concepts) % 500 == 0:
-            print(f"    {len(state.concepts)} concepts", flush=True)
         return children_of(payload)
 
     while frontier:
-        batch = [uri for uri in frontier if uri not in state.seen]
-        state.seen.update(batch)
-        results = await asyncio.gather(*(visit(uri) for uri in batch))
-        frontier = [child for group in results for child in group if child not in state.seen]
-        print(f"  visited {len(state.concepts)}, frontier {len(frontier)}", flush=True)
+        pending = [uri for uri in frontier if uri not in state.seen]
+        discovered: list[str] = []
+        # In slices, so a kill costs one slice rather than the whole level. The
+        # widest level of the pillar is thirteen thousand concepts across.
+        for start in range(0, len(pending), CHECKPOINT_EVERY):
+            slice_ = pending[start : start + CHECKPOINT_EVERY]
+            state.seen.update(slice_)
+            results = await asyncio.gather(*(visit(uri) for uri in slice_))
+            discovered.extend(child for group in results for child in group)
+            remaining = pending[start + CHECKPOINT_EVERY :]
+            save_checkpoint(checkpoint, state, remaining + discovered)
+            print(f"  {len(state.concepts)} concepts, {len(remaining)} left in level", flush=True)
+        frontier = [uri for uri in discovered if uri not in state.seen]
     return state
 
 
@@ -124,7 +164,7 @@ async def run(destination: Path) -> None:
             raise SystemExit("could not read the ESCO skills concept scheme")
         roots = [c["uri"] for c in top["_links"].get("hasTopConcept", [])]
         print(f"top concepts: {len(roots)}")
-        state = await walk(client, roots)
+        state = await walk(client, roots, destination.with_suffix(".checkpoint.json"))
 
     usable = [c for c in state.concepts.values() if c["preferred"]]
     destination.parent.mkdir(parents=True, exist_ok=True)
