@@ -124,7 +124,7 @@ Ordered by how expensive each is to reverse.
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
-| What makes an unknown skill legitimate enough to store | Expensive: without it the design re-admits the 85% junk that got free text rejected | Before #46 ships |
+| What makes an unknown skill legitimate enough to store | Expensive: without it the design re-admits the 85% junk that got free text rejected | After #46; before #47 or #48 stores an unknown |
 | Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Phase C |
 
 The skill model was the hinge and is now decided. It went to a hybrid because
