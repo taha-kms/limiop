@@ -15,7 +15,10 @@ def test_a_hash_does_not_contain_the_password() -> None:
 
 
 def test_the_same_password_hashes_differently_every_time() -> None:
-    assert hash_password("hunter2") != hash_password("hunter2")
+    # argon2 salts each call, so hashing one password twice must not repeat.
+    first = hash_password("hunter2")
+    second = hash_password("hunter2")
+    assert first != second
 
 
 def test_the_right_password_verifies() -> None:
@@ -49,7 +52,8 @@ def test_hashing_runs_off_the_event_loop_thread(monkeypatch: pytest.MonkeyPatch)
 
     loop_thread = asyncio.run(run())
 
-    assert hashing_threads and loop_thread not in hashing_threads
+    assert hashing_threads
+    assert loop_thread not in hashing_threads
 
 
 def test_verifying_runs_off_the_event_loop_thread(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -70,7 +74,8 @@ def test_verifying_runs_off_the_event_loop_thread(monkeypatch: pytest.MonkeyPatc
     matched, loop_thread = asyncio.run(run())
 
     assert matched is True
-    assert verifying_threads and loop_thread not in verifying_threads
+    assert verifying_threads
+    assert loop_thread not in verifying_threads
 
 
 def test_no_more_hashes_run_at_once_than_the_bound(monkeypatch: pytest.MonkeyPatch) -> None:

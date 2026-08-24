@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
 sessions_router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
 
-@router.post("", response_model=AccountRead, status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_account(
     request: RegistrationRequest,
     session: Annotated[AsyncSession, Depends(get_database_session)],

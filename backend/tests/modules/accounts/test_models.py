@@ -40,10 +40,11 @@ def test_the_same_address_cannot_register_twice(database_url: PostgresDsn) -> No
         async with database.session() as session:
             session.add(User(email="Ada@Example.com", password_hash="x"))
             await session.commit()
-        with pytest.raises(IntegrityError):
-            async with database.session() as session:
-                session.add(User(email="ada@example.COM", password_hash="y"))
+        async with database.session() as session:
+            session.add(User(email="ada@example.COM", password_hash="y"))
+            with pytest.raises(IntegrityError):
                 await session.commit()
+            await session.rollback()
 
     run_database_test(database_url, test)
 
@@ -55,10 +56,12 @@ def test_a_bulk_update_that_desyncs_normalization_is_rejected(database_url: Post
         async with database.session() as session:
             session.add(User(email="ada@example.com", password_hash="x"))
             await session.commit()
-        with pytest.raises(IntegrityError):
-            async with database.session() as session:
+        async with database.session() as session:
+            # The CHECK fires when the UPDATE runs, not when the transaction
+            # commits, so the statement itself is what has to raise.
+            with pytest.raises(IntegrityError):
                 await session.execute(update(User).values(email="changed@example.com"))
-                await session.commit()
+            await session.rollback()
 
     run_database_test(database_url, test)
 

@@ -25,8 +25,9 @@ def reject_once() -> HTTPException:
     settings = Settings(environment=Environment.TEST)
 
     async def reject() -> HTTPException:
+        no_session = cast(AsyncSession, None)
         with pytest.raises(HTTPException) as raised:
-            await current_user(request, cast(AsyncSession, None), settings)
+            await current_user(request, no_session, settings)
         return raised.value
 
     return asyncio.run(reject())

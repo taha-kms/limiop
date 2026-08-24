@@ -8,6 +8,6 @@ from app.modules.accounts.schemas import AccountRead
 router = APIRouter(prefix="/api/v1/me", tags=["accounts"])
 
 
-@router.get("", response_model=AccountRead)
+@router.get("")
 async def read_me(user: CurrentUser) -> AccountRead:
     return AccountRead.model_validate(user)
