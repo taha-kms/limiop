@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.db.session import Database
 from app.modules.accounts.models import User
 from app.modules.accounts.tokens import read_token
+from app.modules.cvs.storage import CVStorage
 
 # Declared here because both the route that sets it and the dependency that
 # reads it need the same name, and two copies is one rename away from a bug.
@@ -29,6 +30,10 @@ async def get_database_session(
 
 def get_application_settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
+
+
+def get_cv_storage(request: Request) -> CVStorage:
+    return cast(CVStorage, request.app.state.cv_storage)
 
 
 def _unauthorised() -> HTTPException:

@@ -51,6 +51,14 @@ durable volume, so set a different private directory or mount one when local CVs
 must survive a container replacement. A production object-storage backend is
 intentionally not part of the current implementation.
 
+## CV intake
+
+`POST /api/v1/cvs` accepts one authenticated multipart field named `file`.
+Version one accepts a PDF within the configured size limit and returns only the
+new record's public metadata; storage keys and checksums stay internal. The
+boundary and retention rules are documented in the
+[CV upload policy](../docs/cv-upload-policy.md).
+
 ## Docker Compose
 
 From the repository root:
