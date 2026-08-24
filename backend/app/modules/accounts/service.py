@@ -52,3 +52,15 @@ async def authenticate(session: AsyncSession, email: str, password: str) -> User
     if not user.is_active:
         return None
     return user
+
+
+async def end_all_sessions(session: AsyncSession, user: User) -> None:
+    """Invalidate every token already issued for this account.
+
+    Strong enough that it is reserved for the cases that want it: a password
+    change, a disabled account, and an explicit request to sign out everywhere.
+    Ordinary logout clears one cookie and leaves other devices alone.
+    """
+    user.token_version += 1
+    session.add(user)
+    await session.commit()

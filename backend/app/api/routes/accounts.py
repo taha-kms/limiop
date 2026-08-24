@@ -6,10 +6,20 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import SESSION_COOKIE, get_application_settings, get_database_session
+from app.api.dependencies import (
+    SESSION_COOKIE,
+    CurrentUser,
+    get_application_settings,
+    get_database_session,
+)
 from app.core.config import Settings
 from app.modules.accounts.schemas import AccountRead, LoginRequest, RegistrationRequest
-from app.modules.accounts.service import EmailAlreadyRegistered, authenticate, register
+from app.modules.accounts.service import (
+    EmailAlreadyRegistered,
+    authenticate,
+    end_all_sessions,
+    register,
+)
 from app.modules.accounts.tokens import SessionClaims, issue_token
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -60,4 +70,37 @@ async def log_in(
         samesite="lax",
         max_age=settings.session_lifetime_minutes * 60,
         path="/",
+    )
+
+
+@sessions_router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+async def log_out(
+    response: Response,
+    settings: Annotated[Settings, Depends(get_application_settings)],
+) -> None:
+    """This device only. A token stolen before now survives until it expires,
+    which is why the lifetime is short rather than why this is stronger."""
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+    )
+
+
+@sessions_router.delete("/all", status_code=status.HTTP_204_NO_CONTENT)
+async def log_out_everywhere(
+    user: CurrentUser,
+    response: Response,
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+    settings: Annotated[Settings, Depends(get_application_settings)],
+) -> None:
+    await end_all_sessions(session, user)
+    response.delete_cookie(
+        SESSION_COOKIE,
+        path="/",
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
     )
