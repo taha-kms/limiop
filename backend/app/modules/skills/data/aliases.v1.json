@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "vocabulary_version": "2026.08.24.1",
+  "concepts": [
+    {
+      "id": "0246485d-4c94-4c2f-9440-71ab4a8c5688",
+      "preferred_label": "PostgreSQL"
+    },
+    {
+      "id": "232ecb21-00dc-4128-9722-f2db0cd3f407",
+      "preferred_label": "C#"
+    },
+    {
+      "id": "0693f5c8-8854-4942-9fee-95236777a4a0",
+      "preferred_label": "Product demonstration"
+    },
+    {
+      "id": "ae570e96-e15e-4986-a132-2fd3c56ca9ea",
+      "preferred_label": "Analytical thinking"
+    },
+    {
+      "id": "d36f46c1-739b-4983-ba9d-bbe1e69900c9",
+      "preferred_label": "Organizational skills"
+    },
+    {
+      "id": "ab91b72b-f5ab-4c16-a434-5c23ff1669f6",
+      "preferred_label": "Project management"
+    },
+    {
+      "id": "ee970315-38c1-4dae-813f-a8d9c2e809dd",
+      "preferred_label": "Ownership"
+    },
+    {
+      "id": "8229a398-e35f-4172-85fb-69fd94572cb4",
+      "preferred_label": "Artificial intelligence"
+    },
+    {
+      "id": "fae3dab6-7005-4784-97b4-adb3008dfc8a",
+      "preferred_label": "Adobe Illustrator"
+    }
+  ],
+  "surface_forms": [
+    {
+      "surface_form": "PostgreSQL",
+      "concept_ids": ["0246485d-4c94-4c2f-9440-71ab4a8c5688"]
+    },
+    {
+      "surface_form": "Postgres",
+      "concept_ids": ["0246485d-4c94-4c2f-9440-71ab4a8c5688"]
+    },
+    {
+      "surface_form": "Postgre SQL",
+      "concept_ids": ["0246485d-4c94-4c2f-9440-71ab4a8c5688"]
+    },
+    {
+      "surface_form": "C#",
+      "concept_ids": ["232ecb21-00dc-4128-9722-f2db0cd3f407"]
+    },
+    {
+      "surface_form": "C Sharp",
+      "concept_ids": ["232ecb21-00dc-4128-9722-f2db0cd3f407"]
+    },
+    {
+      "surface_form": "Product demonstration",
+      "concept_ids": ["0693f5c8-8854-4942-9fee-95236777a4a0"]
+    },
+    {
+      "surface_form": "Product demo",
+      "concept_ids": ["0693f5c8-8854-4942-9fee-95236777a4a0"]
+    },
+    {
+      "surface_form": "Product demos",
+      "concept_ids": ["0693f5c8-8854-4942-9fee-95236777a4a0"]
+    },
+    {
+      "surface_form": "Analytical thinking",
+      "concept_ids": ["ae570e96-e15e-4986-a132-2fd3c56ca9ea"]
+    },
+    {
+      "surface_form": "Analytical skills",
+      "concept_ids": ["ae570e96-e15e-4986-a132-2fd3c56ca9ea"]
+    },
+    {
+      "surface_form": "Organizational",
+      "concept_ids": ["d36f46c1-739b-4983-ba9d-bbe1e69900c9"]
+    },
+    {
+      "surface_form": "Organisational",
+      "concept_ids": ["d36f46c1-739b-4983-ba9d-bbe1e69900c9"]
+    },
+    {
+      "surface_form": "Organizational skills",
+      "concept_ids": ["d36f46c1-739b-4983-ba9d-bbe1e69900c9"]
+    },
+    {
+      "surface_form": "Organisational skills",
+      "concept_ids": ["d36f46c1-739b-4983-ba9d-bbe1e69900c9"]
+    },
+    {
+      "surface_form": "Project management",
+      "concept_ids": ["ab91b72b-f5ab-4c16-a434-5c23ff1669f6"]
+    },
+    {
+      "surface_form": "Ownership",
+      "concept_ids": ["ee970315-38c1-4dae-813f-a8d9c2e809dd"]
+    },
+    {
+      "surface_form": "Accountability",
+      "concept_ids": ["ee970315-38c1-4dae-813f-a8d9c2e809dd"]
+    },
+    {
+      "surface_form": "Artificial intelligence",
+      "concept_ids": ["8229a398-e35f-4172-85fb-69fd94572cb4"]
+    },
+    {
+      "surface_form": "Generative AI",
+      "concept_ids": ["8229a398-e35f-4172-85fb-69fd94572cb4"]
+    },
+    {
+      "surface_form": "Adobe Illustrator",
+      "concept_ids": ["fae3dab6-7005-4784-97b4-adb3008dfc8a"]
+    },
+    {
+      "surface_form": "AI",
+      "concept_ids": [
+        "8229a398-e35f-4172-85fb-69fd94572cb4",
+        "fae3dab6-7005-4784-97b4-adb3008dfc8a"
+      ]
+    }
+  ]
+}
