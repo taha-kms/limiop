@@ -23,6 +23,8 @@ RUN groupadd --gid 10001 skillsync \
 
 WORKDIR /app
 
+RUN install -d -o skillsync -g skillsync -m 0700 /app/uploads/cvs
+
 COPY --from=builder /opt/venv /opt/venv
 COPY --chown=skillsync:skillsync alembic.ini ./
 COPY --chown=skillsync:skillsync alembic ./alembic

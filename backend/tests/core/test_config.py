@@ -23,6 +23,7 @@ def test_settings_use_safe_defaults() -> None:
     assert str(settings.database_url) == "postgresql+psycopg://localhost/skillsync"
     assert settings.cv_max_upload_bytes == DEFAULT_CV_MAX_UPLOAD_BYTES
     assert settings.cv_allowed_formats == (CVFormat.PDF,)
+    assert settings.cv_storage_root == Path("uploads/cvs")
 
 
 def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) -> None:
@@ -36,6 +37,7 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
     monkeypatch.setenv("SKILLSYNC_SESSION_SECRET", "s" * 32)
     monkeypatch.setenv("SKILLSYNC_CV_MAX_UPLOAD_BYTES", "1048576")
     monkeypatch.setenv("SKILLSYNC_CV_ALLOWED_FORMATS", '["pdf"]')
+    monkeypatch.setenv("SKILLSYNC_CV_STORAGE_ROOT", "/private/cvs")
 
     settings = Settings()
 
@@ -45,6 +47,7 @@ def test_settings_load_prefixed_environment_variables(monkeypatch: MonkeyPatch) 
     assert str(settings.database_url) == "postgresql+psycopg://app@database.example/skillsync"
     assert settings.cv_max_upload_bytes == 1048576
     assert settings.cv_allowed_formats == (CVFormat.PDF,)
+    assert settings.cv_storage_root == Path("/private/cvs")
 
 
 @pytest.mark.parametrize(

@@ -41,8 +41,15 @@ Configuration uses environment variables with the `SKILLSYNC_` prefix. Local val
 | `SKILLSYNC_DATABASE_URL` | `postgresql+psycopg://localhost/skillsync` | Async-capable PostgreSQL connection URL |
 | `SKILLSYNC_CV_MAX_UPLOAD_BYTES` | `5242880` | Maximum accepted CV file size in bytes |
 | `SKILLSYNC_CV_ALLOWED_FORMATS` | `["pdf"]` | JSON list of enabled CV formats; currently only `pdf` is supported |
+| `SKILLSYNC_CV_STORAGE_ROOT` | `uploads/cvs` | Private local-development directory for CV objects |
 
 The default database URL is a credential-free local development placeholder. Override it in `.env` to match your PostgreSQL authentication setup. URL-encode special characters in credentials.
+
+The filesystem CV backend is for local development. It writes with private
+directory permissions and atomic publication. The container directory is not a
+durable volume, so set a different private directory or mount one when local CVs
+must survive a container replacement. A production object-storage backend is
+intentionally not part of the current implementation.
 
 ## Docker Compose
 

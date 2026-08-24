@@ -1,5 +1,6 @@
 from enum import StrEnum
 from functools import lru_cache
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, PostgresDsn, field_validator, model_validator
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     session_lifetime_minutes: int = 60
     cv_max_upload_bytes: int = Field(default=DEFAULT_CV_MAX_UPLOAD_BYTES, gt=0)
     cv_allowed_formats: Annotated[tuple[CVFormat, ...], Field(min_length=1)] = (CVFormat.PDF,)
+    cv_storage_root: Path = Path("uploads/cvs")
 
     @field_validator("database_url")
     @classmethod
