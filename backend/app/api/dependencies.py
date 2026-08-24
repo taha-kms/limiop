@@ -31,7 +31,18 @@ def get_application_settings(request: Request) -> Settings:
     return cast(Settings, request.app.state.settings)
 
 
-_UNAUTHORISED = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="not signed in")
+def _unauthorised() -> HTTPException:
+    """A fresh rejection, built at each raise site.
+
+    The wording lives here rather than at the raise sites so every branch of
+    `current_user` stays indistinguishable, but the object must not be shared:
+    CPython appends a frame to an exception's `__traceback__` on every `raise`
+    of that object, and a module-level instance is never collected, so a
+    shared one accumulates every rejected request's frames -- and the
+    `Request`, ASGI scope and resolved dependencies those frames pin -- for
+    the life of the process.
+    """
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="not signed in")
 
 
 async def current_user(
@@ -47,18 +58,18 @@ async def current_user(
     """
     token = request.cookies.get(SESSION_COOKIE)
     if not token:
-        raise _UNAUTHORISED
+        raise _unauthorised()
     claims = read_token(token, secret=settings.session_secret, now=datetime.now(UTC))
     if claims is None:
-        raise _UNAUTHORISED
+        raise _unauthorised()
     found = await session.execute(select(User).where(User.id == claims.user_id))
     user = found.scalars().first()
     if user is None or not user.is_active:
-        raise _UNAUTHORISED
+        raise _unauthorised()
     # The generation check. A token issued before a password change carries the
     # old number and stops here.
     if user.token_version != claims.token_version:
-        raise _UNAUTHORISED
+        raise _unauthorised()
     return user
 
 
