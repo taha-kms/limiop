@@ -9,8 +9,9 @@ building against a choice nobody made on purpose.
 
 Architecture and technology direction live in
 [the project context](PROJECT_CONTEXT.md). The stored job shape lives in
-[the canonical job contract](canonical-job-contract.md). This file only covers
-sequence and open decisions.
+[the canonical job contract](canonical-job-contract.md), and the gate for adding
+or blocking providers lives in [the job source policy](job-source-policy.md).
+This file only covers sequence and open decisions.
 
 ## Where the project stands
 
