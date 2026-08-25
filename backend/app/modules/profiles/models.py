@@ -12,6 +12,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    PrimaryKeyConstraint,
     String,
     Text,
     UniqueConstraint,
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 from app.modules.accounts.models import User
 from app.modules.jobs.domain import EmploymentType, WorkplaceType
+from app.modules.skills.models import VOCABULARY_VERSION_LENGTH, SkillConcept
 
 PROFILE_COMPLETE_SQL = """
 display_name IS NOT NULL
@@ -116,3 +118,50 @@ class CandidateProfile(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
     user: Mapped[User] = relationship()
+    skills: Mapped[list["CandidateProfileSkill"]] = relationship(
+        back_populates="profile",
+        passive_deletes=True,
+    )
+
+
+class CandidateProfileSkill(Base):
+    """A canonical skill selected for one candidate profile."""
+
+    __tablename__ = "candidate_profile_skills"
+    __table_args__ = (
+        CheckConstraint(
+            "length(btrim(vocabulary_version)) > 0",
+            name="ck_candidate_profile_skills_vocabulary_version_not_blank",
+        ),
+        PrimaryKeyConstraint(
+            "profile_id",
+            "concept_id",
+            name="pk_candidate_profile_skills",
+        ),
+    )
+
+    profile_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "candidate_profiles.id",
+            name="fk_candidate_profile_skills_profile_id_candidate_profiles",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+    )
+    concept_id: Mapped[UUID] = mapped_column(
+        ForeignKey(
+            "skill_concepts.id",
+            name="fk_candidate_profile_skills_concept_id_skill_concepts",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+        index=True,
+    )
+    vocabulary_version: Mapped[str] = mapped_column(
+        String(VOCABULARY_VERSION_LENGTH), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    profile: Mapped[CandidateProfile] = relationship(back_populates="skills")
+    concept: Mapped[SkillConcept] = relationship()

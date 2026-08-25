@@ -4,11 +4,22 @@ from datetime import datetime
 from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.modules.jobs.domain import EmploymentType, WorkplaceType
 
 ShortText = Annotated[str, Field(min_length=1, max_length=255)]
+SkillTerm = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=255),
+]
 
 
 class CandidateProfileUpdate(BaseModel):
@@ -74,3 +85,20 @@ class CandidateProfileRead(BaseModel):
     profile_complete: bool
     created_at: datetime
     updated_at: datetime
+
+
+class CandidateProfileSkillCreate(BaseModel):
+    """A vocabulary term selected by the signed-in candidate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    term: SkillTerm
+
+
+class CandidateProfileSkillRead(BaseModel):
+    """One stored canonical concept and its resolution provenance."""
+
+    concept_id: UUID
+    preferred_label: str
+    vocabulary_version: str
+    created_at: datetime

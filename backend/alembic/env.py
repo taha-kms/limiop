@@ -11,7 +11,7 @@ from app.core.config import get_settings
 from app.modules.accounts.models import User  # noqa: F401
 from app.modules.cvs.models import CV  # noqa: F401
 from app.modules.jobs.models import JobSource
-from app.modules.profiles.models import CandidateProfile  # noqa: F401
+from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill  # noqa: F401
 from app.modules.skills.models import SkillConcept  # noqa: F401
 
 config = context.config
