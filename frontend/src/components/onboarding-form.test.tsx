@@ -6,6 +6,10 @@ import type { CandidateProfile } from "@/lib/api/profile";
 
 import { OnboardingForm } from "./onboarding-form";
 
+vi.mock("./skill-picker", () => ({
+  SkillPicker: () => <p>Profile skill picker</p>,
+}));
+
 function profile(overrides: Partial<CandidateProfile> = {}): CandidateProfile {
   return {
     id: "00000000-0000-0000-0000-000000000001",
@@ -45,7 +49,7 @@ describe("OnboardingForm", () => {
     await user.type(await screen.findByLabelText("Where are you based?"), "London");
     await user.click(screen.getByRole("button", { name: "Save and continue" }));
 
-    expect(await screen.findByText("Step 3 of 3")).toBeVisible();
+    expect(await screen.findByText("Step 3 of 4")).toBeVisible();
     expect(fetch).toHaveBeenNthCalledWith(
       2,
       "/api/profile",
@@ -70,7 +74,7 @@ describe("OnboardingForm", () => {
 
     render(<OnboardingForm />);
 
-    expect(await screen.findByText("Step 3 of 3")).toBeVisible();
+    expect(await screen.findByText("Step 3 of 4")).toBeVisible();
     expect(screen.queryByLabelText("What should employers call you?")).not.toBeInTheDocument();
   });
 
@@ -92,14 +96,38 @@ describe("OnboardingForm", () => {
     const user = userEvent.setup();
     render(<OnboardingForm />);
 
-    await user.click(await screen.findByRole("button", { name: "Complete profile" }));
+    await user.click(await screen.findByRole("button", { name: "Save and continue" }));
     expect(screen.getByRole("alert")).toHaveTextContent(/Choose at least one workplace/);
 
     await user.click(screen.getByRole("checkbox", { name: "Hybrid" }));
     await user.click(screen.getByRole("checkbox", { name: "Full-time" }));
-    await user.click(screen.getByRole("button", { name: "Complete profile" }));
+    await user.click(screen.getByRole("button", { name: "Save and continue" }));
 
     expect(await screen.findByRole("heading", { name: "Your profile is ready" })).toBeVisible();
+    expect(screen.getByText("Step 4 of 4")).toBeVisible();
+    expect(screen.getByText("Profile skill picker")).toBeVisible();
+  });
+
+  it("keeps the skill control reachable when an existing profile is complete", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        response(
+          profile({
+            display_name: "Ada",
+            location: "London",
+            workplace_types: ["hybrid"],
+            employment_types: ["full-time"],
+            profile_complete: true,
+          }),
+        ),
+      ),
+    );
+
+    render(<OnboardingForm />);
+
+    expect(await screen.findByText("Step 4 of 4")).toBeVisible();
+    expect(screen.getByText("Profile skill picker")).toBeVisible();
   });
 
   it("explains that authentication is required", async () => {

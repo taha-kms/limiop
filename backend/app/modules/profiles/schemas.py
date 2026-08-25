@@ -88,11 +88,30 @@ class CandidateProfileRead(BaseModel):
 
 
 class CandidateProfileSkillCreate(BaseModel):
-    """A vocabulary term selected by the signed-in candidate."""
+    """Exactly one canonical selection supplied by the signed-in candidate.
+
+    ``term`` remains for the resolution contract introduced with profile-skill
+    persistence. The interactive picker uses ``concept_id`` so it never sends
+    user-entered text as a skill selection.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    term: SkillTerm
+    concept_id: UUID | None = None
+    term: SkillTerm | None = None
+
+    @model_validator(mode="after")
+    def require_one_selection(self) -> Self:
+        if (self.concept_id is None) == (self.term is None):
+            raise ValueError("provide exactly one of concept_id or term")
+        return self
+
+
+class SkillConceptRead(BaseModel):
+    """A canonical concept offered by the profile skill picker."""
+
+    concept_id: UUID
+    preferred_label: str
 
 
 class CandidateProfileSkillRead(BaseModel):

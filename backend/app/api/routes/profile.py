@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import CurrentUser, get_database_session
@@ -13,6 +13,8 @@ from app.modules.profiles.schemas import (
     CandidateProfileSkillCreate,
     CandidateProfileSkillRead,
     CandidateProfileUpdate,
+    SkillConceptRead,
+    SkillTerm,
 )
 from app.modules.profiles.service import (
     ProfileNotFound,
@@ -20,10 +22,12 @@ from app.modules.profiles.service import (
     SkillRefusalReason,
     SkillTermRefused,
     add_profile_skill,
+    add_profile_skill_by_concept_id,
     find_profile,
     list_profile_skills,
     remove_profile_skill,
     save_profile,
+    search_skill_concepts,
 )
 
 router = APIRouter(prefix="/api/v1/profile", tags=["profile"])
@@ -73,6 +77,19 @@ async def read_profile_skills(
     return [_skill_read(skill) for skill in skills]
 
 
+@router.get("/skills/search")
+async def search_profile_skill_concepts(
+    q: Annotated[SkillTerm, Query()],
+    _user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> list[SkillConceptRead]:
+    concepts = await search_skill_concepts(session, q)
+    return [
+        SkillConceptRead(concept_id=concept.id, preferred_label=concept.preferred_label)
+        for concept in concepts
+    ]
+
+
 @router.post("/skills", status_code=status.HTTP_201_CREATED)
 async def create_profile_skill(
     request: CandidateProfileSkillCreate,
@@ -80,7 +97,11 @@ async def create_profile_skill(
     session: Annotated[AsyncSession, Depends(get_database_session)],
 ) -> CandidateProfileSkillRead:
     try:
-        skill = await add_profile_skill(session, user.id, request.term)
+        if request.concept_id is not None:
+            skill = await add_profile_skill_by_concept_id(session, user.id, request.concept_id)
+        else:
+            assert request.term is not None
+            skill = await add_profile_skill(session, user.id, request.term)
     except ProfileNotFound:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="profile not started"
