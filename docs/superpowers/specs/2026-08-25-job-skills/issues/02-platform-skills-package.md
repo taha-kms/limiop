@@ -25,13 +25,27 @@ the answer that respects the rule rather than bending it.
 - Package configuration matching the other packages: `ruff.toml`, mypy, and a
   pytest configuration with the same coverage gate.
 
-## Evaluate it, do not just test it
-The extractor is scored, not merely unit-tested. Run it against
-`docs/skill-model-measurement/gold-set.json` and report precision and recall
-against the adjudicated annotations. `docs/skill-model-measurement/results.md`
-records what the hand-written surface forms achieved; this extractor should be
-in that neighbourhood, and a large divergence in either direction means
-something is wrong with the harness rather than being good news.
+## Evaluate it on what survives, and say so
+
+The full evaluation is not possible and will not become possible. The gold
+set's posting text was never committed, and only 14 of its 78 postings are
+still recoverable from the live catalog by hash — the other 64 have expired
+from the board. That is roughly 350 of 2059 adjudicated mentions.
+
+Score the extractor against those 14 postings and report precision and recall
+as a **partial sanity check**, stated as such everywhere it appears. Do not
+compare the result to the figures in `results.md`: those came from 80 postings
+double-annotated with 1053 spans adjudicated blind, and a number from 14
+postings is not the same measurement. Presenting them side by side would invite
+exactly that comparison.
+
+What the partial check is good for: catching an extractor that is broken,
+tokenizing wrongly, or missing obvious matches. What it cannot do: tell you
+whether this extractor is better or worse than the hand-written surface forms.
+
+Report the recovered posting count and mention count alongside the scores, so
+the reader knows the denominator. If fewer than 14 postings resolve when you
+run it, report the number you actually got rather than the number written here.
 
 ## Update the boundary contract
 `tests/architecture/test_boundaries.py` gains rules for the new package:
