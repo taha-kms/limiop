@@ -6,6 +6,39 @@ x-backend-environment: &backend-environment
   SKILLSYNC_DEBUG: "false"
   SKILLSYNC_ENVIRONMENT: local
 
+x-airflow-environment: &airflow-environment
+  AIRFLOW_HOME: /opt/airflow
+  AIRFLOW_JWT_SECRET_FILE: /opt/airflow/jwt-secret
+  AIRFLOW_METADATA_DATABASE: ${AIRFLOW_METADATA_DATABASE:-airflow}
+  AIRFLOW__API_AUTH__JWT_SECRET_CMD: cat /opt/airflow/jwt-secret
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+  AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+  AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/simple-auth-passwords.json
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg://${POSTGRES_USER:-skillsync}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${AIRFLOW_METADATA_DATABASE:-airflow}
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_ASYNC: postgresql+psycopg://${POSTGRES_USER:-skillsync}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@database:5432/${AIRFLOW_METADATA_DATABASE:-airflow}
+  AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+  POSTGRES_DB: ${POSTGRES_DB:-skillsync}
+  POSTGRES_HOST: database
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: ${POSTGRES_USER:-skillsync}
+  SKILLSYNC_DATABASE_URL: ${SKILLSYNC_DATABASE_URL:?Set SKILLSYNC_DATABASE_URL in .env}
+
+x-airflow-service: &airflow-service
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: skillsync-airflow:local
+  environment: *airflow-environment
+  init: true
+  profiles:
+    - pipelines
+  volumes:
+    - airflow_data:/opt/airflow
+    - ./airflow/dags:/opt/airflow/dags:ro
+
 services:
   database:
     image: postgres:17.11-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
@@ -67,5 +100,61 @@ services:
     ports:
       - "127.0.0.1:${SKILLSYNC_API_PORT:-8000}:8000"
 
+  airflow-init:
+    <<: *airflow-service
+    command:
+      - /bin/sh
+      - -c
+      - python /app/airflow/bootstrap.py && airflow db migrate
+    depends_on:
+      database:
+        condition: service_healthy
+      migrate-backend:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-service
+    command:
+      - /bin/sh
+      - -c
+      - airflow dag-processor --daemon && exec airflow scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://localhost:8974/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  airflow-apiserver:
+    <<: *airflow-service
+    command: ["airflow", "api-server"]
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://localhost:8080/api/v2/monitor/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+    ports:
+      - "127.0.0.1:${AIRFLOW_API_PORT:-8080}:8080"
+
 volumes:
+  airflow_data:
   postgres_data:
