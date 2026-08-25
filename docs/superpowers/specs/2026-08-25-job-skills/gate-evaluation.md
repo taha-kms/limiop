@@ -109,15 +109,39 @@ from the rule, so the aggregate 38-positive denominator is sufficient.
 
 ## Decision
 
-**Reject every unresolved candidate.** After the canonical resolver returns no
-concept, the extractor must emit no stored unknown and must not promote the
-candidate to a concept. There are no exceptions for frequency, employer count,
-capitalization, acronym shape, or token count. Known canonical resolutions are
-unchanged. Replace this closed rule only after a versioned evaluation links
-every proposed candidate to a posting, normalized form, evidence span, and
-employer; marks the complete genuine-unknown population including the 38-miss
-tail; blindly labels sentence fragments and boilerplate as negative examples;
-and reports both required admission fractions.
+**Reject every unresolved candidate for matching. Record it as an
+observation.**
+
+Two different things were being decided under one word. After the canonical
+resolver returns no concept:
+
+- The candidate is **never** written to `job_skills`, never promoted to a
+  concept, and never reaches matching or analytics. There are no exceptions for
+  frequency, employer count, capitalization, acronym shape, or token count.
+  This is the closed rule the evaluation supports, and it is what protects
+  matching from the population that scored 0.151 precision as free text.
+- The candidate **is** written to `job_skill_mentions`, which nothing matches
+  against. Recording an observation is not admitting a skill.
+
+The second half is what makes the first half temporary rather than permanent.
+The evaluation above failed for want of records carrying a candidate, its
+posting, its employer, and its span together. That is exactly what the
+observation table accumulates, from two sources running hourly against a
+database that now persists. The gate becomes scoreable from production
+observations rather than from a second hand-annotated corpus.
+
+Each observation carries enough provenance to evaluate it later: the raw
+extracted value as written, the normalized value where one exists, the job it
+came from, when it was first and last seen and how often, and the version of
+the extractor that produced it. Extractor version is separate from vocabulary
+version: a change in either can explain why a term stopped resolving, and
+without both recorded the two are indistinguishable.
+
+Promotion out of the inbox is a later decision, made against those
+observations, requiring the same evidence this evaluation could not find:
+every candidate linked to a posting, normalized form, span, and employer; the
+genuine-unknown population marked; junk labelled blind; and both admission
+fractions reported.
 
 The three permissive rules and their combination lose because none can be
 scored against either required population. Choosing a threshold among them

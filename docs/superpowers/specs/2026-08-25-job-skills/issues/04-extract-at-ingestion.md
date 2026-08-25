@@ -11,8 +11,15 @@ it.
 ## Scope
 - The ingestion pipeline loads the current vocabulary, runs `platform_skills`
   over each posting's text, and writes the result: resolved mentions into
-  `job_skills`, unresolved ones that pass the gate into `job_skill_mentions`.
-  Unresolved mentions that fail the gate are discarded, not stored.
+  `job_skills`, and every unresolved mention into `job_skill_mentions`.
+
+  The gate decided in #130 is closed for matching and open for observation:
+  nothing unresolved may ever reach `job_skills`, and nothing unresolved may be
+  promoted to a concept, but the mention itself is recorded with its
+  provenance. Recording an observation is not admitting a skill. Do not filter
+  observations by frequency, shape, or any other rule — the whole point is that
+  no such rule has been measured yet, and filtering now would destroy the
+  evidence needed to measure one.
 - Extraction happens inside the same transaction that persists the job. A job
   with half its skills is worse than a job with none, because the missing half
   is invisible.

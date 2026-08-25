@@ -22,11 +22,16 @@ job_skills(
 )
 
 job_skill_mentions(
-  id              uuid primary key,
-  job_id          uuid → jobs(id) on delete cascade,
-  normalized_form varchar,
-  surface_form    varchar,
-  evidence        jsonb
+  id                uuid primary key,
+  job_id            uuid → jobs(id) on delete cascade,
+  surface_form      varchar not null,   -- raw, exactly as the posting wrote it
+  normalized_form   varchar,            -- nullable: normalization may not apply
+  occurrences       integer not null,
+  first_seen_at     timestamptz not null,
+  last_seen_at      timestamptz not null,
+  extractor_version varchar not null,
+  evidence          jsonb,
+  unique (job_id, surface_form, extractor_version)
 )
 ```
 
@@ -39,7 +44,20 @@ job_skill_mentions(
   product shows matched skills, and "matched because the posting said Postgres"
   is a different experience from an unexplained checkmark.
 - `job_skill_mentions` is an inbox for unresolved mentions. Nothing matches
-  against it. `normalized_form` is a column and is indexed, because the gate's
+  against it, nothing joins it to `skill_concepts`, and no API exposes it. It
+  exists to make the gate decidable later: the evaluation in
+  `gate-evaluation.md` failed for want of records linking a candidate to its
+  posting, employer, and span, and this table accumulates exactly those from
+  live ingestion.
+- `extractor_version` is separate from the vocabulary's `alias_version`. Either
+  can explain why a term stopped resolving, and recording only one makes the
+  two indistinguishable.
+- `occurrences`, `first_seen_at`, and `last_seen_at` are what a frequency or
+  recurrence rule would be scored against. Without them the same evaluation
+  fails the same way a second time.
+- The unique constraint is per job, surface form, and extractor version, so
+  re-running extraction updates a row rather than accumulating duplicates of
+  the same observation. `normalized_form` is a column and is indexed, because the gate's
   question is a frequency question across postings; `evidence` is JSONB because
   spans, context, and extractor metadata have a shape that will change and are
   never aggregated.

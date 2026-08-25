@@ -118,10 +118,17 @@ to schedule it into would be scheduling into nothing.
   a trained model. Decided against measurement rather than in the abstract:
   [the decision](superpowers/specs/2026-08-24-skill-model-decision.md),
   [the evidence](skill-model-measurement/results.md).
-- **Unknown-skill admission is closed.** The committed evidence cannot score a
-  permissive rule against identifiable unknowns and labelled junk, so every
-  unresolved candidate is rejected until those populations exist and a rule is
-  measured. Recorded in
+- **Unknown skills are closed to matching and open to observation.** The
+  committed evidence cannot score a permissive rule against identifiable
+  unknowns and labelled junk, so no unresolved candidate reaches `job_skills`
+  or becomes a concept. Each one is still recorded in `job_skill_mentions`,
+  which nothing matches against, carrying the raw and normalized forms, the
+  job, occurrence counts and timestamps, and the extractor version. Recording
+  an observation is not admitting a skill, and it is what makes the closed rule
+  temporary: the evaluation failed for want of candidates linked to postings
+  and employers, and live ingestion accumulates exactly those. The gate is
+  re-decided against production observations rather than a second
+  hand-annotated corpus. Recorded in
   [the gate evaluation](superpowers/specs/2026-08-25-job-skills/gate-evaluation.md).
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
