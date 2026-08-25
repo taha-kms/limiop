@@ -1,6 +1,10 @@
 import asyncio
+import os
 
 from alembic import context
+from sqlalchemy import Connection, pool
+from sqlalchemy.ext.asyncio import async_engine_from_config
+
 from platform_db.base import Base
 from platform_db.models import (  # noqa: F401
     Company,
@@ -11,32 +15,28 @@ from platform_db.models import (  # noqa: F401
     SkillConcept,
     SkillSurfaceForm,
 )
-from sqlalchemy import Connection, pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from app.core.config import get_settings
-
-# Imported for its side effect of registering the table on the shared
-# metadata below, not for direct use.
-from app.modules.accounts.models import User  # noqa: F401
-from app.modules.cvs.models import CV  # noqa: F401
-from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill  # noqa: F401
 
 config = context.config
 target_metadata = Base.metadata
 
-BACKEND_TABLES = frozenset(
+PLATFORM_TABLES = frozenset(
     {
-        "candidate_profile_skills",
-        "candidate_profiles",
-        "cvs",
-        "users",
+        "companies",
+        "job_provenance",
+        "job_sources",
+        "jobs",
+        "skill_alias_versions",
+        "skill_concepts",
+        "skill_surface_forms",
     }
 )
 
 
 def database_url() -> str:
-    return str(get_settings().database_url)
+    return os.environ.get(
+        "SKILLSYNC_DATABASE_URL",
+        config.get_main_option("sqlalchemy.url"),
+    )
 
 
 def include_object(
@@ -46,7 +46,7 @@ def include_object(
     _reflected: bool,
     _compare_to: object | None,
 ) -> bool:
-    return type_ != "table" or name in BACKEND_TABLES
+    return type_ != "table" or name in PLATFORM_TABLES
 
 
 def run_migrations_offline() -> None:
@@ -57,7 +57,7 @@ def run_migrations_offline() -> None:
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
         include_object=include_object,
-        version_table="alembic_version",
+        version_table="alembic_version_platform",
     )
 
     with context.begin_transaction():
@@ -70,7 +70,7 @@ def configure_migrations(connection: Connection) -> None:
         target_metadata=target_metadata,
         compare_type=True,
         include_object=include_object,
-        version_table="alembic_version",
+        version_table="alembic_version_platform",
     )
 
     with context.begin_transaction():

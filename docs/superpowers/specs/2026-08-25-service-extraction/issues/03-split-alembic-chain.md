@@ -35,6 +35,26 @@ Two chains against one database.
 Any change to table shape. The two chains must produce byte-identical schema to
 what `backend/alembic upgrade head` produces today.
 
+## How to prove it
+
+Take the reference dump **before** you change anything. Once the chain is
+rewritten there is nothing left to compare against, and reconstructing it from
+git mid-task is where this goes wrong.
+
+1. Create database `ref` on the PostgreSQL server you were given. Run the
+   current single chain into it: `alembic upgrade head` from `backend/`.
+   Dump it: `pg_dump --schema-only --no-owner --no-privileges`. Keep that file
+   outside the repository, in /tmp.
+2. Now do the work.
+3. Create database `split`. Run the platform chain into it, then the backend
+   chain. Dump it the same way.
+4. Diff the two dumps. The only permitted differences are the
+   `alembic_version` and `alembic_version_platform` tables and their contents.
+   Any difference in an application table, index, constraint, or default means
+   a baseline is wrong. Fix the baseline. Do not add a migration to reconcile
+   it, and do not edit the dumps.
+5. Paste the actual diff in your final message, even when it is empty.
+
 ## Acceptance
 - Against an empty PostgreSQL: run the platform chain, then the backend chain,
   and the resulting schema matches today's `upgrade head` output. Prove it by

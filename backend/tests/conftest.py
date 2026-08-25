@@ -13,6 +13,7 @@ from app.core.config import Environment, Settings, get_settings
 from app.main import create_app
 
 BACKEND_ROOT = Path(__file__).parents[1]
+PLATFORM_DB_ROOT = BACKEND_ROOT.parent / "platform" / "db"
 
 # Derived rather than listed. The hand-written list went stale the moment the
 # session settings were added: nothing cleared SKILLSYNC_SESSION_SECRET, so on
@@ -60,6 +61,7 @@ def database_url(monkeypatch: pytest.MonkeyPatch) -> Iterator[PostgresDsn]:
 
     monkeypatch.setenv("SKILLSYNC_DATABASE_URL", value)
     get_settings.cache_clear()
+    command.upgrade(Config(PLATFORM_DB_ROOT / "alembic.ini"), "head")
     command.upgrade(Config(BACKEND_ROOT / "alembic.ini"), "head")
 
     try:
