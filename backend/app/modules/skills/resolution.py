@@ -28,6 +28,24 @@ NonEmptyVersion = Annotated[
 _SEPARATORS = re.compile(r"[\s_\-\u2010-\u2015]+")
 _SURROUNDING_PUNCTUATION = " \t\r\n.,;:!?()[]{}\"'"
 
+TEXT_MATCHING_HAZARD_FORMS: tuple[str, ...] = (
+    "ai",
+    "aws",
+    "b2b",
+    "gcp",
+    "gpu",
+    "ml",
+    "own",
+    "qa",
+    "ux",
+)
+
+PUBLISHED_ALIAS_TABLES: Mapping[str, str] = {
+    "2026.08.24.1": "data/aliases.v1.json",
+    "2026.08.25.1": "data/aliases.v2.json",
+}
+DEFAULT_VOCABULARY_VERSION = "2026.08.25.1"
+
 
 def normalize_surface_form(value: str) -> str:
     """Return the conservative lookup form shared by data and callers.
@@ -154,12 +172,24 @@ class KnownSkillResolver:
         )
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=len(PUBLISHED_ALIAS_TABLES))
+def load_resolver(vocabulary_version: str) -> KnownSkillResolver:
+    """Load one published alias-table version shipped with the package."""
+    try:
+        artifact = PUBLISHED_ALIAS_TABLES[vocabulary_version]
+    except KeyError:
+        raise ValueError(f"alias table version is not published: {vocabulary_version}") from None
+
+    payload = resources.files("app.modules.skills").joinpath(artifact).read_text(encoding="utf-8")
+    document = AliasTableDocument.model_validate_json(payload)
+    if document.vocabulary_version != vocabulary_version:
+        raise ValueError(
+            "alias table registry version does not match its artifact: "
+            f"{vocabulary_version} != {document.vocabulary_version}"
+        )
+    return KnownSkillResolver(document)
+
+
 def load_default_resolver() -> KnownSkillResolver:
-    """Load the alias artifact shipped with this backend package."""
-    payload = (
-        resources.files("app.modules.skills")
-        .joinpath("data/aliases.v1.json")
-        .read_text(encoding="utf-8")
-    )
-    return KnownSkillResolver(AliasTableDocument.model_validate_json(payload))
+    """Load the newest published alias-table version."""
+    return load_resolver(DEFAULT_VOCABULARY_VERSION)
