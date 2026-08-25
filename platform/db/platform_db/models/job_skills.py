@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from platform_db.base import Base
-from platform_db.models.skills import SURFACE_FORM_LENGTH, VOCABULARY_VERSION_LENGTH
+from platform_db.models.skills import SURFACE_FORM_LENGTH
 
 if TYPE_CHECKING:
     from platform_db.models.catalog import Job
