@@ -3,11 +3,10 @@
 from datetime import datetime
 from uuid import UUID
 
+from platform_db.models import JobProvenance
 from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.modules.jobs.models import JobProvenance
 
 
 async def observe_job_provenance(

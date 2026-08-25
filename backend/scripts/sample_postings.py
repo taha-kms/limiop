@@ -25,12 +25,12 @@ from pathlib import Path
 from typing import Any
 
 import py3langid
+from platform_db.models import Job, JobProvenance
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.db.session import Database
-from app.modules.jobs.models import Job, JobProvenance
 
 # Recorded rather than chosen at run time, so the draw can be reproduced.
 SAMPLE_SEED = 20260823

@@ -2,12 +2,12 @@
 
 from uuid import UUID
 
+from platform_db.models import SkillConcept
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import contains_eager
 from sqlalchemy.sql import Select
 
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill
-from app.modules.skills.models import SkillConcept
 
 # Every stored profile skill is currently a canonically resolved concept, so
 # usable equals stored. The minimum remains provisional until #130 decides

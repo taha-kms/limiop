@@ -14,7 +14,7 @@ def test_base_imports() -> None:
 def test_package_has_no_forbidden_imports() -> None:
     imported_modules: set[str] = set()
 
-    for source_path in PACKAGE_ROOT.glob("*.py"):
+    for source_path in PACKAGE_ROOT.rglob("*.py"):
         tree = ast.parse(source_path.read_text(encoding="utf-8"), filename=str(source_path))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):

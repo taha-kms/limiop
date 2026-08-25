@@ -2,13 +2,13 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 import pytest
+from platform_db.base import Base
+from platform_db.models import Company
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select, text
 
-from app.db.base import Base
 from app.db.session import Database
 from app.modules.jobs.domain import normalize_company_name
-from app.modules.jobs.models import Company
 
 
 def run_database_test(

@@ -8,10 +8,9 @@ cannot both register.
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from platform_db.base import Base
 from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, validates
-
-from app.db.base import Base
 
 EMAIL_LENGTH = 320
 HASH_LENGTH = 255

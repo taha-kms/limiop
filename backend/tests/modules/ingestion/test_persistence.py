@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete, func, select
 from sqlalchemy import text as sql
@@ -18,7 +19,6 @@ from app.modules.ingestion.persistence import (
 )
 from app.modules.jobs.domain import EmploymentType, WorkplaceType
 from app.modules.jobs.matching import match_key, match_key_of
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import NormalizedJob
 
 SOURCE = SourceRegistration(

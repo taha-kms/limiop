@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx2
 import pytest
+from platform_db.models import Job, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import select
 
@@ -18,7 +19,6 @@ from app.modules.ingestion.greenhouse.pipeline import (
     ingest_greenhouse,
     with_board_failures,
 )
-from app.modules.jobs.models import Job, JobSource
 from tests.support.catalog import with_empty_catalog
 
 FIXTURE = Path(__file__).parent / "fixtures" / "board.json"

@@ -4,15 +4,15 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from platform_db.base import Base
+from platform_db.models import Company, Job
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
-from app.db.base import Base
 from app.db.session import Database
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Company, Job
 
 
 def run_database_test(

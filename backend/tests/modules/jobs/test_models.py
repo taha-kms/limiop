@@ -3,13 +3,13 @@ from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 import pytest
+from platform_db.base import Base
+from platform_db.models import JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.base import Base
 from app.db.session import Database
-from app.modules.jobs.models import JobSource
 
 pytestmark = pytest.mark.integration
 

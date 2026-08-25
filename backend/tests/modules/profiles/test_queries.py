@@ -2,6 +2,7 @@ import asyncio
 from uuid import uuid4
 
 import pytest
+from platform_db.models import SkillConcept
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
@@ -10,7 +11,6 @@ from app.modules.accounts.models import User
 from app.modules.jobs.domain import EmploymentType, WorkplaceType
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill
 from app.modules.profiles.queries import matching_ready
-from app.modules.skills.models import SkillConcept
 
 
 def test_matching_readiness_uses_a_correlated_stored_skill_count() -> None:

@@ -17,11 +17,11 @@ from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
 
+from platform_db.models import Job, JobProvenance, JobSource
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.jobs.matching import match_key, reads_the_same, same_place
-from app.modules.jobs.models import Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import NormalizedJob
 
 

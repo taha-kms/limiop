@@ -4,6 +4,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from platform_db.models import Job, JobProvenance
 from pydantic import PostgresDsn
 from sqlalchemy import select
 
@@ -21,7 +22,6 @@ from app.modules.ingestion.reconciliation import (
     withdraw_jobs_nobody_lists,
 )
 from app.modules.jobs.domain import JobStatus
-from app.modules.jobs.models import Job, JobProvenance
 from app.modules.jobs.schemas import NormalizedJob
 from tests.support.catalog import with_empty_catalog
 

@@ -10,12 +10,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import Database
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 
 EPOCH = datetime(2026, 8, 1, 12, tzinfo=UTC)
 

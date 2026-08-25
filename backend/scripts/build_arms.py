@@ -18,12 +18,12 @@ from pathlib import Path
 from typing import Any
 
 import py3langid
+from platform_db.models import Job, JobProvenance
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.db.session import Database
-from app.modules.jobs.models import Job, JobProvenance
 
 # Fixed in the design before anything was scored: frequent enough to be more
 # than noise, rare enough to tell two postings apart.

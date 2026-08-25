@@ -1,6 +1,16 @@
 import asyncio
 
 from alembic import context
+from platform_db.base import Base
+from platform_db.models import (  # noqa: F401
+    Company,
+    Job,
+    JobProvenance,
+    JobSource,
+    SkillAliasVersion,
+    SkillConcept,
+    SkillSurfaceForm,
+)
 from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -10,12 +20,10 @@ from app.core.config import get_settings
 # metadata below, not for direct use.
 from app.modules.accounts.models import User  # noqa: F401
 from app.modules.cvs.models import CV  # noqa: F401
-from app.modules.jobs.models import JobSource
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill  # noqa: F401
-from app.modules.skills.models import SkillConcept  # noqa: F401
 
 config = context.config
-target_metadata = JobSource.metadata
+target_metadata = Base.metadata
 
 
 def database_url() -> str:
