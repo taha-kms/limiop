@@ -29,6 +29,8 @@ WORKDIR /app
 RUN install -d -o skillsync -g skillsync -m 0700 /app/uploads/cvs
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --chown=skillsync:skillsync platform/db/alembic.ini ./platform/db/alembic.ini
+COPY --chown=skillsync:skillsync platform/db/alembic ./platform/db/alembic
 COPY --chown=skillsync:skillsync backend/alembic.ini ./
 COPY --chown=skillsync:skillsync backend/alembic ./alembic
 

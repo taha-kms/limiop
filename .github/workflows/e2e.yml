@@ -77,6 +77,7 @@ jobs:
       - name: Migrate and seed the catalogue
         working-directory: backend
         run: |
+          alembic -c ../platform/db/alembic.ini upgrade head
           alembic upgrade head
           python -m scripts.seed_catalog
 
