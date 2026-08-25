@@ -72,10 +72,11 @@ From the repository root:
 
 ```bash
 cp .env.example .env
+docker volume create skillsync_postgres_data
 docker compose up --build
 ```
 
-Replace the example database password and matching URL before starting the services. Compose starts PostgreSQL, waits for it to become healthy, applies Alembic migrations, and then starts the API at `http://localhost:8000`.
+Replace the example database password and matching URL before starting the services. The external PostgreSQL volume only needs to be created once. If `SKILLSYNC_POSTGRES_VOLUME` is changed in `.env`, create a volume with that exact name instead. Compose starts PostgreSQL, waits for it to become healthy, applies Alembic migrations, and then starts the API at `http://localhost:8000`.
 
 Stop the services while keeping database data:
 
@@ -83,7 +84,16 @@ Stop the services while keeping database data:
 docker compose down
 ```
 
-Passing `--volumes` also deletes the local PostgreSQL data volume.
+The external PostgreSQL volume survives `docker compose down -v`, preserving both the job catalogue and the Airflow metadata database with its DAG history and run state. To reset PostgreSQL deliberately, remove the configured volume by name, recreate it, and start the stack so the migrations build an empty database:
+
+```bash
+docker compose down -v
+docker volume rm skillsync_postgres_data
+docker volume create skillsync_postgres_data
+docker compose up --build
+```
+
+Use the configured volume name in both volume commands when overriding `SKILLSYNC_POSTGRES_VOLUME`.
 
 ## Migrations
 

@@ -158,3 +158,5 @@ services:
 volumes:
   airflow_data:
   postgres_data:
+    name: ${SKILLSYNC_POSTGRES_VOLUME:-skillsync_postgres_data}
+    external: true
