@@ -27,6 +27,7 @@ def resolver() -> KnownSkillResolver:
 
 def test_alias_table_has_an_explicit_version(resolver: KnownSkillResolver) -> None:
     assert resolver.vocabulary_version == "2026.08.24.1"
+    assert resolver.document.vocabulary_version == resolver.vocabulary_version
 
 
 def test_newest_alias_table_is_the_default() -> None:
