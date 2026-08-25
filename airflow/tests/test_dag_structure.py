@@ -23,8 +23,10 @@ ALLOWED_CALLS = frozenset(
         "task",
         "ingest",
         "arbeitnow_ingestion",
+        "greenhouse_ingestion",
         "asyncio.run",
         "ingest_arbeitnow",
+        "ingest_greenhouse",
         "datetime",
         "timedelta",
     }
