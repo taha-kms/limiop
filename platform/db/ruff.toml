@@ -1,0 +1,9 @@
+line-length = 100
+src = ["platform_db", "tests"]
+target-version = "py312"
+
+[lint]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[lint.isort]
+known-first-party = ["platform_db", "tests"]
