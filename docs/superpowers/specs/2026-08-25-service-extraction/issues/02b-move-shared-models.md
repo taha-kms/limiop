@@ -1,4 +1,4 @@
-# 02 — Move the shared models into `platform/db`
+# 02b — Move the shared models into `platform/db`
 
 ## Why
 Seven tables are written by ingestion or read by two deployables. They cannot
@@ -26,16 +26,13 @@ Leave these in the backend, unchanged: `users`, `cvs`, `candidate_profiles`,
 - Update every import in `backend/` and `backend/tests/` to the new path.
   Do not leave re-export shims in `app.modules.jobs.models` or
   `app.modules.skills.models`; the point is that the dependency is visible.
-- `backend/pyproject.toml` gains `skillsync-platform-db` as a dependency.
-  Install it from the local path for development.
-- **The Docker build context has to move.** `docker-compose.yml` builds the API
-  with `context: ./backend`, so `platform/` sits outside it and
-  `docker compose build api` fails the moment the backend depends on a local
-  path package. Change the context to the repository root with an explicit
-  `dockerfile: backend/Dockerfile`, and adjust the paths inside that Dockerfile
-  accordingly. Without this the image cannot be built and issue 04 cannot pass.
 - `backend/alembic/env.py` imports the moved models from `platform_db.models`
   so autogenerate still sees the full metadata.
+
+## Prerequisite
+Issue 02a, tracked as #161. The dependency, the Docker build context, and the CI install
+order are already in place; this issue is pure Python and must not touch
+packaging, Dockerfiles, or workflows.
 
 ## Out of scope
 Splitting the Alembic chain — that is issue 03. Moving ingestion code — that is
@@ -48,5 +45,4 @@ issue 06. Any schema change at all.
 - `grep -rn "app.modules.jobs.models\|app.modules.skills.models" backend airflow`
   returns nothing outside the deleted files.
 - `cd backend && pytest` passes, coverage gate included.
-- `docker compose build api` succeeds.
 - `ruff check`, `ruff format --check`, and `mypy` clean on both packages.

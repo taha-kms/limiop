@@ -6,10 +6,13 @@ WORKDIR /build
 
 RUN python -m venv /opt/venv
 
-COPY pyproject.toml README.md ./
-COPY app ./app
+COPY platform/db/pyproject.toml ./platform/db/pyproject.toml
+COPY platform/db/platform_db ./platform/db/platform_db
+COPY backend/pyproject.toml backend/README.md ./backend/
+COPY backend/app ./backend/app
 
-RUN python -m pip install --no-cache-dir .
+RUN python -m pip install --no-cache-dir ./platform/db \
+    && python -m pip install --no-cache-dir ./backend
 
 FROM python:3.13.15-slim-bookworm@sha256:00faa2debb87529f9f0764e9491d8ba400a3678976616c3bd7cb193745ac20d1 AS runtime
 
@@ -26,8 +29,8 @@ WORKDIR /app
 RUN install -d -o skillsync -g skillsync -m 0700 /app/uploads/cvs
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --chown=skillsync:skillsync alembic.ini ./
-COPY --chown=skillsync:skillsync alembic ./alembic
+COPY --chown=skillsync:skillsync backend/alembic.ini ./
+COPY --chown=skillsync:skillsync backend/alembic ./alembic
 
 USER skillsync
 

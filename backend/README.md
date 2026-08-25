@@ -16,7 +16,7 @@ Run these commands from `backend/`:
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e '.[dev]'
+python -m pip install -e ../platform/db -e '.[dev]'
 cp .env.example .env
 ```
 

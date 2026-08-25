@@ -72,15 +72,20 @@ skillsync/
 
 ## Sequence
 
-Ten changes, each leaving the repository green. The chain split (03) is the
+Eleven changes, each leaving the repository green. The chain split (03) is the
 only one that touches migration history, and it is deliberately isolated from
 the code moves on either side of it. Issue 06 carries the Airflow import repair
 with it, because moving the module breaks Airflow the moment it lands.
 
+The packaging half of the model move is its own issue (02a) because CI builds
+the backend image with `context: backend`, so a local-path dependency breaks
+the build before a single model has moved.
+
 | # | Change | Risk |
 | --- | --- | --- |
 | 01 | Scaffold `platform/db` | None |
-| 02 | Move shared models into it | Low |
+| 02a | Make the backend depend on it: packaging, image, CI | Low |
+| 02b | Move shared models into it | Low |
 | 03 | Split the Alembic chain | **High** |
 | 04 | Compose runs both chains in order | Low |
 | 05 | Scaffold `services/job-ingestion-service` | None |
