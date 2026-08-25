@@ -3,6 +3,10 @@
 Scored against the gold set frozen at commit `d505459`, before any arm was
 built or run. 2059 mentions over 78 of 80 sampled postings. Methodology and
 decision rule: `../superpowers/specs/2026-08-23-skill-model-measurement-design.md`.
+The separately reproducible
+[gold-label resolution rate for the shipped alias table](gold-label-resolution.md)
+measures exact annotator-label lookup and is not a rerun of these span-overlap
+results.
 
 ## The numbers
 
