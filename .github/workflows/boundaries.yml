@@ -22,9 +22,27 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: platform/skills/pyproject.toml
 
-      - name: Install test dependency
-        run: python -m pip install 'pytest>=9.1.1,<10.0.0'
+      - name: Install shared extractor and test dependencies
+        run: python -m pip install -e 'platform/skills[dev]'
+
+      - name: Check shared extractor formatting
+        working-directory: platform/skills
+        run: ruff format --check .
+
+      - name: Lint shared extractor
+        working-directory: platform/skills
+        run: ruff check .
+
+      - name: Type-check shared extractor
+        working-directory: platform/skills
+        run: mypy
+
+      - name: Test shared extractor
+        working-directory: platform/skills
+        run: pytest
 
       - name: Check architecture boundaries
         run: python -m pytest tests/architecture/test_boundaries.py

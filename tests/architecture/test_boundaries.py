@@ -1,4 +1,4 @@
-"""Import contracts for the API, ingestion service, and shared database package."""
+"""Import contracts for the API, ingestion service, and shared platform packages."""
 
 import ast
 from collections.abc import Iterable
@@ -12,6 +12,7 @@ JOB_INGESTION_ROOT = (
 PLATFORM_DB_ROOT = REPOSITORY_ROOT / "platform" / "db"
 PLATFORM_DB_PACKAGE_ROOT = PLATFORM_DB_ROOT / "platform_db"
 PLATFORM_DB_SOURCE_ROOTS = (PLATFORM_DB_PACKAGE_ROOT, PLATFORM_DB_ROOT / "alembic")
+PLATFORM_SKILLS_PACKAGE_ROOT = REPOSITORY_ROOT / "platform" / "skills" / "platform_skills"
 
 ALLOWED_PLATFORM_DB_MODULES = frozenset(
     {
@@ -106,4 +107,20 @@ def test_platform_db_contains_only_allowed_modules() -> None:
     assert not unexpected_modules, (
         "Rule 'platform_db must contain only models, migrations, and the session factory' "
         f"broken; modules missing from the explicit allowlist: {unexpected_modules}"
+    )
+
+
+def test_platform_skills_does_not_import_services() -> None:
+    assert_import_rule(
+        rule="platform_skills must not import app.* or job_ingestion",
+        source_roots=(PLATFORM_SKILLS_PACKAGE_ROOT,),
+        forbidden_roots=frozenset({"app", "job_ingestion"}),
+    )
+
+
+def test_platform_skills_does_not_import_service_frameworks() -> None:
+    assert_import_rule(
+        rule="platform_skills must not import fastapi, starlette, or uvicorn",
+        source_roots=(PLATFORM_SKILLS_PACKAGE_ROOT,),
+        forbidden_roots=frozenset({"fastapi", "starlette", "uvicorn"}),
     )
