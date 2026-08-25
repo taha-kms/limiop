@@ -28,6 +28,12 @@ Leave these in the backend, unchanged: `users`, `cvs`, `candidate_profiles`,
   `app.modules.skills.models`; the point is that the dependency is visible.
 - `backend/pyproject.toml` gains `skillsync-platform-db` as a dependency.
   Install it from the local path for development.
+- **The Docker build context has to move.** `docker-compose.yml` builds the API
+  with `context: ./backend`, so `platform/` sits outside it and
+  `docker compose build api` fails the moment the backend depends on a local
+  path package. Change the context to the repository root with an explicit
+  `dockerfile: backend/Dockerfile`, and adjust the paths inside that Dockerfile
+  accordingly. Without this the image cannot be built and issue 04 cannot pass.
 - `backend/alembic/env.py` imports the moved models from `platform_db.models`
   so autogenerate still sees the full metadata.
 
@@ -42,4 +48,5 @@ issue 06. Any schema change at all.
 - `grep -rn "app.modules.jobs.models\|app.modules.skills.models" backend airflow`
   returns nothing outside the deleted files.
 - `cd backend && pytest` passes, coverage gate included.
+- `docker compose build api` succeeds.
 - `ruff check`, `ruff format --check`, and `mypy` clean on both packages.
