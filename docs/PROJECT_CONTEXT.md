@@ -369,6 +369,7 @@ skillsync/
 ├── backend/
 ├── frontend/
 ├── airflow/
+├── tests/
 └── docs/
 ```
 
