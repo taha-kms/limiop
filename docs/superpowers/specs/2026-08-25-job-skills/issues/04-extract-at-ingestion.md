@@ -23,6 +23,12 @@ it.
 - Extraction happens inside the same transaction that persists the job. A job
   with half its skills is worse than a job with none, because the missing half
   is invisible.
+- `occurrences` is the number of times the term appears in that posting's text,
+  never the number of runs that observed it. Re-extraction recomputes it from
+  the text and updates the row. An hourly re-run of an unchanged posting must
+  leave the value identical — assert this in a test, because an incrementing
+  counter would look plausible for weeks before anyone noticed the frequency
+  evidence was worthless.
 - Re-running ingestion over a posting already stored replaces its skills rather
   than appending. The second run of a source is a no-op today and must stay one.
 - The run summary reports what extraction did: how many mentions resolved, how
