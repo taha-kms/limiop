@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  addCandidateProfileSkill,
   getCandidateProfile,
+  listCandidateProfileSkills,
   NotSignedInError,
   ProfileRejectedError,
   ProfileUnavailableError,
+  removeCandidateProfileSkill,
+  searchSkillConcepts,
   updateCandidateProfile,
 } from "./profile";
 
@@ -50,5 +54,65 @@ describe("candidate profile client", () => {
       ProfileRejectedError,
     );
     await expect(getCandidateProfile()).rejects.toBeInstanceOf(ProfileUnavailableError);
+  });
+
+  it("searches canonical concepts and sends only an id when selecting one", async () => {
+    const concept = { concept_id: "postgres-id", preferred_label: "PostgreSQL" };
+    const stored = {
+      ...concept,
+      vocabulary_version: "test.1",
+      created_at: "2026-08-25T00:00:00Z",
+    };
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response([concept]))
+      .mockResolvedValueOnce(response(stored, 201));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(searchSkillConcepts("  Postgre  ")).resolves.toEqual([concept]);
+    await expect(addCandidateProfileSkill(concept.concept_id)).resolves.toEqual(stored);
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/profile/skills/search?q=Postgre",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/profile/skills",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ concept_id: "postgres-id" }),
+      }),
+    );
+  });
+
+  it("lists and removes stored profile skills", async () => {
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(listCandidateProfileSkills()).resolves.toEqual([]);
+    await expect(removeCandidateProfileSkill("concept/id")).resolves.toBeUndefined();
+
+    expect(fetch).toHaveBeenLastCalledWith(
+      "/api/profile/skills/concept%2Fid",
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it.each([
+    ["ambiguous_skill", "ambiguous"],
+    ["unknown_skill", "not in the canonical vocabulary"],
+  ] as const)("preserves the %s refusal", async (code, message) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ detail: { code, message } }, 422)));
+
+    await expect(addCandidateProfileSkill("concept-id")).rejects.toMatchObject({
+      name: "SkillSelectionRejectedError",
+      code,
+      message,
+    });
   });
 });

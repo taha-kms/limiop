@@ -12,6 +12,8 @@ import {
   updateCandidateProfile,
 } from "@/lib/api/profile";
 
+import { SkillPicker } from "./skill-picker";
+
 const WORKPLACES: Array<[WorkplacePreference, string]> = [
   ["remote", "Remote"],
   ["hybrid", "Hybrid"],
@@ -123,20 +125,25 @@ export function OnboardingForm() {
   const step = currentStep(profile);
   if (step === 4) {
     return (
-      <section className="flex flex-col gap-3" aria-labelledby="profile-ready-heading">
-        <h2 id="profile-ready-heading" className="text-xl font-semibold">
-          Your profile is ready
-        </h2>
-        <p className="text-slate-600 dark:text-slate-400">
-          Your required details and job preferences are saved.
-        </p>
-      </section>
+      <div className="flex flex-col gap-6">
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Step 4 of 4</p>
+        <section className="flex flex-col gap-3" aria-labelledby="profile-ready-heading">
+          <h2 id="profile-ready-heading" className="text-xl font-semibold">
+            Your profile is ready
+          </h2>
+          <p className="text-slate-600 dark:text-slate-400">
+            Your required details and job preferences are saved. You can add or change skills now
+            and whenever you return to this profile.
+          </p>
+        </section>
+        <SkillPicker />
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-6">
-      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Step {step} of 3</p>
+      <p className="text-sm font-medium text-slate-600 dark:text-slate-400">Step {step} of 4</p>
       {problem ? (
         <p
           role="alert"
@@ -209,7 +216,7 @@ export function OnboardingForm() {
             ))}
           </fieldset>
           <button className="primary-button" disabled={submitting}>
-            {submitting ? "Saving…" : "Complete profile"}
+            {submitting ? "Saving…" : "Save and continue"}
           </button>
         </form>
       ) : null}
