@@ -134,9 +134,7 @@ def test_deleting_job_cascades_to_skills_and_mentions(database_url: PostgresDsn)
 
         async with database.session() as session:
             skill_count = await session.scalar(select(func.count()).select_from(JobSkill))
-            mention_count = await session.scalar(
-                select(func.count()).select_from(JobSkillMention)
-            )
+            mention_count = await session.scalar(select(func.count()).select_from(JobSkillMention))
 
         assert skill_count == 0
         assert mention_count == 0
@@ -165,9 +163,7 @@ def test_concept_in_use_by_job_cannot_be_deleted(database_url: PostgresDsn) -> N
                 await session.commit()
 
         async with database.session() as session:
-            stored = await session.scalar(
-                select(SkillConcept).where(SkillConcept.id == concept.id)
-            )
+            stored = await session.scalar(select(SkillConcept).where(SkillConcept.id == concept.id))
 
         assert stored is not None
 
