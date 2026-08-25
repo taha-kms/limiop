@@ -7,8 +7,6 @@ x-backend-environment: &backend-environment
   SKILLSYNC_ENVIRONMENT: local
 
 x-airflow-environment: &airflow-environment
-  AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-}
-  AIRFLOW_ADMIN_USERNAME: admin
   AIRFLOW_HOME: /opt/airflow
   AIRFLOW_JWT_SECRET_FILE: /opt/airflow/jwt-secret
   AIRFLOW_METADATA_DATABASE: ${AIRFLOW_METADATA_DATABASE:-airflow}

@@ -1,6 +1,5 @@
-"""Initialize the local Airflow metadata database and authentication files."""
+"""Initialize the local Airflow metadata database and authentication secret."""
 
-import json
 import os
 import secrets
 from pathlib import Path
@@ -33,19 +32,11 @@ def create_metadata_database() -> None:
 
 
 def create_authentication_files() -> None:
-    """Create persistent local credentials without embedding secrets in Compose."""
+    """Create Airflow's persistent local JWT secret."""
     jwt_secret_file = Path(os.environ["AIRFLOW_JWT_SECRET_FILE"])
     if not jwt_secret_file.exists():
         jwt_secret_file.write_text(secrets.token_urlsafe(48))
         jwt_secret_file.chmod(0o600)
-
-    password_file = Path(os.environ["AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE"])
-    passwords = json.loads(password_file.read_text()) if password_file.exists() else {}
-    username = os.environ["AIRFLOW_ADMIN_USERNAME"]
-    if username not in passwords:
-        passwords[username] = os.environ.get("AIRFLOW_ADMIN_PASSWORD") or secrets.token_urlsafe(18)
-        password_file.write_text(json.dumps(passwords) + "\n")
-        password_file.chmod(0o600)
 
 
 if __name__ == "__main__":
