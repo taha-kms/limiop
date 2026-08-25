@@ -3,6 +3,9 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from platform_db.base import Base
+from platform_db.models import SkillConcept
+from platform_db.models.skills import VOCABULARY_VERSION_LENGTH
 from sqlalchemy import (
     ARRAY,
     Boolean,
@@ -20,10 +23,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
 from app.modules.accounts.models import User
 from app.modules.jobs.domain import EmploymentType, WorkplaceType
-from app.modules.skills.models import VOCABULARY_VERSION_LENGTH, SkillConcept
 
 PROFILE_COMPLETE_SQL = """
 display_name IS NOT NULL

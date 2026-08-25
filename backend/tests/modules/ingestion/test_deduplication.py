@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete
 
@@ -15,7 +16,6 @@ from app.modules.ingestion.deduplication import (
     has_material_change,
 )
 from app.modules.jobs.matching import match_key
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import NormalizedJob
 
 SOURCE_KEY = "arbeitnow"

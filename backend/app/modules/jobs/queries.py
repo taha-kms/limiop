@@ -16,12 +16,12 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
+from platform_db.models import Job, JobProvenance
 from sqlalchemy import ColumnElement, Select, and_, literal, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Job, JobProvenance
 
 DEFAULT_PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100

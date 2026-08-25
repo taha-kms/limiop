@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +27,6 @@ from app.modules.jobs.domain import (
     normalize_company_name,
 )
 from app.modules.jobs.matching import match_key_of
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.repositories import observe_job_provenance
 from app.modules.jobs.schemas import NormalizedJob
 

@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx2
 import pytest
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
@@ -19,7 +20,6 @@ from app.modules.ingestion.arbeitnow.records import ArbeitnowValidator
 from app.modules.ingestion.contracts import IngestionStage, IngestionSummary
 from app.modules.ingestion.pipeline import utc_now
 from app.modules.jobs.matching import match_key
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 
 FIXTURES = Path(__file__).parent / "fixtures"
 FAST_CONFIG = ArbeitnowConfig(retry_backoff_seconds=0.0)

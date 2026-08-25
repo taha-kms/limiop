@@ -3,6 +3,7 @@
 from enum import StrEnum
 from uuid import UUID
 
+from platform_db.models import SkillConcept
 from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill
 from app.modules.profiles.queries import profile_skills_for_user
 from app.modules.profiles.schemas import CandidateProfileUpdate
-from app.modules.skills.models import SkillConcept
 from app.modules.skills.resolution import (
     KnownSkillResolver,
     ResolutionStatus,

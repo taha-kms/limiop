@@ -87,6 +87,7 @@ known-first-party = ["app", "tests"]
 python_version = "3.12"
 strict = true
 files = ["app", "scripts", "tests"]
+mypy_path = "../platform/db"
 
 [[tool.mypy.overrides]]
 # py3langid ships no type information. It is used only by the measurement

@@ -3,10 +3,10 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from platform_db.models import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.skills.models import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 from app.modules.skills.resolution import AliasTableDocument, load_resolver, normalize_surface_form
 
 ConceptContent = tuple[str, str | None]

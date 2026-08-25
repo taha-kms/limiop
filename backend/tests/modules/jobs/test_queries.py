@@ -5,11 +5,11 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from platform_db.models import Job
 from pydantic import PostgresDsn
 
 from app.db.session import Database
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Job
 from app.modules.jobs.queries import (
     DEFAULT_PAGE_SIZE,
     MAX_PAGE_SIZE,

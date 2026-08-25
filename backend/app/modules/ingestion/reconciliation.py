@@ -27,12 +27,12 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from platform_db.models import Job, JobProvenance, JobSource
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.ingestion.contracts import IngestionSummary
 from app.modules.jobs.domain import JobStatus
-from app.modules.jobs.models import Job, JobProvenance, JobSource
 
 
 @dataclass(frozen=True, slots=True)

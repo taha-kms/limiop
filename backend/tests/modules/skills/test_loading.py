@@ -2,13 +2,13 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 import pytest
+from platform_db.models import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 from pydantic import PostgresDsn
 from sqlalchemy import delete, func, select, update
 
 import app.modules.skills.loading as alias_loading
 from app.db.session import Database
 from app.modules.skills.loading import PublishedAliasConflictError, load_published_alias_table
-from app.modules.skills.models import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 from app.modules.skills.resolution import KnownSkillResolver, load_resolver
 
 V1 = "2026.08.24.1"

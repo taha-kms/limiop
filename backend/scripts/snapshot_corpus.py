@@ -26,6 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from platform_db.models import Job, JobProvenance
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -36,7 +37,6 @@ from app.modules.ingestion.arbeitnow.pipeline import ingest_arbeitnow
 from app.modules.ingestion.contracts import IngestionSummary
 from app.modules.ingestion.greenhouse.client import DEFAULT_BASE_URL, GreenhouseConfig
 from app.modules.ingestion.greenhouse.pipeline import ingest_greenhouse
-from app.modules.jobs.models import Job, JobProvenance
 
 # Raised far above the scheduled defaults on purpose. A run that stops at its
 # budget is not source-exhausted, and an unexhausted run is not a snapshot of a

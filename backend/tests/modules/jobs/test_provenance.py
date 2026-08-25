@@ -4,13 +4,13 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from platform_db.base import Base
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.base import Base
 from app.db.session import Database
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.repositories import observe_job_provenance
 
 

@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from platform_db.base import Base
 
 CONCEPT_LABEL_LENGTH = 255
 ESCO_URI_LENGTH = 2048

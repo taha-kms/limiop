@@ -1,6 +1,7 @@
 """Job catalog domain module."""
 
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
+from platform_db.models import Company, Job, JobProvenance, JobSource
+
 from app.modules.jobs.schemas import (
     CompanyRead,
     JobDetail,

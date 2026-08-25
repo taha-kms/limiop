@@ -9,6 +9,7 @@ from datetime import datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
+from platform_db.base import Base
 from sqlalchemy import (
     BigInteger,
     CheckConstraint,
@@ -22,7 +23,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from app.db.base import Base
 from app.modules.accounts.models import User
 
 STORAGE_KEY_LENGTH = 512

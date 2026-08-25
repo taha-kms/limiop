@@ -5,11 +5,11 @@ import sys
 from pathlib import Path
 
 import pytest
+from platform_db.models import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 from pydantic import PostgresDsn
 from sqlalchemy import delete
 
 from app.db.session import Database
-from app.modules.skills.models import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 V2 = "2026.08.25.1"

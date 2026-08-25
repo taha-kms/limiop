@@ -3,15 +3,15 @@ from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import pytest
+from platform_db.base import Base
+from platform_db.models import SkillConcept
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from app.db.base import Base
 from app.db.session import Database
 from app.modules.accounts.models import User
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill
-from app.modules.skills.models import SkillConcept
 
 pytestmark = pytest.mark.integration
 

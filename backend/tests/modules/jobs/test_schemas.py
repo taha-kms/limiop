@@ -4,13 +4,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from platform_db.models import Company, Job, JobProvenance, JobSource
 from pydantic import PostgresDsn, ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.db.session import Database
 from app.modules.jobs.domain import EmploymentType, JobStatus, WorkplaceType
-from app.modules.jobs.models import Company, Job, JobProvenance, JobSource
 from app.modules.jobs.schemas import (
     MAX_URL_LENGTH,
     CompanyRead,

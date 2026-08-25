@@ -3,12 +3,12 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 
 import pytest
 from fastapi.testclient import TestClient
+from platform_db.models import SkillConcept
 from pydantic import PostgresDsn
 from sqlalchemy import create_engine, delete, insert
 
 from app.modules.profiles import service as profile_service
 from app.modules.profiles.models import CandidateProfileSkill
-from app.modules.skills.models import SkillConcept
 from app.modules.skills.resolution import AliasTableDocument, KnownSkillResolver
 
 pytestmark = pytest.mark.integration
