@@ -1,6 +1,7 @@
 """Environment-backed settings for the ingestion service."""
 
 import os
+from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, PostgresDsn, TypeAdapter
@@ -14,6 +15,15 @@ type SourceConfig = dict[str, dict[str, JsonValue]]
 _SOURCE_CONFIG_ADAPTER: TypeAdapter[SourceConfig] = TypeAdapter(SourceConfig)
 
 
+class Environment(StrEnum):
+    """Execution environment retained by the moved pipeline test contract."""
+
+    LOCAL = "local"
+    TEST = "test"
+    STAGING = "staging"
+    PRODUCTION = "production"
+
+
 def _database_url_from_environment() -> PostgresDsn:
     return PostgresDsn(os.getenv(DATABASE_URL_ENV, DEFAULT_DATABASE_URL))
 
@@ -25,6 +35,7 @@ def _source_config_from_environment() -> SourceConfig:
 class Settings(BaseModel):
     database_url: PostgresDsn = Field(default_factory=_database_url_from_environment)
     source_config: SourceConfig = Field(default_factory=_source_config_from_environment)
+    environment: Environment = Environment.LOCAL
 
     model_config = ConfigDict(frozen=True, extra="forbid", validate_default=True)
 

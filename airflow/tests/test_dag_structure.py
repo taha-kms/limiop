@@ -78,7 +78,7 @@ def test_the_dag_stays_a_single_thin_task(dagbag: DagBag) -> None:
 def test_the_dag_delegates_to_reusable_application_code() -> None:
     source = (DAGS_DIR / f"{DAG_ID}.py").read_text()
 
-    assert "from app.modules.ingestion.arbeitnow import ingest_arbeitnow" in source
+    assert "from job_ingestion.arbeitnow import ingest_arbeitnow" in source
 
 
 @pytest.mark.parametrize("dag_file", sorted(DAGS_DIR.glob("*.py")), ids=lambda path: path.name)

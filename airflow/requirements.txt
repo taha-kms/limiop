@@ -1,4 +1,4 @@
 # Airflow is a scheduling dependency, not a backend runtime one. It is installed
 # only where DAGs run, and never into the API image.
 apache-airflow==3.2.2
--e ../backend
+-e ../services/job-ingestion-service
