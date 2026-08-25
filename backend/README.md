@@ -104,6 +104,19 @@ representation shared by ingestion, the API, analytics, and matching. Its fields
 validation rules, and provenance model are described in
 [the canonical job contract](../docs/canonical-job-contract.md).
 
+## Alias tables
+
+After applying the database migrations, load a published known-skill vocabulary
+from `backend/` with:
+
+```bash
+python -m scripts.load_alias_table --vocabulary-version 2026.08.25.1
+```
+
+The command uses `SKILLSYNC_DATABASE_URL`. Repeating the same version is a
+no-op when the stored rows match the artifact; it fails instead of changing an
+already-published version when their contents differ.
+
 ## Validation
 
 ```bash

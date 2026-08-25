@@ -141,6 +141,7 @@ class KnownSkillResolver:
     """Resolve only terms published by one immutable alias-table version."""
 
     def __init__(self, document: AliasTableDocument) -> None:
+        self._document = document
         self._version = document.vocabulary_version
         self._concepts: Mapping[UUID, SkillConceptDefinition] = {
             concept.id: concept for concept in document.concepts
@@ -153,6 +154,11 @@ class KnownSkillResolver:
     @property
     def vocabulary_version(self) -> str:
         return self._version
+
+    @property
+    def document(self) -> AliasTableDocument:
+        """The validated publication this resolver was built from."""
+        return self._document
 
     def resolve(self, term: str) -> SkillResolution:
         normalized = normalize_surface_form(term)
