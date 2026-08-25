@@ -34,7 +34,6 @@ job_skill_mentions(
   evidence          jsonb,
   unique (job_id, surface_form, extractor_version, alias_version)
 )
-)
 ```
 
 - `job_skills` is what matching and analytics read. The primary key is the pair,
