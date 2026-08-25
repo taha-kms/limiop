@@ -131,6 +131,25 @@ to schedule it into would be scheduling into nothing.
   re-decided against production observations rather than a second
   hand-annotated corpus. Recorded in
   [the gate evaluation](superpowers/specs/2026-08-25-job-skills/gate-evaluation.md).
+- **A measurement commits its evidence, not only its findings.** Any
+  measurement a decision rests on must commit the records behind it: the text
+  that was scored, the labels, and the keys needed to join them back together.
+  Aggregate findings alone are not reproducible and not extensible.
+
+  This was learned twice in one day. The skill-model corpus committed its
+  conclusions — 0.151 precision for free text, 184 surface forms beating 65850
+  ESCO labels by 12.7 recall points, 28 of 38 misses being named products —
+  but not the postings, the employer map, or the join from adjudicated
+  rejections back to candidate text. As a result the unknown-skill gate could
+  not be scored at all, and the extractor can only be scored against the 14 of
+  78 gold postings still recoverable from the live catalog. The other 64 have
+  expired from the board and are gone permanently.
+
+  Where the text cannot be committed — licensing, size, or personal data — a
+  reproducible retrieval path and a content hash must be, so a future reader
+  can tell whether what they fetched is what was scored. Storing a hash without
+  the means to fetch the content, which is what happened here, is not enough.
+
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
   once no un-retired provenance remains.

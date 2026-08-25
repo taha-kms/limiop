@@ -1,0 +1,9 @@
+line-length = 100
+src = ["platform_skills", "scripts", "tests"]
+target-version = "py312"
+
+[lint]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[lint.isort]
+known-first-party = ["platform_skills", "scripts", "tests"]
