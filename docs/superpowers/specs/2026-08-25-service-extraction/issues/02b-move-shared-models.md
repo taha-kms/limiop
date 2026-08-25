@@ -30,7 +30,7 @@ Leave these in the backend, unchanged: `users`, `cvs`, `candidate_profiles`,
   so autogenerate still sees the full metadata.
 
 ## Prerequisite
-Issue 02a. The dependency, the Docker build context, and the CI install
+Issue 02a, tracked as #161. The dependency, the Docker build context, and the CI install
 order are already in place; this issue is pure Python and must not touch
 packaging, Dockerfiles, or workflows.
 
