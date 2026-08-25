@@ -118,6 +118,11 @@ to schedule it into would be scheduling into nothing.
   a trained model. Decided against measurement rather than in the abstract:
   [the decision](superpowers/specs/2026-08-24-skill-model-decision.md),
   [the evidence](skill-model-measurement/results.md).
+- **Unknown-skill admission is closed.** The committed evidence cannot score a
+  permissive rule against identifiable unknowns and labelled junk, so every
+  unresolved candidate is rejected until those populations exist and a rule is
+  measured. Recorded in
+  [the gate evaluation](superpowers/specs/2026-08-25-job-skills/gate-evaluation.md).
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
   once no un-retired provenance remains.
@@ -133,7 +138,6 @@ Ordered by how expensive each is to reverse.
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
-| What makes an unknown skill legitimate enough to store | Expensive: without it the design re-admits the 85% junk that got free text rejected | After #46; before #47 or #48 stores an unknown |
 | Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Phase C |
 
 The skill model was the hinge and is now decided. It went to a hybrid because
