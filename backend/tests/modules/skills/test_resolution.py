@@ -1,24 +1,120 @@
+import json
+from pathlib import Path
 from uuid import UUID
 
 import pytest
 from pydantic import ValidationError
 
+from app.modules.skills import TEXT_MATCHING_HAZARD_FORMS
 from app.modules.skills.resolution import (
+    DEFAULT_VOCABULARY_VERSION,
+    PUBLISHED_ALIAS_TABLES,
     AliasTableDocument,
     KnownSkillResolver,
     ResolutionStatus,
     load_default_resolver,
+    load_resolver,
     normalize_surface_form,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 
 
 @pytest.fixture(scope="module")
 def resolver() -> KnownSkillResolver:
-    return load_default_resolver()
+    return load_resolver("2026.08.24.1")
 
 
 def test_alias_table_has_an_explicit_version(resolver: KnownSkillResolver) -> None:
     assert resolver.vocabulary_version == "2026.08.24.1"
+
+
+def test_newest_alias_table_is_the_default() -> None:
+    resolver = load_default_resolver()
+
+    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.25.1"
+    assert resolver.resolve("machine learning").concepts[0].preferred_label == "Machine learning"
+
+
+@pytest.mark.parametrize(
+    ("version", "term", "preferred_label"),
+    [
+        ("2026.08.24.1", "Postgres", "PostgreSQL"),
+        ("2026.08.25.1", "deep learning", "Machine learning"),
+    ],
+)
+def test_every_published_alias_table_loads_and_resolves(
+    version: str, term: str, preferred_label: str
+) -> None:
+    result = load_resolver(version).resolve(term)
+
+    assert result.status is ResolutionStatus.RESOLVED
+    assert result.concepts[0].preferred_label == preferred_label
+    assert set(PUBLISHED_ALIAS_TABLES) == {"2026.08.24.1", "2026.08.25.1"}
+
+
+def test_unpublished_alias_table_version_fails_loudly() -> None:
+    with pytest.raises(ValueError, match=r"alias table version is not published: 2099\.01\.01\.1"):
+        load_resolver("2099.01.01.1")
+
+
+def test_v2_matches_the_frozen_curated_arm_exactly_after_normalization() -> None:
+    curated = json.loads(
+        (REPOSITORY_ROOT / "docs/skill-model-measurement/in-progress/curated-arm.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    artifact = json.loads(
+        (REPOSITORY_ROOT / "backend/app/modules/skills/data/aliases.v2.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    expected_by_form: dict[str, tuple[str, str]] = {}
+    raw_forms = 0
+    for entry in curated["entries"]:
+        for alias in entry["aliases"]:
+            raw_forms += 1
+            expected_by_form.setdefault(normalize_surface_form(alias), (alias, entry["label"]))
+
+    concept_labels = {concept["id"]: concept["preferred_label"] for concept in artifact["concepts"]}
+    published_by_form = {
+        normalize_surface_form(form["surface_form"]): (
+            form["surface_form"],
+            concept_labels[form["concept_ids"][0]].lower(),
+        )
+        for form in artifact["surface_forms"]
+    }
+
+    assert artifact["schema_version"] == 1
+    assert artifact["vocabulary_version"] == "2026.08.25.1"
+    assert len(artifact["concepts"]) == len(curated["entries"]) == 56
+    assert len({concept["id"] for concept in artifact["concepts"]}) == 56
+    assert all("esco_uri" not in concept for concept in artifact["concepts"])
+    assert [concept["preferred_label"] for concept in artifact["concepts"]] == [
+        entry["label"][0].upper() + entry["label"][1:] for entry in curated["entries"]
+    ]
+    assert raw_forms == 184
+    assert len(artifact["surface_forms"]) == len(expected_by_form) == 182
+    assert published_by_form == expected_by_form
+
+
+def test_text_matching_hazards_are_importable_and_published() -> None:
+    assert TEXT_MATCHING_HAZARD_FORMS == (
+        "ai",
+        "aws",
+        "b2b",
+        "gcp",
+        "gpu",
+        "ml",
+        "own",
+        "qa",
+        "ux",
+    )
+    assert all(
+        load_default_resolver().resolve(term).status is ResolutionStatus.RESOLVED
+        for term in TEXT_MATCHING_HAZARD_FORMS
+    )
 
 
 @pytest.mark.parametrize("term", ["postgres", "POSTGRES", "  Postgres!  "])
@@ -86,9 +182,7 @@ def test_an_unmapped_term_is_not_guessed_or_created(resolver: KnownSkillResolver
 
 
 @pytest.mark.parametrize("term", ["own", "projects", "testing", "engineering"])
-def test_known_broad_false_positives_remain_unmapped(
-    resolver: KnownSkillResolver, term: str
-) -> None:
+def test_v1_does_not_infer_unpublished_terms(resolver: KnownSkillResolver, term: str) -> None:
     assert resolver.resolve(term).status is ResolutionStatus.UNMAPPED
 
 
