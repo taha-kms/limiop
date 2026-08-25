@@ -23,6 +23,7 @@ sequence and open decisions.
 | Second source | #93, #94, #95, #122 | Done |
 | Skill model decision | #46 | Done |
 | Identity and sessions | #38, #39, #40 | Done |
+| Service extraction | #160–#168, #171 | Done |
 | CV processing and matching | #15 | Not started |
 | Analytics and production | #16 | Not started |
 
@@ -54,10 +55,17 @@ to schedule it into would be scheduling into nothing.
 - **Simple matching before sophisticated matching.** Skill overlap, then
   TF-IDF, then embeddings, each evaluated before adoption. Recorded in the
   project context and reflected in #49, #53, and #63.
-- **PostgreSQL and Alembic are the schema authority.** No second datastore
-  without a demonstrated need.
+- **PostgreSQL and Alembic are the schema authority.** One PostgreSQL has two
+  migration chains: `platform/db` owns tables touched by both deployables and
+  the backend owns its private tables. No second datastore without a
+  demonstrated need.
 - **Airflow orchestrates, it does not transform.** Pipeline logic stays in
-  importable modules.
+  `services/job-ingestion-service`, and Airflow never depends on the backend.
+- **Job ingestion is a separate deployable.** Fetching, validation,
+  normalization, deduplication, reconciliation, and persistence differ from API
+  behavior, so they live in `services/job-ingestion-service`. The backend is
+  only the API. A data-access service was rejected because storage does not
+  define a behavior boundary and the catalog updates must remain atomic.
 - **External job data is untrusted.** Validated at the boundary, never rendered
   as markup, never used to drive control flow.
 - **The job catalogue is public.** Anonymous visitors read the whole catalogue,
@@ -233,6 +241,24 @@ canonical concepts are not optional. 184 hand-written surface forms beat 65850
 ESCO labels by 12.7 points of recall, which is why ESCO is a mapping layer
 rather than the vocabulary. And 28 of the 38 mentions no arm found were named
 products and standards, which is why unknowns are preserved.
+
+### Service extraction — done
+
+Issues #160 through #168, plus #171.
+
+Job ingestion moved out of the backend and into
+`services/job-ingestion-service`. Shared catalog and skill models moved to
+`platform/db`, with one migration chain for shared tables and another for
+backend-owned tables in the same PostgreSQL database. Airflow now depends on
+the ingestion service and has no dependency on the backend.
+
+This phase sits before Phase C rather than inside it. CV intake and candidate
+profiles land in the backend, and they should land in a deployable whose only
+responsibility is the API.
+
+**Exit:** met. Ingestion runs as its own deployable, Airflow calls it without
+the backend, both Alembic chains build one database in ownership order, and the
+backend is only the API.
 
 ### Phase C — Identity and CV intake
 

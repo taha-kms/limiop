@@ -4,11 +4,19 @@ SkillSync stores one source-independent representation of a job. Every provider
 maps onto this contract, and nothing downstream — the API, analytics, matching —
 needs to know which provider a job came from.
 
-The contract lives in `backend/app/modules/jobs/`:
+This is now an interface between two deployables rather than an internal
+backend convention. `services/job-ingestion-service` produces and persists the
+canonical job, while `backend` reads and serves it. A change therefore costs a
+coordinated service, database, and API change and should be treated as a
+coordinated interface change rather than a local refactor.
 
-- `domain.py` holds the vocabulary and normalization rules.
-- `models.py` holds the PostgreSQL tables, which are the schema authority.
-- `schemas.py` holds the validated Python contract described here.
+The contract is represented in three existing modules:
+
+- `services/job-ingestion-service/job_ingestion/schemas.py` validates the
+  normalized input accepted by ingestion persistence.
+- `platform/db/platform_db/models/catalog.py` holds the PostgreSQL tables and
+  vocabulary, which are the schema authority.
+- `backend/app/modules/jobs/schemas.py` holds the validated API read contract.
 
 ## Vocabulary
 
