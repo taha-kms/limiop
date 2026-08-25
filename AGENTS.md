@@ -335,8 +335,8 @@ Do not produce:
 
 ```text
 Updated files:
-- backend/app/services/matching.py
-- backend/app/models/job.py
+- backend/app/modules/jobs/matching.py
+- platform/db/platform_db/models/catalog.py
 - tests/test_matching.py
 
 This commit introduces...
@@ -534,8 +534,8 @@ Stage intentionally.
 Prefer:
 
 ```text
-git add backend/app/services/job_ingestion.py
-git add tests/test_job_ingestion.py
+git add services/job-ingestion-service/job_ingestion/persistence.py
+git add services/job-ingestion-service/tests/test_persistence.py
 ```
 
 over automatically staging unrelated repository changes.
@@ -647,16 +647,35 @@ FastAPI should handle:
 * business logic
 * authentication
 * validation
-* persistence coordination
+* persistence coordination for backend-owned data
+* read access to the shared job catalog
 * ML inference integration
+
+The backend is the API. Do not place job-posting ingestion, provider clients,
+normalization, deduplication, reconciliation, or ingestion persistence in it.
 
 Avoid putting complex business logic directly inside route handlers.
 
-Use services/modules where appropriate.
+Use backend modules where appropriate.
+
+### Platform Database
+
+`platform/db` owns database models and migrations for tables shared by
+deployables, plus the session factory. It must not contain FastAPI, HTTP APIs,
+query helpers, or business logic.
+
+### Job Ingestion Service
+
+`services/job-ingestion-service` owns provider clients, validation,
+normalization, deduplication, reconciliation, and persistence of job postings.
+It depends on `platform/db` and must never depend on the backend.
 
 ### Airflow
 
 Airflow should orchestrate workflows.
+
+Airflow depends on `services/job-ingestion-service` and must never import the
+backend.
 
 DAG files should remain thin.
 
@@ -667,7 +686,7 @@ Prefer:
 ```text
 DAG
  ↓
-Reusable Python service
+Job ingestion service
  ↓
 Transformation
 ```

@@ -120,6 +120,11 @@ Business logic, machine-learning logic, and direct database access should not be
 
 ## 6. Backend
 
+The backend is the SkillSync API. It owns HTTP endpoints, authentication,
+validation, application behavior, and persistence for API-owned data. It reads
+the shared job catalog but does not fetch, normalize, deduplicate, or persist
+job postings.
+
 The backend uses:
 
 * Python
@@ -138,25 +143,33 @@ Pydantic is responsible for request, response, configuration, and validation mod
 
 ## 7. Database
 
-The primary application database is **PostgreSQL**.
+SkillSync uses one **PostgreSQL** database with two Alembic migration chains.
+`platform/db` owns shared tables and its own migration chain. The backend owns
+API-private tables and a separate migration chain. Platform migrations run
+before backend migrations because the backend has a foreign key into the shared
+skill catalog.
 
-Expected entities include:
+A table lives with the deployable that writes it. When two deployables touch a
+table, it lives in `platform/db` instead. The shared tables are:
+
+```text
+jobs
+companies
+job_sources
+job_provenance
+skill_concepts
+skill_surface_forms
+skill_alias_versions
+```
+
+The backend-owned tables are:
 
 ```text
 users
 cvs
-jobs
-companies
-skills
-job_skills
-cv_skills
-job_matches
-saved_jobs
-pipeline_runs
-model_metadata
+candidate_profiles
+candidate_profile_skills
 ```
-
-The schema may evolve as requirements become clearer.
 
 Large binary files such as CV documents and ML model artifacts should not be stored directly in PostgreSQL.
 
@@ -242,7 +255,10 @@ model_evaluation
 
 Airflow should orchestrate jobs rather than contain large amounts of business logic directly inside DAG files.
 
-Reusable processing logic should live in normal Python modules and be called by Airflow tasks.
+Airflow depends on `services/job-ingestion-service`, which owns fetching,
+validation, normalization, deduplication, and persistence of job postings.
+Airflow never depends on the backend. DAG files call the service and contain no
+pipeline business logic.
 
 ---
 
@@ -342,43 +358,34 @@ PostgreSQL may store metadata pointing to those artifacts.
 
 ## 15. Repository Strategy
 
-SkillSync should use a monorepo.
-
-Expected high-level structure:
+SkillSync uses a monorepo with this high-level structure:
 
 ```text
 skillsync/
-├── frontend/
+├── platform/
+│   └── db/
+├── services/
+│   └── job-ingestion-service/
 ├── backend/
+├── frontend/
 ├── airflow/
-├── ml/
-├── tests/
-├── docker/
-├── docs/
-├── .github/
-├── docker-compose.yml
-└── README.md
+└── docs/
 ```
 
-The exact structure may evolve, but responsibilities should remain clearly separated.
+`platform/db` contains shared models, migrations, and the session factory.
+`services/job-ingestion-service` contains job ingestion behavior. The backend is
+the API, the frontend is the web application, and Airflow is orchestration.
 
 ---
 
 ## 16. Local Development
 
-Local development should use Docker where appropriate.
+Local development uses Docker Compose where appropriate. The default Compose
+services run PostgreSQL, both migration chains, and the FastAPI backend. The
+`pipelines` profile adds Airflow and the scheduled ingestion path:
 
-A developer should eventually be able to start the main local environment using Docker Compose.
-
-Typical local services may include:
-
-```text
-Next.js
-FastAPI
-PostgreSQL
-Airflow Webserver
-Airflow Scheduler
-Airflow Worker
+```bash
+docker compose --profile pipelines up --build
 ```
 
 Machine-learning and pipeline code should execute within reproducible Python environments.
@@ -537,6 +544,15 @@ When working on SkillSync, follow these principles.
 ### Prefer clear boundaries
 
 Frontend, backend, data pipelines, and machine-learning logic should have distinct responsibilities.
+
+### Put service boundaries around behavior
+
+A service boundary goes where behavior differs, never where storage differs.
+The data-access service was rejected because ingestion must update jobs,
+provenance, and retirement state atomically, and because wrapping the shared
+database in HTTP would force coupled releases without separating behavior.
+`platform/db` is a shared package instead: it owns shared schema without
+becoming another deployable.
 
 ### Prefer simple solutions first
 
