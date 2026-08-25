@@ -118,6 +118,18 @@ to schedule it into would be scheduling into nothing.
   a trained model. Decided against measurement rather than in the abstract:
   [the decision](superpowers/specs/2026-08-24-skill-model-decision.md),
   [the evidence](skill-model-measurement/results.md).
+- **Unknown skills are closed to matching and open to observation.** The
+  committed evidence cannot score a permissive rule against identifiable
+  unknowns and labelled junk, so no unresolved candidate reaches `job_skills`
+  or becomes a concept. Each one is still recorded in `job_skill_mentions`,
+  which nothing matches against, carrying the raw and normalized forms, the
+  job, occurrence counts and timestamps, and the extractor version. Recording
+  an observation is not admitting a skill, and it is what makes the closed rule
+  temporary: the evaluation failed for want of candidates linked to postings
+  and employers, and live ingestion accumulates exactly those. The gate is
+  re-decided against production observations rather than a second
+  hand-annotated corpus. Recorded in
+  [the gate evaluation](superpowers/specs/2026-08-25-job-skills/gate-evaluation.md).
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
   once no un-retired provenance remains.
@@ -133,7 +145,6 @@ Ordered by how expensive each is to reverse.
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
-| What makes an unknown skill legitimate enough to store | Expensive: without it the design re-admits the 85% junk that got free text rejected | After #46; before #47 or #48 stores an unknown |
 | Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Phase C |
 
 The skill model was the hinge and is now decided. It went to a hybrid because
