@@ -24,13 +24,23 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  migrate:
+  # Reuse the backend image because it already installs platform-db; keeping
+  # both Alembic chains together avoids building a second migration image.
+  migrate-platform:
+    image: skillsync-backend:local
+    environment: *backend-environment
+    command: ["alembic", "-c", "platform/db/alembic.ini", "upgrade", "head"]
+    depends_on:
+      database:
+        condition: service_healthy
+
+  migrate-backend:
     image: skillsync-backend:local
     environment: *backend-environment
     command: ["alembic", "upgrade", "head"]
     depends_on:
-      database:
-        condition: service_healthy
+      migrate-platform:
+        condition: service_completed_successfully
 
   api:
     build:
@@ -39,7 +49,7 @@ services:
     image: skillsync-backend:local
     environment: *backend-environment
     depends_on:
-      migrate:
+      migrate-backend:
         condition: service_completed_successfully
     healthcheck:
       test:
