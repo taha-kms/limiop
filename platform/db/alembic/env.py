@@ -10,6 +10,8 @@ from platform_db.models import (  # noqa: F401
     Company,
     Job,
     JobProvenance,
+    JobSkill,
+    JobSkillMention,
     JobSource,
     SkillAliasVersion,
     SkillConcept,
@@ -23,6 +25,8 @@ PLATFORM_TABLES = frozenset(
     {
         "companies",
         "job_provenance",
+        "job_skill_mentions",
+        "job_skills",
         "job_sources",
         "jobs",
         "skill_alias_versions",
