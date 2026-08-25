@@ -5,12 +5,14 @@ on:
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'platform/db/**'
       - '.github/workflows/e2e.yml'
   push:
     branches: [main]
     paths:
       - 'backend/**'
       - 'frontend/**'
+      - 'platform/db/**'
       - '.github/workflows/e2e.yml'
 
 permissions:
@@ -54,7 +56,9 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-          cache-dependency-path: backend/pyproject.toml
+          cache-dependency-path: |
+            backend/pyproject.toml
+            platform/db/pyproject.toml
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -67,6 +71,7 @@ jobs:
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -e ../platform/db
           python -m pip install -e '.[dev]'
 
       - name: Migrate and seed the catalogue
