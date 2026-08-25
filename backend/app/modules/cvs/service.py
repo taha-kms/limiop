@@ -1,6 +1,7 @@
 """Coordinate a bounded upload across policy, object storage, and metadata."""
 
 from contextlib import suppress
+from functools import partial
 from tempfile import SpooledTemporaryFile
 from typing import IO, Protocol
 from uuid import UUID
@@ -62,10 +63,14 @@ async def intake_cv(
     policy: CVUploadPolicy,
 ) -> CV:
     try:
-        with SpooledTemporaryFile(
-            max_size=min(UPLOAD_MEMORY_SPOOL_BYTES, policy.max_bytes),
-            mode="w+b",
-        ) as spool:
+        spool = await to_thread.run_sync(
+            partial(
+                SpooledTemporaryFile,
+                max_size=min(UPLOAD_MEMORY_SPOOL_BYTES, policy.max_bytes),
+                mode="w+b",
+            )
+        )
+        try:
             size_bytes, initial_bytes = await copy_upload_bounded(
                 upload,
                 spool,
@@ -91,6 +96,11 @@ async def intake_cv(
                     await storage.delete(stored.key)
                 raise CVMetadataPersistenceError("the CV metadata could not be stored") from None
             return cv
+        finally:
+            # An upload past the spool threshold has rolled over to a real
+            # file, so closing it flushes and unlinks on disk. That is the one
+            # blocking call the surrounding offloading missed.
+            await to_thread.run_sync(spool.close)
     finally:
         with suppress(OSError):
             await upload.close()

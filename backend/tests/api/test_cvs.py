@@ -1,6 +1,8 @@
+import asyncio
 import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from tempfile import SpooledTemporaryFile
 from typing import IO, Any
 from uuid import UUID
 
@@ -13,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Environment, Settings
 from app.main import create_app
+from app.modules.cvs import service
 from app.modules.cvs.storage import (
     CVObjectNotFound,
     CVObjectTooLarge,
@@ -270,3 +273,76 @@ def test_a_cleanup_failure_does_not_expose_storage_details(
     assert "delete unavailable" not in response.text
     assert len(cv_client.storage.deleted) == 1
     assert cv_rows(cv_client.database_url) == []
+
+
+@dataclass
+class SpoolCloses:
+    """How the upload spool was closed, and whether the loop was blocked."""
+
+    on_the_event_loop: int = 0
+    off_the_event_loop: int = 0
+
+    @property
+    def total(self) -> int:
+        return self.on_the_event_loop + self.off_the_event_loop
+
+
+def record_spool_closes(monkeypatch: pytest.MonkeyPatch) -> SpoolCloses:
+    """Swap in a spool that reports which thread closed it.
+
+    A spool past its threshold holds a real file, so closing it flushes and
+    unlinks on disk. `asyncio.get_running_loop()` raises in a worker thread and
+    succeeds on the loop, which tells the two apart without naming threads.
+    """
+    closes = SpoolCloses()
+
+    class RecordingSpool(SpooledTemporaryFile[bytes]):
+        def close(self) -> None:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                closes.off_the_event_loop += 1
+            else:
+                closes.on_the_event_loop += 1
+            super().close()
+
+    monkeypatch.setattr(service, "SpooledTemporaryFile", RecordingSpool)
+    return closes
+
+
+def test_an_accepted_upload_closes_its_spool_off_the_event_loop(
+    cv_client: CVClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(cv_client)
+    closes = record_spool_closes(monkeypatch)
+
+    assert upload(cv_client).status_code == 201
+    assert closes.total == 1
+    assert closes.on_the_event_loop == 0
+
+
+def test_a_rejected_upload_closes_its_spool_off_the_event_loop(
+    cv_client: CVClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(cv_client)
+    closes = record_spool_closes(monkeypatch)
+
+    assert upload(cv_client, b"not a pdf").status_code == 415
+    assert closes.total == 1
+    assert closes.on_the_event_loop == 0
+
+
+def test_a_failed_upload_closes_its_spool_off_the_event_loop(
+    cv_client: CVClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(cv_client)
+    closes = record_spool_closes(monkeypatch)
+
+    async def refuse_commit(_session: AsyncSession) -> None:
+        raise SQLAlchemyError("private database detail")
+
+    monkeypatch.setattr(AsyncSession, "commit", refuse_commit)
+
+    assert upload(cv_client).status_code == 503
+    assert closes.total == 1
+    assert closes.on_the_event_loop == 0
