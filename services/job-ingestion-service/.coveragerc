@@ -1,0 +1,8 @@
+[run]
+branch = true
+source = job_ingestion
+concurrency = thread,greenlet
+
+[report]
+show_missing = true
+skip_covered = true

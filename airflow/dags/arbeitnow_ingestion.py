@@ -1,17 +1,16 @@
 """Scheduled Arbeitnow job ingestion.
 
 This file is orchestration only. Fetching, validation, normalization,
-deduplication, and persistence live in `app.modules.ingestion` and are called
-through one entry point, so the pipeline stays testable without Airflow and
-Airflow stays free of business logic.
+deduplication, and persistence live in `job_ingestion` and are called through
+one entry point, so the pipeline stays testable without Airflow and Airflow
+stays free of business logic.
 """
 
 import asyncio
 from datetime import datetime, timedelta
 
 from airflow.sdk import dag, task
-
-from app.modules.ingestion.arbeitnow import ingest_arbeitnow
+from job_ingestion.arbeitnow import ingest_arbeitnow
 
 START_DATE = datetime(2026, 1, 1)
 SCHEDULE = "0 * * * *"

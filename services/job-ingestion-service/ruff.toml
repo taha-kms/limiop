@@ -1,9 +1,9 @@
 line-length = 100
-src = ["job_ingestion", "tests"]
+src = ["job_ingestion", "scripts", "tests"]
 target-version = "py312"
 
 [lint]
 select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
 
 [lint.isort]
-known-first-party = ["job_ingestion", "tests"]
+known-first-party = ["job_ingestion", "scripts", "tests"]

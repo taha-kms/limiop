@@ -3,9 +3,9 @@
 Scheduled orchestration for SkillSync data workflows.
 
 DAGs are thin. Fetching, validation, normalization, deduplication, and
-persistence live in `backend/app/modules/ingestion` and are invoked through a
-single entry point, so pipeline behavior is tested under the backend's own
-gates and Airflow only decides *when* work runs.
+persistence live in `services/job-ingestion-service` and are invoked through a
+single entry point, so pipeline behavior is tested under the service's own gates
+and Airflow only decides *when* work runs.
 
 ## DAGs
 
@@ -36,7 +36,7 @@ error, a missing schedule, or business logic creeping into a DAG file fails CI.
 
 ## Configuration
 
-DAGs read the same `SKILLSYNC_` environment variables as the backend. The
+DAGs read the ingestion service's `SKILLSYNC_` environment variables. The
 database URL must be set for a run to do anything:
 
 ```bash
