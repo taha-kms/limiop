@@ -132,10 +132,16 @@ observations rather than from a second hand-annotated corpus.
 
 Each observation carries enough provenance to evaluate it later: the raw
 extracted value as written, the normalized value where one exists, the job it
-came from, when it was first and last seen and how often, and the version of
-the extractor that produced it. Extractor version is separate from vocabulary
-version: a change in either can explain why a term stopped resolving, and
-without both recorded the two are indistinguishable.
+came from, when it was first and last seen, how often it
+appears in that posting's text, and both the extractor version that produced it
+and the vocabulary version under which resolution failed. A change in either
+can explain why a term stopped resolving, and without both recorded the two are
+indistinguishable, so both are also part of the observation's identity.
+
+The occurrence count is per posting, not per ingestion run. Two sources
+re-running hourly must not inflate it, or the frequency evidence this table
+exists to gather would be an artifact of the schedule. Cross-posting recurrence
+is counted as distinct jobs carrying a normalized form.
 
 Promotion out of the inbox is a later decision, made against those
 observations, requiring the same evidence this evaluation could not find:

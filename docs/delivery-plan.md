@@ -123,7 +123,8 @@ to schedule it into would be scheduling into nothing.
   unknowns and labelled junk, so no unresolved candidate reaches `job_skills`
   or becomes a concept. Each one is still recorded in `job_skill_mentions`,
   which nothing matches against, carrying the raw and normalized forms, the
-  job, occurrence counts and timestamps, and the extractor version. Recording
+  job, per-posting occurrence counts and timestamps, and both the extractor
+  version and the vocabulary version under which resolution failed. Recording
   an observation is not admitting a skill, and it is what makes the closed rule
   temporary: the evaluation failed for want of candidates linked to postings
   and employers, and live ingestion accumulates exactly those. The gate is

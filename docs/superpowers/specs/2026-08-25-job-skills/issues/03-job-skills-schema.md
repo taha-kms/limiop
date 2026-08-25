@@ -26,12 +26,13 @@ job_skill_mentions(
   job_id            uuid → jobs(id) on delete cascade,
   surface_form      varchar not null,   -- raw, exactly as the posting wrote it
   normalized_form   varchar,            -- nullable: normalization may not apply
-  occurrences       integer not null,
+  occurrences       integer not null,   -- times the term appears in THIS posting
   first_seen_at     timestamptz not null,
   last_seen_at      timestamptz not null,
   extractor_version varchar not null,
+  alias_version     varchar not null → skill_alias_versions(version),
   evidence          jsonb,
-  unique (job_id, surface_form, extractor_version)
+  unique (job_id, surface_form, extractor_version, alias_version)
 )
 ```
 
@@ -49,15 +50,22 @@ job_skill_mentions(
   `gate-evaluation.md` failed for want of records linking a candidate to its
   posting, employer, and span, and this table accumulates exactly those from
   live ingestion.
-- `extractor_version` is separate from the vocabulary's `alias_version`. Either
-  can explain why a term stopped resolving, and recording only one makes the
-  two indistinguishable.
-- `occurrences`, `first_seen_at`, and `last_seen_at` are what a frequency or
-  recurrence rule would be scored against. Without them the same evaluation
-  fails the same way a second time.
-- The unique constraint is per job, surface form, and extractor version, so
-  re-running extraction updates a row rather than accumulating duplicates of
-  the same observation. `normalized_form` is a column and is indexed, because the gate's
+- `alias_version` records the vocabulary under which resolution **failed**, and
+  `extractor_version` the extractor that produced the mention. Both are needed:
+  a term stops resolving either because the extractor changed or because the
+  vocabulary did, and one version alone cannot distinguish them. Both are in the
+  uniqueness key, so observations made under different vocabulary versions stay
+  distinguishable rather than overwriting each other — which is what makes
+  "this resolved under v2 but not v1" answerable.
+- `occurrences` counts how many times the term appears **in that posting's
+  text**. It is not a count of ingestion runs that saw the term. Two identical
+  hourly re-runs of the same source must leave it unchanged: re-extraction
+  recomputes the value from the text and updates the row, it never increments.
+  Cross-posting frequency — the thing a future recurrence rule would be scored
+  on — comes from counting distinct `job_id` values for a normalized form, not
+  from this column.
+- `first_seen_at` and `last_seen_at` bound when the observation was current.
+  `last_seen_at` advances on re-extraction; `first_seen_at` does not. `normalized_form` is a column and is indexed, because the gate's
   question is a frequency question across postings; `evidence` is JSONB because
   spans, context, and extractor metadata have a shape that will change and are
   never aggregated.

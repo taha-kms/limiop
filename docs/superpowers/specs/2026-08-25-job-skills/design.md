@@ -25,11 +25,17 @@ job_skills(
 )
 
 job_skill_mentions(
-  id              uuid primary key,
-  job_id          uuid → jobs(id) on delete cascade,
-  normalized_form varchar,   -- indexed
-  surface_form    varchar,
-  evidence        jsonb
+  id                uuid primary key,
+  job_id            uuid → jobs(id) on delete cascade,
+  surface_form      varchar not null,   -- raw, exactly as the posting wrote it
+  normalized_form   varchar,            -- nullable: normalization may not apply
+  occurrences       integer not null,   -- times the term appears in THIS posting
+  first_seen_at     timestamptz not null,
+  last_seen_at      timestamptz not null,
+  extractor_version varchar not null,
+  alias_version     varchar not null → skill_alias_versions(version),
+  evidence          jsonb,
+  unique (job_id, surface_form, extractor_version, alias_version)
 )
 ```
 
@@ -65,11 +71,16 @@ shape that will change and are never aggregated across rows. That is what JSONB
 is for. `normalized_form` stays a column because the gate's question is a
 frequency question across postings, which JSON cannot answer honestly.
 
-### Why `alias_version` is on `job_skills`
+### Why both versions are on both tables
 
-So extraction can be re-run under a new vocabulary and compared against the
-old. Without it, "extracted under v1" and "absent from v2" are
-indistinguishable.
+`job_skills` carries `alias_version` so extraction can be re-run under a new
+vocabulary and compared against the old. `job_skill_mentions` carries
+`alias_version` **and** `extractor_version`, because an unresolved mention is a
+statement about two moving parts at once: this extractor, reading this
+vocabulary, found no concept. A term that resolves after a vocabulary update
+and a term that resolves after an extractor fix look identical unless both are
+recorded, and both are in the uniqueness key so the two observations coexist
+rather than one overwriting the other.
 
 ## Where the extractor lives
 
