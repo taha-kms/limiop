@@ -77,6 +77,29 @@ The backend serves a public job catalogue over FastAPI and PostgreSQL, with Alem
 
 Machine-learning code, accounts, and CV handling are not implemented yet. For what is built and what is decided next, read [the delivery plan](docs/delivery-plan.md); for product scope and architecture decisions, read [the project context](docs/PROJECT_CONTEXT.md).
 
+## Local development
+
+Create the environment file, replace the example database password and matching URL, and create the external PostgreSQL volume once before starting Compose:
+
+```bash
+cp .env.example .env
+docker volume create skillsync_postgres_data
+docker compose up --build
+```
+
+If `SKILLSYNC_POSTGRES_VOLUME` is changed in `.env`, create a volume with that exact name instead. Compose deliberately keeps this external volume, including the job catalogue, when `docker compose down -v` runs. The Airflow metadata database uses the same PostgreSQL server, so DAG history and run state persist across restarts too.
+
+To reset PostgreSQL deliberately, stop the stack, remove the configured volume by name, recreate it, and start the stack so both migration chains build an empty database:
+
+```bash
+docker compose down -v
+docker volume rm skillsync_postgres_data
+docker volume create skillsync_postgres_data
+docker compose up --build
+```
+
+Use the configured volume name in both volume commands when overriding `SKILLSYNC_POSTGRES_VOLUME`.
+
 ## Development workflow
 
 All meaningful changes follow an issue-first workflow:
