@@ -21,6 +21,7 @@ ALLOWED_PLATFORM_DB_MODULES = frozenset(
         "platform_db.models",
         "platform_db.models.catalog",
         "platform_db.models.skills",
+        "platform_db.models.job_skills",
         "platform_db.session",
     }
 )

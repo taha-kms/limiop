@@ -6,6 +6,8 @@ from platform_db.models import (  # noqa: F401
     Company,
     Job,
     JobProvenance,
+    JobSkill,
+    JobSkillMention,
     JobSource,
     SkillAliasVersion,
     SkillConcept,
