@@ -51,6 +51,7 @@ addopts = [
   "--strict-config",
   "--strict-markers",
   "--cov=app",
+  "--cov=platform_db",
   "--cov-branch",
   "--cov-report=term-missing",
   "--cov-report=xml:coverage.xml",
@@ -63,7 +64,7 @@ markers = [
 
 [tool.coverage.run]
 branch = true
-source = ["app"]
+source = ["app", "platform_db"]
 # SQLAlchemy's async layer resumes coroutines through a greenlet switch, and
 # without this the tracer loses every line after the first await in a route.
 concurrency = ["thread", "greenlet"]

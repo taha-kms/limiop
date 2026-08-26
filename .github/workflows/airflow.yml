@@ -4,15 +4,15 @@ on:
   pull_request:
     paths:
       - 'airflow/**'
-      - 'backend/**'
       - 'platform/db/**'
+      - 'services/job-ingestion-service/**'
       - '.github/workflows/airflow.yml'
   push:
     branches: [main]
     paths:
       - 'airflow/**'
-      - 'backend/**'
       - 'platform/db/**'
+      - 'services/job-ingestion-service/**'
       - '.github/workflows/airflow.yml'
 
 permissions:
@@ -40,10 +40,10 @@ jobs:
           cache: pip
           cache-dependency-path: |
             airflow/requirements.txt
-            backend/pyproject.toml
             platform/db/pyproject.toml
+            services/job-ingestion-service/pyproject.toml
 
-      - name: Install Airflow and the backend package
+      - name: Install Airflow and ingestion dependencies
         working-directory: airflow
         run: |
           python -m pip install --upgrade pip

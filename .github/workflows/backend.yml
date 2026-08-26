@@ -73,13 +73,25 @@ jobs:
         working-directory: backend
         run: ruff format --check .
 
+      - name: Check shared database formatting
+        working-directory: platform/db
+        run: ruff format --check .
+
       - name: Lint backend
         working-directory: backend
+        run: ruff check .
+
+      - name: Lint shared database
+        working-directory: platform/db
         run: ruff check .
 
       - name: Type-check backend
         working-directory: backend
         run: mypy
+
+      - name: Type-check shared database
+        working-directory: platform/db
+        run: mypy --config-file mypy.ini
 
       - name: Test backend
         working-directory: backend
@@ -100,5 +112,5 @@ jobs:
           disable_search: true
           fail_ci_if_error: true
           files: backend/coverage.xml
-          flags: backend
+          flags: backend,platform_db
           use_oidc: true

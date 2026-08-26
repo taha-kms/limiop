@@ -2,6 +2,13 @@ name: Architecture boundaries
 
 on:
   pull_request:
+  push:
+    branches: [main]
+    paths:
+      - 'platform/skills/**'
+      - 'tests/architecture/**'
+      - '.github/workflows/boundaries.yml'
+      - '.github/codecov.yml'
 
 permissions:
   contents: read
@@ -14,6 +21,9 @@ jobs:
   validate:
     name: Enforce architecture boundaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -43,6 +53,15 @@ jobs:
       - name: Test shared extractor
         working-directory: platform/skills
         run: pytest
+
+      - name: Upload shared extractor coverage
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: platform/skills/coverage.xml
+          flags: platform_skills
+          use_oidc: true
 
       - name: Check architecture boundaries
         run: python -m pytest tests/architecture/test_boundaries.py

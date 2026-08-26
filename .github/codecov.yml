@@ -1,5 +1,4 @@
-# Coverage policy. The upload step is added to the first workflow that runs a
-# test suite; no component produces coverage yet.
+# Coverage policy for production packages that publish coverage from CI.
 coverage:
   status:
     project:
@@ -18,6 +17,18 @@ flags:
   backend:
     paths:
       - backend/
+    carryforward: true
+  platform_db:
+    paths:
+      - platform/db/
+    carryforward: true
+  platform_skills:
+    paths:
+      - platform/skills/
+    carryforward: true
+  ingestion:
+    paths:
+      - services/job-ingestion-service/
     carryforward: true
   frontend:
     paths:
