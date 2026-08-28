@@ -1,0 +1,1024 @@
+{
+  "schema_version": 1,
+  "vocabulary_version": "2026.08.28.1",
+  "concepts": [
+    {
+      "id": "6fbd91ff-8f39-474b-9453-20990f6f280a",
+      "preferred_label": "Artificial intelligence"
+    },
+    {
+      "id": "44f820c3-6deb-4f76-9de9-881ad07e9119",
+      "preferred_label": "Machine learning"
+    },
+    {
+      "id": "6edaae4a-204b-431a-a6c0-00b61159442c",
+      "preferred_label": "Data analysis"
+    },
+    {
+      "id": "12c7e3ce-653a-4fad-8b60-e41c1247a2c0",
+      "preferred_label": "Communication skills"
+    },
+    {
+      "id": "71827422-37b7-4486-9f5a-2710cdea522b",
+      "preferred_label": "Software engineering"
+    },
+    {
+      "id": "b29a9f54-b3a2-4f53-b394-f93747263d94",
+      "preferred_label": "Product design"
+    },
+    {
+      "id": "8a166308-1675-4623-b0f8-d24eb55dd02c",
+      "preferred_label": "Sales"
+    },
+    {
+      "id": "8a431696-da56-46a7-978e-cb1015bab1c2",
+      "preferred_label": "Management"
+    },
+    {
+      "id": "e583469a-3de1-4ab9-93cc-993465974bdf",
+      "preferred_label": "Leadership"
+    },
+    {
+      "id": "4747f736-55c3-42b6-ae00-c2a9efa7a0f1",
+      "preferred_label": "Security"
+    },
+    {
+      "id": "d9680a9e-4fa3-4393-a2db-0f4160b39c9d",
+      "preferred_label": "Infrastructure"
+    },
+    {
+      "id": "7b1aa1b9-34cf-4391-9f70-6cb726e6f390",
+      "preferred_label": "Planning"
+    },
+    {
+      "id": "9134f494-342d-4418-a77b-e91945773175",
+      "preferred_label": "Strategy"
+    },
+    {
+      "id": "daa0dbb2-db76-452a-a134-61b372387d41",
+      "preferred_label": "Logistics"
+    },
+    {
+      "id": "7faa4c9b-131f-43f7-8a91-200dfa39bbba",
+      "preferred_label": "Observability"
+    },
+    {
+      "id": "d1122860-5e34-480a-b291-b1a1d2c8cf4b",
+      "preferred_label": "Cloud computing"
+    },
+    {
+      "id": "db8b7b2b-9087-4597-9284-c58d8a29456b",
+      "preferred_label": "Compliance"
+    },
+    {
+      "id": "5428d08e-d8ea-48c8-a6be-c02b05b7b314",
+      "preferred_label": "Marketing"
+    },
+    {
+      "id": "bc89a88e-11f0-45c4-9f76-5a03aef13751",
+      "preferred_label": "Research"
+    },
+    {
+      "id": "e0fe95fe-927b-467f-bdb7-adc528a50a44",
+      "preferred_label": "Collaboration"
+    },
+    {
+      "id": "8426e3b4-18b1-410b-a77c-aa0a725ec5fb",
+      "preferred_label": "Training"
+    },
+    {
+      "id": "1920c89d-a1fa-487c-9fd4-046e740d7d81",
+      "preferred_label": "Reporting"
+    },
+    {
+      "id": "3a0de06a-5f2c-4df5-a9df-a54e912af728",
+      "preferred_label": "Operations"
+    },
+    {
+      "id": "375aa555-6d2b-47a6-9c2e-4a4b82a0c79f",
+      "preferred_label": "Biology"
+    },
+    {
+      "id": "6f03594b-ec81-4656-862e-18a027a1a026",
+      "preferred_label": "Physics"
+    },
+    {
+      "id": "f668936c-bbd0-4a51-b977-e9347e5e8d08",
+      "preferred_label": "Computer science"
+    },
+    {
+      "id": "38220341-e104-4595-baf5-b8f806112b0e",
+      "preferred_label": "Project management"
+    },
+    {
+      "id": "d5cf9c70-d303-432d-9f81-30b155ef53c5",
+      "preferred_label": "Stakeholder management"
+    },
+    {
+      "id": "a4220136-0c9b-4361-8aca-31a863f9b2ea",
+      "preferred_label": "Customer service"
+    },
+    {
+      "id": "4f4d9291-3a81-40b9-b6e1-eb492e9306e8",
+      "preferred_label": "Problem solving"
+    },
+    {
+      "id": "79133cc6-4c24-4334-aa28-42d080646ea8",
+      "preferred_label": "Quality assurance"
+    },
+    {
+      "id": "d2f47ca1-5b3b-4357-84e8-01219f309b22",
+      "preferred_label": "Recruiting"
+    },
+    {
+      "id": "0089df2f-9dae-483b-bfa3-23ebe86754ce",
+      "preferred_label": "Finance"
+    },
+    {
+      "id": "b4e50904-06e8-4f96-b734-487d98dcb05a",
+      "preferred_label": "Legal"
+    },
+    {
+      "id": "9c1fd075-282c-40a7-9392-73f721ab5059",
+      "preferred_label": "Health and safety"
+    },
+    {
+      "id": "a23e0006-4e7a-495d-82ea-bf794778a435",
+      "preferred_label": "Process improvement"
+    },
+    {
+      "id": "37783e07-e407-4782-91bf-db5b7092e4ef",
+      "preferred_label": "Compute"
+    },
+    {
+      "id": "a2df77e6-f7a8-4204-b236-33863a81ae74",
+      "preferred_label": "Systems administration"
+    },
+    {
+      "id": "349e9e42-4a2b-4623-8d45-92c5592ae9d5",
+      "preferred_label": "Influence"
+    },
+    {
+      "id": "abb8567b-a196-4f32-9d7a-84012a9ba2df",
+      "preferred_label": "Execution"
+    },
+    {
+      "id": "42a91f73-3215-4226-9f5d-88152084a311",
+      "preferred_label": "Adoption"
+    },
+    {
+      "id": "fd359f3b-3a29-4ec3-af6f-d88975221996",
+      "preferred_label": "Enterprise software"
+    },
+    {
+      "id": "338b65c0-b204-4f7b-bcd7-a73c49158be7",
+      "preferred_label": "Interpretability"
+    },
+    {
+      "id": "61010555-9a54-4e73-bead-1603a6b81389",
+      "preferred_label": "English"
+    },
+    {
+      "id": "9e488922-ebea-476d-adf6-9bef2bbe523b",
+      "preferred_label": "German"
+    },
+    {
+      "id": "b0b385e8-766c-4806-bf3d-081c645dd198",
+      "preferred_label": "Attention to detail"
+    },
+    {
+      "id": "ff04b425-79a5-4f82-b91c-037853e1b852",
+      "preferred_label": "Ownership"
+    },
+    {
+      "id": "59c28f9d-d485-42cb-8c0b-67542bb600e1",
+      "preferred_label": "Adaptability"
+    },
+    {
+      "id": "ff7e242b-cc36-4fbf-a7a5-31b6ad9ea241",
+      "preferred_label": "Mindset"
+    },
+    {
+      "id": "bfa97704-6bf1-49c1-8472-9263ad879928",
+      "preferred_label": "Market analysis"
+    },
+    {
+      "id": "5a464c23-be14-44eb-b1ef-a850867c38dd",
+      "preferred_label": "Standards"
+    },
+    {
+      "id": "f9a377f1-e8be-4ea4-9910-d572952eb957",
+      "preferred_label": "Medical"
+    },
+    {
+      "id": "cecbfc33-cc60-4671-9082-d409c39bdc5c",
+      "preferred_label": "Education"
+    },
+    {
+      "id": "e3d9a09c-b538-418a-94d0-88df5a9d8f1e",
+      "preferred_label": "Science"
+    },
+    {
+      "id": "71fa9ee2-8c72-456e-afb8-8c7dc7531e29",
+      "preferred_label": "Technical writing"
+    },
+    {
+      "id": "f1910b14-5ddf-44ea-9d72-17aae33b4958",
+      "preferred_label": "Workflows"
+    }
+  ],
+  "surface_forms": [
+    {
+      "surface_form": "ai",
+      "concept_ids": [
+        "6fbd91ff-8f39-474b-9453-20990f6f280a"
+      ]
+    },
+    {
+      "surface_form": "ai systems",
+      "concept_ids": [
+        "6fbd91ff-8f39-474b-9453-20990f6f280a"
+      ]
+    },
+    {
+      "surface_form": "artificial intelligence",
+      "concept_ids": [
+        "6fbd91ff-8f39-474b-9453-20990f6f280a"
+      ]
+    },
+    {
+      "surface_form": "genai",
+      "concept_ids": [
+        "6fbd91ff-8f39-474b-9453-20990f6f280a"
+      ]
+    },
+    {
+      "surface_form": "generative ai",
+      "concept_ids": [
+        "6fbd91ff-8f39-474b-9453-20990f6f280a"
+      ]
+    },
+    {
+      "surface_form": "machine learning",
+      "concept_ids": [
+        "44f820c3-6deb-4f76-9de9-881ad07e9119"
+      ]
+    },
+    {
+      "surface_form": "ml",
+      "concept_ids": [
+        "44f820c3-6deb-4f76-9de9-881ad07e9119"
+      ]
+    },
+    {
+      "surface_form": "deep learning",
+      "concept_ids": [
+        "44f820c3-6deb-4f76-9de9-881ad07e9119"
+      ]
+    },
+    {
+      "surface_form": "data analysis",
+      "concept_ids": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c"
+      ]
+    },
+    {
+      "surface_form": "data analytics",
+      "concept_ids": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c"
+      ]
+    },
+    {
+      "surface_form": "analytics",
+      "concept_ids": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c"
+      ]
+    },
+    {
+      "surface_form": "data models",
+      "concept_ids": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c"
+      ]
+    },
+    {
+      "surface_form": "analyse data",
+      "concept_ids": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c"
+      ]
+    },
+    {
+      "surface_form": "analyzing data",
+      "concept_ids": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c"
+      ]
+    },
+    {
+      "surface_form": "communication",
+      "concept_ids": [
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    },
+    {
+      "surface_form": "communication skills",
+      "concept_ids": [
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    },
+    {
+      "surface_form": "communicate",
+      "concept_ids": [
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    },
+    {
+      "surface_form": "written communication",
+      "concept_ids": [
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    },
+    {
+      "surface_form": "verbal communication",
+      "concept_ids": [
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    },
+    {
+      "surface_form": "software engineering",
+      "concept_ids": [
+        "71827422-37b7-4486-9f5a-2710cdea522b"
+      ]
+    },
+    {
+      "surface_form": "software development",
+      "concept_ids": [
+        "71827422-37b7-4486-9f5a-2710cdea522b"
+      ]
+    },
+    {
+      "surface_form": "product design",
+      "concept_ids": [
+        "b29a9f54-b3a2-4f53-b394-f93747263d94"
+      ]
+    },
+    {
+      "surface_form": "ux",
+      "concept_ids": [
+        "b29a9f54-b3a2-4f53-b394-f93747263d94"
+      ]
+    },
+    {
+      "surface_form": "user experience",
+      "concept_ids": [
+        "b29a9f54-b3a2-4f53-b394-f93747263d94"
+      ]
+    },
+    {
+      "surface_form": "sales",
+      "concept_ids": [
+        "8a166308-1675-4623-b0f8-d24eb55dd02c"
+      ]
+    },
+    {
+      "surface_form": "selling",
+      "concept_ids": [
+        "8a166308-1675-4623-b0f8-d24eb55dd02c"
+      ]
+    },
+    {
+      "surface_form": "account management",
+      "concept_ids": [
+        "8a166308-1675-4623-b0f8-d24eb55dd02c"
+      ]
+    },
+    {
+      "surface_form": "leadership",
+      "concept_ids": [
+        "e583469a-3de1-4ab9-93cc-993465974bdf"
+      ]
+    },
+    {
+      "surface_form": "security",
+      "concept_ids": [
+        "4747f736-55c3-42b6-ae00-c2a9efa7a0f1"
+      ]
+    },
+    {
+      "surface_form": "cybersecurity",
+      "concept_ids": [
+        "4747f736-55c3-42b6-ae00-c2a9efa7a0f1"
+      ]
+    },
+    {
+      "surface_form": "information security",
+      "concept_ids": [
+        "4747f736-55c3-42b6-ae00-c2a9efa7a0f1"
+      ]
+    },
+    {
+      "surface_form": "infrastructure",
+      "concept_ids": [
+        "d9680a9e-4fa3-4393-a2db-0f4160b39c9d"
+      ]
+    },
+    {
+      "surface_form": "planning",
+      "concept_ids": [
+        "7b1aa1b9-34cf-4391-9f70-6cb726e6f390"
+      ]
+    },
+    {
+      "surface_form": "roadmap",
+      "concept_ids": [
+        "7b1aa1b9-34cf-4391-9f70-6cb726e6f390"
+      ]
+    },
+    {
+      "surface_form": "strategy",
+      "concept_ids": [
+        "9134f494-342d-4418-a77b-e91945773175"
+      ]
+    },
+    {
+      "surface_form": "logistics",
+      "concept_ids": [
+        "daa0dbb2-db76-452a-a134-61b372387d41"
+      ]
+    },
+    {
+      "surface_form": "supply chain",
+      "concept_ids": [
+        "daa0dbb2-db76-452a-a134-61b372387d41"
+      ]
+    },
+    {
+      "surface_form": "observability",
+      "concept_ids": [
+        "7faa4c9b-131f-43f7-8a91-200dfa39bbba"
+      ]
+    },
+    {
+      "surface_form": "telemetry",
+      "concept_ids": [
+        "7faa4c9b-131f-43f7-8a91-200dfa39bbba"
+      ]
+    },
+    {
+      "surface_form": "cloud",
+      "concept_ids": [
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b"
+      ]
+    },
+    {
+      "surface_form": "cloud computing",
+      "concept_ids": [
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b"
+      ]
+    },
+    {
+      "surface_form": "aws",
+      "concept_ids": [
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b"
+      ]
+    },
+    {
+      "surface_form": "azure",
+      "concept_ids": [
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b"
+      ]
+    },
+    {
+      "surface_form": "gcp",
+      "concept_ids": [
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b"
+      ]
+    },
+    {
+      "surface_form": "compliance",
+      "concept_ids": [
+        "db8b7b2b-9087-4597-9284-c58d8a29456b"
+      ]
+    },
+    {
+      "surface_form": "regulatory",
+      "concept_ids": [
+        "db8b7b2b-9087-4597-9284-c58d8a29456b"
+      ]
+    },
+    {
+      "surface_form": "governance",
+      "concept_ids": [
+        "db8b7b2b-9087-4597-9284-c58d8a29456b"
+      ]
+    },
+    {
+      "surface_form": "marketing",
+      "concept_ids": [
+        "5428d08e-d8ea-48c8-a6be-c02b05b7b314"
+      ]
+    },
+    {
+      "surface_form": "demand generation",
+      "concept_ids": [
+        "5428d08e-d8ea-48c8-a6be-c02b05b7b314"
+      ]
+    },
+    {
+      "surface_form": "growth marketing",
+      "concept_ids": [
+        "5428d08e-d8ea-48c8-a6be-c02b05b7b314"
+      ]
+    },
+    {
+      "surface_form": "research",
+      "concept_ids": [
+        "bc89a88e-11f0-45c4-9f76-5a03aef13751"
+      ]
+    },
+    {
+      "surface_form": "user research",
+      "concept_ids": [
+        "bc89a88e-11f0-45c4-9f76-5a03aef13751"
+      ]
+    },
+    {
+      "surface_form": "market research",
+      "concept_ids": [
+        "bc89a88e-11f0-45c4-9f76-5a03aef13751"
+      ]
+    },
+    {
+      "surface_form": "collaboration",
+      "concept_ids": [
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44"
+      ]
+    },
+    {
+      "surface_form": "collaborate",
+      "concept_ids": [
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44"
+      ]
+    },
+    {
+      "surface_form": "cross-functional",
+      "concept_ids": [
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44"
+      ]
+    },
+    {
+      "surface_form": "teamwork",
+      "concept_ids": [
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44"
+      ]
+    },
+    {
+      "surface_form": "enablement",
+      "concept_ids": [
+        "8426e3b4-18b1-410b-a77c-aa0a725ec5fb"
+      ]
+    },
+    {
+      "surface_form": "onboarding",
+      "concept_ids": [
+        "8426e3b4-18b1-410b-a77c-aa0a725ec5fb"
+      ]
+    },
+    {
+      "surface_form": "coaching",
+      "concept_ids": [
+        "8426e3b4-18b1-410b-a77c-aa0a725ec5fb"
+      ]
+    },
+    {
+      "surface_form": "mentor",
+      "concept_ids": [
+        "8426e3b4-18b1-410b-a77c-aa0a725ec5fb"
+      ]
+    },
+    {
+      "surface_form": "mentoring",
+      "concept_ids": [
+        "8426e3b4-18b1-410b-a77c-aa0a725ec5fb"
+      ]
+    },
+    {
+      "surface_form": "reporting",
+      "concept_ids": [
+        "1920c89d-a1fa-487c-9fd4-046e740d7d81"
+      ]
+    },
+    {
+      "surface_form": "dashboards",
+      "concept_ids": [
+        "1920c89d-a1fa-487c-9fd4-046e740d7d81"
+      ]
+    },
+    {
+      "surface_form": "biology",
+      "concept_ids": [
+        "375aa555-6d2b-47a6-9c2e-4a4b82a0c79f"
+      ]
+    },
+    {
+      "surface_form": "molecular biology",
+      "concept_ids": [
+        "375aa555-6d2b-47a6-9c2e-4a4b82a0c79f"
+      ]
+    },
+    {
+      "surface_form": "computational biology",
+      "concept_ids": [
+        "375aa555-6d2b-47a6-9c2e-4a4b82a0c79f"
+      ]
+    },
+    {
+      "surface_form": "physics",
+      "concept_ids": [
+        "6f03594b-ec81-4656-862e-18a027a1a026"
+      ]
+    },
+    {
+      "surface_form": "computer science",
+      "concept_ids": [
+        "f668936c-bbd0-4a51-b977-e9347e5e8d08"
+      ]
+    },
+    {
+      "surface_form": "algorithms",
+      "concept_ids": [
+        "f668936c-bbd0-4a51-b977-e9347e5e8d08"
+      ]
+    },
+    {
+      "surface_form": "data structures",
+      "concept_ids": [
+        "f668936c-bbd0-4a51-b977-e9347e5e8d08"
+      ]
+    },
+    {
+      "surface_form": "project management",
+      "concept_ids": [
+        "38220341-e104-4595-baf5-b8f806112b0e"
+      ]
+    },
+    {
+      "surface_form": "program management",
+      "concept_ids": [
+        "38220341-e104-4595-baf5-b8f806112b0e"
+      ]
+    },
+    {
+      "surface_form": "stakeholder management",
+      "concept_ids": [
+        "d5cf9c70-d303-432d-9f81-30b155ef53c5"
+      ]
+    },
+    {
+      "surface_form": "stakeholder engagement",
+      "concept_ids": [
+        "d5cf9c70-d303-432d-9f81-30b155ef53c5"
+      ]
+    },
+    {
+      "surface_form": "customer service",
+      "concept_ids": [
+        "a4220136-0c9b-4361-8aca-31a863f9b2ea"
+      ]
+    },
+    {
+      "surface_form": "customer support",
+      "concept_ids": [
+        "a4220136-0c9b-4361-8aca-31a863f9b2ea"
+      ]
+    },
+    {
+      "surface_form": "customer success",
+      "concept_ids": [
+        "a4220136-0c9b-4361-8aca-31a863f9b2ea"
+      ]
+    },
+    {
+      "surface_form": "problem solving",
+      "concept_ids": [
+        "4f4d9291-3a81-40b9-b6e1-eb492e9306e8"
+      ]
+    },
+    {
+      "surface_form": "troubleshooting",
+      "concept_ids": [
+        "4f4d9291-3a81-40b9-b6e1-eb492e9306e8"
+      ]
+    },
+    {
+      "surface_form": "quality assurance",
+      "concept_ids": [
+        "79133cc6-4c24-4334-aa28-42d080646ea8"
+      ]
+    },
+    {
+      "surface_form": "qa",
+      "concept_ids": [
+        "79133cc6-4c24-4334-aa28-42d080646ea8"
+      ]
+    },
+    {
+      "surface_form": "testing",
+      "concept_ids": [
+        "79133cc6-4c24-4334-aa28-42d080646ea8"
+      ]
+    },
+    {
+      "surface_form": "recruiting",
+      "concept_ids": [
+        "d2f47ca1-5b3b-4357-84e8-01219f309b22"
+      ]
+    },
+    {
+      "surface_form": "recruitment",
+      "concept_ids": [
+        "d2f47ca1-5b3b-4357-84e8-01219f309b22"
+      ]
+    },
+    {
+      "surface_form": "hiring",
+      "concept_ids": [
+        "d2f47ca1-5b3b-4357-84e8-01219f309b22"
+      ]
+    },
+    {
+      "surface_form": "sourcing",
+      "concept_ids": [
+        "d2f47ca1-5b3b-4357-84e8-01219f309b22"
+      ]
+    },
+    {
+      "surface_form": "talent acquisition",
+      "concept_ids": [
+        "d2f47ca1-5b3b-4357-84e8-01219f309b22"
+      ]
+    },
+    {
+      "surface_form": "finance",
+      "concept_ids": [
+        "0089df2f-9dae-483b-bfa3-23ebe86754ce"
+      ]
+    },
+    {
+      "surface_form": "financial",
+      "concept_ids": [
+        "0089df2f-9dae-483b-bfa3-23ebe86754ce"
+      ]
+    },
+    {
+      "surface_form": "accounting",
+      "concept_ids": [
+        "0089df2f-9dae-483b-bfa3-23ebe86754ce"
+      ]
+    },
+    {
+      "surface_form": "contracts",
+      "concept_ids": [
+        "b4e50904-06e8-4f96-b734-487d98dcb05a"
+      ]
+    },
+    {
+      "surface_form": "health and safety",
+      "concept_ids": [
+        "9c1fd075-282c-40a7-9392-73f721ab5059"
+      ]
+    },
+    {
+      "surface_form": "food safety",
+      "concept_ids": [
+        "9c1fd075-282c-40a7-9392-73f721ab5059"
+      ]
+    },
+    {
+      "surface_form": "process improvement",
+      "concept_ids": [
+        "a23e0006-4e7a-495d-82ea-bf794778a435"
+      ]
+    },
+    {
+      "surface_form": "continuous improvement",
+      "concept_ids": [
+        "a23e0006-4e7a-495d-82ea-bf794778a435"
+      ]
+    },
+    {
+      "surface_form": "compute",
+      "concept_ids": [
+        "37783e07-e407-4782-91bf-db5b7092e4ef"
+      ]
+    },
+    {
+      "surface_form": "gpu",
+      "concept_ids": [
+        "37783e07-e407-4782-91bf-db5b7092e4ef"
+      ]
+    },
+    {
+      "surface_form": "linux",
+      "concept_ids": [
+        "a2df77e6-f7a8-4204-b236-33863a81ae74"
+      ]
+    },
+    {
+      "surface_form": "influencing",
+      "concept_ids": [
+        "349e9e42-4a2b-4623-8d45-92c5592ae9d5"
+      ]
+    },
+    {
+      "surface_form": "persuasion",
+      "concept_ids": [
+        "349e9e42-4a2b-4623-8d45-92c5592ae9d5"
+      ]
+    },
+    {
+      "surface_form": "execution",
+      "concept_ids": [
+        "abb8567b-a196-4f32-9d7a-84012a9ba2df"
+      ]
+    },
+    {
+      "surface_form": "adoption",
+      "concept_ids": [
+        "42a91f73-3215-4226-9f5d-88152084a311"
+      ]
+    },
+    {
+      "surface_form": "b2b",
+      "concept_ids": [
+        "fd359f3b-3a29-4ec3-af6f-d88975221996"
+      ]
+    },
+    {
+      "surface_form": "saas",
+      "concept_ids": [
+        "fd359f3b-3a29-4ec3-af6f-d88975221996"
+      ]
+    },
+    {
+      "surface_form": "interpretability",
+      "concept_ids": [
+        "338b65c0-b204-4f7b-bcd7-a73c49158be7"
+      ]
+    },
+    {
+      "surface_form": "explainability",
+      "concept_ids": [
+        "338b65c0-b204-4f7b-bcd7-a73c49158be7"
+      ]
+    },
+    {
+      "surface_form": "english",
+      "concept_ids": [
+        "61010555-9a54-4e73-bead-1603a6b81389"
+      ]
+    },
+    {
+      "surface_form": "german",
+      "concept_ids": [
+        "9e488922-ebea-476d-adf6-9bef2bbe523b"
+      ]
+    },
+    {
+      "surface_form": "deutsch",
+      "concept_ids": [
+        "9e488922-ebea-476d-adf6-9bef2bbe523b"
+      ]
+    },
+    {
+      "surface_form": "attention to detail",
+      "concept_ids": [
+        "b0b385e8-766c-4806-bf3d-081c645dd198"
+      ]
+    },
+    {
+      "surface_form": "detail-oriented",
+      "concept_ids": [
+        "b0b385e8-766c-4806-bf3d-081c645dd198"
+      ]
+    },
+    {
+      "surface_form": "ownership",
+      "concept_ids": [
+        "ff04b425-79a5-4f82-b91c-037853e1b852"
+      ]
+    },
+    {
+      "surface_form": "accountability",
+      "concept_ids": [
+        "ff04b425-79a5-4f82-b91c-037853e1b852"
+      ]
+    },
+    {
+      "surface_form": "adaptability",
+      "concept_ids": [
+        "59c28f9d-d485-42cb-8c0b-67542bb600e1"
+      ]
+    },
+    {
+      "surface_form": "adaptable",
+      "concept_ids": [
+        "59c28f9d-d485-42cb-8c0b-67542bb600e1"
+      ]
+    },
+    {
+      "surface_form": "growth mindset",
+      "concept_ids": [
+        "ff7e242b-cc36-4fbf-a7a5-31b6ad9ea241"
+      ]
+    },
+    {
+      "surface_form": "market analysis",
+      "concept_ids": [
+        "bfa97704-6bf1-49c1-8472-9263ad879928"
+      ]
+    },
+    {
+      "surface_form": "competitive analysis",
+      "concept_ids": [
+        "bfa97704-6bf1-49c1-8472-9263ad879928"
+      ]
+    },
+    {
+      "surface_form": "best practices",
+      "concept_ids": [
+        "5a464c23-be14-44eb-b1ef-a850867c38dd"
+      ]
+    },
+    {
+      "surface_form": "healthcare",
+      "concept_ids": [
+        "f9a377f1-e8be-4ea4-9910-d572952eb957"
+      ]
+    },
+    {
+      "surface_form": "clinical",
+      "concept_ids": [
+        "f9a377f1-e8be-4ea4-9910-d572952eb957"
+      ]
+    },
+    {
+      "surface_form": "teaching",
+      "concept_ids": [
+        "cecbfc33-cc60-4671-9082-d409c39bdc5c"
+      ]
+    },
+    {
+      "surface_form": "curriculum",
+      "concept_ids": [
+        "cecbfc33-cc60-4671-9082-d409c39bdc5c"
+      ]
+    },
+    {
+      "surface_form": "scientific",
+      "concept_ids": [
+        "e3d9a09c-b538-418a-94d0-88df5a9d8f1e"
+      ]
+    },
+    {
+      "surface_form": "documentation",
+      "concept_ids": [
+        "71fa9ee2-8c72-456e-afb8-8c7dc7531e29"
+      ]
+    },
+    {
+      "surface_form": "technical writing",
+      "concept_ids": [
+        "71fa9ee2-8c72-456e-afb8-8c7dc7531e29"
+      ]
+    },
+    {
+      "surface_form": "specifications",
+      "concept_ids": [
+        "71fa9ee2-8c72-456e-afb8-8c7dc7531e29"
+      ]
+    },
+    {
+      "surface_form": "workflows",
+      "concept_ids": [
+        "f1910b14-5ddf-44ea-9d72-17aae33b4958"
+      ]
+    },
+    {
+      "surface_form": "workflow",
+      "concept_ids": [
+        "f1910b14-5ddf-44ea-9d72-17aae33b4958"
+      ]
+    },
+    {
+      "surface_form": "automation",
+      "concept_ids": [
+        "f1910b14-5ddf-44ea-9d72-17aae33b4958"
+      ]
+    },
+    {
+      "surface_form": "automate",
+      "concept_ids": [
+        "f1910b14-5ddf-44ea-9d72-17aae33b4958"
+      ]
+    }
+  ]
+}

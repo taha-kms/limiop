@@ -33,7 +33,7 @@ def test_alias_table_has_an_explicit_version(resolver: KnownSkillResolver) -> No
 def test_newest_alias_table_is_the_default() -> None:
     resolver = load_default_resolver()
 
-    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.25.1"
+    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.28.1"
     assert resolver.resolve("machine learning").concepts[0].preferred_label == "Machine learning"
 
 
@@ -42,6 +42,7 @@ def test_newest_alias_table_is_the_default() -> None:
     [
         ("2026.08.24.1", "Postgres", "PostgreSQL"),
         ("2026.08.25.1", "deep learning", "Machine learning"),
+        ("2026.08.28.1", "deep learning", "Machine learning"),
     ],
 )
 def test_every_published_alias_table_loads_and_resolves(
@@ -51,7 +52,7 @@ def test_every_published_alias_table_loads_and_resolves(
 
     assert result.status is ResolutionStatus.RESOLVED
     assert result.concepts[0].preferred_label == preferred_label
-    assert set(PUBLISHED_ALIAS_TABLES) == {"2026.08.24.1", "2026.08.25.1"}
+    assert set(PUBLISHED_ALIAS_TABLES) == {"2026.08.24.1", "2026.08.25.1", "2026.08.28.1"}
 
 
 def test_unpublished_alias_table_version_fails_loudly() -> None:
@@ -108,7 +109,6 @@ def test_text_matching_hazards_are_importable_and_published() -> None:
         "gcp",
         "gpu",
         "ml",
-        "own",
         "qa",
         "ux",
     )
@@ -255,3 +255,109 @@ def test_normalization_collisions_must_be_one_reviewable_alias_row() -> None:
                 ],
             }
         )
+
+
+REMOVED_IN_V3: frozenset[str] = frozenset(
+    {
+        "accelerators",
+        "activation",
+        "budget",
+        "collaborative",
+        "contract",
+        "customers",
+        "delivery",
+        "design",
+        "education",
+        "engineering",
+        "enterprise",
+        "execute",
+        "flexibility",
+        "flexible",
+        "influence",
+        "lead",
+        "leaders",
+        "legal",
+        "manage",
+        "management",
+        "managers",
+        "managing",
+        "market",
+        "medical",
+        "mindset",
+        "monitoring",
+        "operating",
+        "operational",
+        "operations",
+        "own",
+        "plans",
+        "platform",
+        "platforms",
+        "problems",
+        "process",
+        "processes",
+        "projects",
+        "quality",
+        "reports",
+        "safety",
+        "science",
+        "software",
+        "stakeholders",
+        "standards",
+        "strategic",
+        "system",
+        "systems",
+        "training",
+        "usage",
+        "warehouse",
+    }
+)
+"""Surface forms the 2026-08-28 audit removed because they read as ordinary
+English in real postings rather than as skill mentions. The reasons, the
+sampled contexts, and the scores before and after are in
+``docs/skill-model-measurement/alias-collision-audit.md``.
+"""
+
+
+def _alias_table(version: str) -> dict[str, object]:
+    return json.loads(
+        (
+            REPOSITORY_ROOT / "backend/app/modules/skills" / PUBLISHED_ALIAS_TABLES[version]
+        ).read_text(encoding="utf-8")
+    )
+
+
+def test_v3_is_v2_with_exactly_the_audited_forms_removed() -> None:
+    v2 = _alias_table("2026.08.25.1")
+    v3 = _alias_table("2026.08.28.1")
+
+    assert v3["concepts"] == v2["concepts"]
+    v2_forms = {form["surface_form"] for form in v2["surface_forms"]}
+    v3_forms = {form["surface_form"] for form in v3["surface_forms"]}
+    assert v2_forms - v3_forms == REMOVED_IN_V3
+    assert not v3_forms - v2_forms, "the audit removes forms; adding them is a separate change"
+    assert len(v3_forms) == 132
+
+
+def test_v3_leaves_only_the_two_compound_head_concepts_unreachable() -> None:
+    """Management and Operations lose every surface form, deliberately.
+
+    Their only forms were `management`, `manage`, `managing`, `managers`,
+    `operations`, `operational`, and `operating`, and the audit found every one
+    of them reading as ordinary English. The gold spans that contain them are
+    all longer — "people management", "security operations" — and adding those
+    compound forms is a separate change. Asserted so the gap stays deliberate.
+    """
+    v3 = _alias_table("2026.08.28.1")
+
+    reachable = {concept_id for form in v3["surface_forms"] for concept_id in form["concept_ids"]}
+    unreachable = sorted(
+        concept["preferred_label"] for concept in v3["concepts"] if concept["id"] not in reachable
+    )
+    assert unreachable == ["Management", "Operations"]
+
+
+def test_own_no_longer_resolves_but_ownership_still_does() -> None:
+    resolver = load_default_resolver()
+
+    assert resolver.resolve("own").status is not ResolutionStatus.RESOLVED
+    assert resolver.resolve("ownership").concepts[0].preferred_label == "Ownership"

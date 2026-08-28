@@ -41,3 +41,21 @@ vocabulary matches. It cannot establish whether this extractor is better or
 worse than the hand-written surface forms: the available postings and
 denominators are different from the full measurement, so those scores are not
 compared here.
+
+## Amended 2026-08-28
+
+The alias-collision audit (#193) established that this check cannot score a
+vocabulary change, and the reasons are properties of the corpus rather than of
+any particular run:
+
+- All 14 recoverable postings come from **one employer**. The other 64 expired.
+- The gold set annotates each term at most once per posting — no span text
+  repeats within a posting — while the extractor fires on every occurrence, so
+  precision carries a ceiling unrelated to the vocabulary.
+- Of the 190 matches credited here, **6 are exact spans**. The other 184 are
+  the extractor hitting a fragment of a longer annotated phrase, credited
+  because the score counts any overlap.
+
+The check still does what this document claims: it catches broken tokenization
+and an extractor that misses obvious matches. It cannot rank two vocabularies.
+See [the audit](alias-collision-audit.md).
