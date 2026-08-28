@@ -11,6 +11,7 @@ dependencies = [
   "httpx2>=2.12.0,<3.0.0",
   "pydantic>=2.13.4,<3.0.0",
   "skillsync-platform-db==0.1.0",
+  "skillsync-platform-skills==0.1.0",
   "sqlalchemy[asyncio]>=2.0.52,<3.0.0",
 ]
 

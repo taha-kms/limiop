@@ -75,6 +75,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ../platform/db
+          python -m pip install -e ../platform/skills
           python -m pip install -e ../services/job-ingestion-service
           python -m pip install -e '.[dev]'
 

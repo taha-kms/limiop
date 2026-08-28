@@ -11,6 +11,15 @@ _SURROUNDING_PUNCTUATION = " \t\r\n.,;:!?()[]{}\"'"
 _TOKEN = re.compile(r"[^\W_](?:[^\W_]|[+#]|[./](?=[^\W_]))*", re.UNICODE)
 _MISSING = object()
 
+EXTRACTOR_VERSION = "platform-skills/1"
+"""The behaviour of this extractor, named so a stored mention stays readable.
+
+Bump it whenever matching, normalization, or tokenization changes in a way that
+could produce a different result from the same text and vocabulary. Stored
+observations carry it alongside the vocabulary version, so a reader can tell
+which of the two produced a result they disagree with.
+"""
+
 type Vocabulary = Mapping[str, UUID | None]
 type _VocabularyEntry = tuple[str, UUID | None]
 

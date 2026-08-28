@@ -83,6 +83,32 @@ class IngestionSummary:
     reached_the_end: bool = False
     # Whether the run stopped because it hit its own record budget.
     stopped_at_budget: bool = False
+    # The alias table every skill count below was produced under, or None when
+    # no vocabulary was published and nothing was extracted.
+    alias_version: str | None = None
+    # Mentions resolved to one concept and written to job_skills. Counts
+    # concepts, not spans: a posting naming Python four times resolves once.
+    mentions_resolved: int = 0
+    # Mentions recorded in job_skill_mentions because they resolved to no single
+    # concept. Nothing matches against that table.
+    mentions_unknown: int = 0
+    # Postings whose skills could not be written. The posting itself is stored,
+    # and this deliberately does not join `failures`: a failure there would make
+    # the run neither processing-complete nor source-exhausted, and so would
+    # block reconciliation from withdrawing a posting over an enrichment
+    # problem that says nothing about whether the posting is gone.
+    extraction_failed: int = 0
+
+    @property
+    def mentions_discarded(self) -> int:
+        """Mentions the admission gate refused for matching.
+
+        Equal to `mentions_unknown` while the gate decided in #190 stays closed,
+        because refusing a candidate and recording it as an observation are the
+        same act. Reported separately so that the day the gate opens, the two
+        diverge in every run summary rather than silently.
+        """
+        return self.mentions_unknown
 
     @property
     def persisted(self) -> int:

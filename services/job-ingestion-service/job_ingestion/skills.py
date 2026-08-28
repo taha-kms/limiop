@@ -1,0 +1,228 @@
+"""Skill extraction attached to the ingestion of one job posting.
+
+Extraction is enrichment. It runs after the posting is stored and inside the
+same transaction, so a posting never commits with half its skills, and a
+posting whose skills cannot be written still commits.
+
+The vocabulary comes from the database rather than from a file. The alias table
+is published by the backend into `skill_surface_forms`, and reading it back is
+the only way this service can share that vocabulary without importing across the
+boundary that keeps the two deployables independent.
+
+Nothing here decides which skills are legitimate. That gate was decided in #190
+and is closed: a mention that resolves to exactly one concept becomes a
+`job_skills` row, and every mention that does not is recorded as an observation
+in `job_skill_mentions`, which nothing matches against.
+"""
+
+from collections import Counter
+from dataclasses import dataclass
+from datetime import datetime
+from uuid import UUID
+
+from platform_db.models.job_skills import JobSkill, JobSkillMention
+from platform_db.models.skills import SkillAliasVersion, SkillSurfaceForm
+from platform_skills import EXTRACTOR_VERSION, Vocabulary, extract_mentions
+from sqlalchemy import delete, select, tuple_
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.ext.asyncio import AsyncSession
+
+SURFACE_FORM_LIMIT = 255
+
+
+@dataclass(frozen=True, slots=True)
+class SkillVocabulary:
+    """One published alias-table version, ready for the extractor."""
+
+    version: str
+    terms: Vocabulary
+
+
+@dataclass(frozen=True, slots=True)
+class ExtractionCounts:
+    """What extraction did to one posting."""
+
+    resolved: int = 0
+    unknown: int = 0
+
+    def __add__(self, other: "ExtractionCounts") -> "ExtractionCounts":
+        return ExtractionCounts(
+            resolved=self.resolved + other.resolved,
+            unknown=self.unknown + other.unknown,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SkillPlan:
+    """The rows one posting's text implies, before anything is written."""
+
+    concepts: dict[UUID, str]
+    observations: dict[str, tuple[str | None, int]]
+
+    @property
+    def counts(self) -> ExtractionCounts:
+        return ExtractionCounts(
+            resolved=sum(1 for _ in self.concepts),
+            unknown=sum(count for _, count in self.observations.values()),
+        )
+
+
+async def load_skill_vocabulary(
+    session: AsyncSession,
+    *,
+    version: str | None = None,
+) -> SkillVocabulary | None:
+    """Read one published alias table, or report that there is none.
+
+    Defaults to the newest published version rather than to a constant, because
+    the constant naming the current version lives in the backend and this
+    service may not import it. Pin a version explicitly to stop a publication
+    from changing what ingestion extracts under.
+    """
+    if version is None:
+        version = await session.scalar(
+            select(SkillAliasVersion.version)
+            .order_by(SkillAliasVersion.created_at.desc(), SkillAliasVersion.version.desc())
+            .limit(1)
+        )
+    elif await session.get(SkillAliasVersion, version) is None:
+        return None
+
+    if version is None:
+        return None
+
+    rows = await session.execute(
+        select(SkillSurfaceForm.surface_form, SkillSurfaceForm.concept_id).where(
+            SkillSurfaceForm.alias_version == version
+        )
+    )
+
+    # A surface form naming more than one concept is ambiguous, and the
+    # extractor is told so with None rather than being handed a guess.
+    concepts_by_form: dict[str, set[UUID]] = {}
+    for surface_form, concept_id in rows:
+        concepts_by_form.setdefault(surface_form, set()).add(concept_id)
+
+    terms = {
+        surface_form: next(iter(concepts)) if len(concepts) == 1 else None
+        for surface_form, concepts in concepts_by_form.items()
+    }
+    return SkillVocabulary(version=version, terms=terms) if terms else None
+
+
+def collapse_whitespace(value: str) -> str:
+    """Return the matched text as one line.
+
+    Descriptions are flattened from provider markup, so a phrase can be matched
+    across a run of newlines that the employer never wrote. Storing the span
+    verbatim would put those newlines in the column and can exceed its length;
+    collapsing keeps the employer's spelling and casing and drops an artefact of
+    our own normalization.
+    """
+    return " ".join(value.split())
+
+
+def plan_skills(text: str, vocabulary: SkillVocabulary) -> SkillPlan:
+    """Decide what one posting's text implies, touching no database.
+
+    Pure so the counting rules can be tested without one, which matters because
+    `occurrences` is the field most likely to be quietly wrong.
+    """
+    concepts: dict[UUID, str] = {}
+    unresolved: list[tuple[str, str | None]] = []
+
+    for mention in extract_mentions(text, vocabulary.terms):
+        surface_form = collapse_whitespace(mention.surface_form)[:SURFACE_FORM_LIMIT]
+        if mention.concept_id is None:
+            unresolved.append((surface_form, mention.normalized_form))
+            continue
+        # The first spelling in the posting wins, so re-running over unchanged
+        # text cannot rewrite the stored surface form.
+        concepts.setdefault(mention.concept_id, surface_form)
+
+    counted = Counter(surface_form for surface_form, _ in unresolved)
+    normalized_by_form = dict(unresolved)
+    observations = {
+        surface_form: (normalized_by_form[surface_form], count)
+        for surface_form, count in counted.items()
+    }
+    return SkillPlan(concepts=concepts, observations=observations)
+
+
+async def store_job_skills(
+    session: AsyncSession,
+    *,
+    job_id: UUID,
+    text: str,
+    vocabulary: SkillVocabulary,
+    seen_at: datetime,
+) -> ExtractionCounts:
+    """Replace one posting's skills with what its text says now.
+
+    Replacement rather than accumulation: a posting that stops mentioning a
+    skill stops carrying it, and an hourly re-run over unchanged text is a
+    no-op rather than a slow drift.
+    """
+    plan = plan_skills(text, vocabulary)
+
+    await session.execute(delete(JobSkill).where(JobSkill.job_id == job_id))
+    if plan.concepts:
+        await session.execute(
+            insert(JobSkill).values(
+                [
+                    {
+                        "job_id": job_id,
+                        "concept_id": concept_id,
+                        "alias_version": vocabulary.version,
+                        "surface_form": surface_form,
+                    }
+                    for concept_id, surface_form in plan.concepts.items()
+                ]
+            )
+        )
+
+    if plan.observations:
+        statement = insert(JobSkillMention).values(
+            [
+                {
+                    "job_id": job_id,
+                    "surface_form": surface_form,
+                    "normalized_form": normalized_form,
+                    "occurrences": occurrences,
+                    "first_seen_at": seen_at,
+                    "last_seen_at": seen_at,
+                    "extractor_version": EXTRACTOR_VERSION,
+                    "alias_version": vocabulary.version,
+                }
+                for surface_form, (normalized_form, occurrences) in plan.observations.items()
+            ]
+        )
+        await session.execute(
+            statement.on_conflict_do_update(
+                constraint="uq_job_skill_mentions_job_surface_extractor_alias",
+                set_={
+                    # Recomputed from the text, never incremented: an unchanged
+                    # posting seen a hundred times still occurs as often as it
+                    # is written.
+                    "occurrences": statement.excluded.occurrences,
+                    "normalized_form": statement.excluded.normalized_form,
+                    "last_seen_at": statement.excluded.last_seen_at,
+                },
+            )
+        )
+
+    kept = [
+        (surface_form, EXTRACTOR_VERSION, vocabulary.version) for surface_form in plan.observations
+    ]
+    prune = delete(JobSkillMention).where(JobSkillMention.job_id == job_id)
+    if kept:
+        prune = prune.where(
+            tuple_(
+                JobSkillMention.surface_form,
+                JobSkillMention.extractor_version,
+                JobSkillMention.alias_version,
+            ).not_in(kept)
+        )
+    await session.execute(prune)
+
+    return plan.counts

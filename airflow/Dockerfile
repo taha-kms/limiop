@@ -13,11 +13,14 @@ WORKDIR /app/airflow
 
 COPY platform/db/pyproject.toml /app/platform/db/pyproject.toml
 COPY platform/db/platform_db /app/platform/db/platform_db
+COPY platform/skills/pyproject.toml /app/platform/skills/pyproject.toml
+COPY platform/skills/platform_skills /app/platform/skills/platform_skills
 COPY services/job-ingestion-service/pyproject.toml /app/services/job-ingestion-service/pyproject.toml
 COPY services/job-ingestion-service/job_ingestion /app/services/job-ingestion-service/job_ingestion
 COPY airflow/requirements.txt ./requirements.txt
 
 RUN python -m pip install --no-cache-dir -e ../platform/db \
+    && python -m pip install --no-cache-dir -e ../platform/skills \
     && python -m pip install --no-cache-dir -r requirements.txt
 
 COPY airflow/bootstrap.py ./bootstrap.py

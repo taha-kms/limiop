@@ -14,9 +14,12 @@ is reported rather than discarded.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from uuid import UUID
 
+from platform_db.models.catalog import Job
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.contracts import (
@@ -33,6 +36,12 @@ from job_ingestion.database import Database
 from job_ingestion.errors import IngestionError, RecordValidationError
 from job_ingestion.persistence import SourceRegistration, persist_job
 from job_ingestion.schemas import NormalizedJob
+from job_ingestion.skills import (
+    ExtractionCounts,
+    SkillVocabulary,
+    load_skill_vocabulary,
+    store_job_skills,
+)
 
 DEFAULT_MAX_RECORDS = 1000
 
@@ -65,6 +74,8 @@ class RunTally:
     created: int = 0
     updated: int = 0
     skipped: int = 0
+    extraction: ExtractionCounts = field(default_factory=ExtractionCounts)
+    extraction_failed: int = 0
 
     def record(self, outcome: RecordOutcome) -> None:
         if outcome is RecordOutcome.CREATED:
@@ -84,6 +95,7 @@ class IngestionRun[ProviderRecordT]:
     normalizer: JobRecordNormalizer[ProviderRecordT]
     source: SourceRegistration
     max_records: int = DEFAULT_MAX_RECORDS
+    skill_alias_version: str | None = None
 
     def __post_init__(self) -> None:
         if self.max_records < 1:
@@ -121,6 +133,10 @@ class IngestionRun[ProviderRecordT]:
         stopped_at_budget = False
 
         async with database.session() as session:
+            # Read once per run rather than per record: a publication landing
+            # mid-run would otherwise split one run across two vocabularies and
+            # make its own counts unreadable.
+            vocabulary = await load_skill_vocabulary(session, version=self.skill_alias_version)
             try:
                 async for page in self.client.fetch_pages():
                     for raw in page.records:
@@ -128,13 +144,19 @@ class IngestionRun[ProviderRecordT]:
                             # The rest of the source is unread, which is a
                             # different thing from there being no rest.
                             stopped_at_budget = True
-                            return self.summarize(tally, failures, stopped_at_budget=True)
+                            return self.summarize(
+                                tally, failures, stopped_at_budget=True, vocabulary=vocabulary
+                            )
                         tally.fetched += 1
-                        await self.handle(session, raw, tally, failures, clock())
+                        await self.handle(
+                            session, raw, tally, failures, clock(), vocabulary=vocabulary
+                        )
             except IngestionError as error:
                 failures.append(RecordFailure(stage=IngestionStage.FETCH, reason=error.message))
 
-        return self.summarize(tally, failures, stopped_at_budget=stopped_at_budget)
+        return self.summarize(
+            tally, failures, stopped_at_budget=stopped_at_budget, vocabulary=vocabulary
+        )
 
     async def handle(
         self,
@@ -143,6 +165,8 @@ class IngestionRun[ProviderRecordT]:
         tally: RunTally,
         failures: list[RecordFailure],
         seen_at: datetime,
+        *,
+        vocabulary: SkillVocabulary | None = None,
     ) -> None:
         """Take one untrusted record as far as it can go."""
         try:
@@ -155,7 +179,51 @@ class IngestionRun[ProviderRecordT]:
         tally.record(result.outcome)
         if result.failure is not None:
             failures.append(result.failure)
+        # A stored job, whatever the outcome. An unchanged posting is skipped
+        # and still has a row, and it must keep its skills.
+        if vocabulary is not None and result.job_id is not None:
+            await self.enrich(
+                session, tally, job_id=result.job_id, vocabulary=vocabulary, seen_at=seen_at
+            )
         await session.commit()
+
+    async def enrich(
+        self,
+        session: AsyncSession,
+        tally: RunTally,
+        *,
+        job_id: UUID,
+        vocabulary: SkillVocabulary,
+        seen_at: datetime,
+    ) -> None:
+        """Attach skills to a job that is stored but not yet committed.
+
+        Two layers, and both are needed. The savepoint keeps a failed skill
+        write from poisoning the transaction the job is sitting in, because in
+        PostgreSQL one failed statement aborts everything after it. The except
+        keeps the exception from escaping to `Database.session`, which rolls the
+        whole session back and would discard the job this run just wrote.
+
+        Skills are enrichment: extraction failing is not the posting failing.
+        """
+        job = await session.get(Job, job_id)
+        if job is None or not job.description:
+            return
+
+        try:
+            async with session.begin_nested():
+                counts = await store_job_skills(
+                    session,
+                    job_id=job_id,
+                    text=job.description,
+                    vocabulary=vocabulary,
+                    seen_at=seen_at,
+                )
+        except SQLAlchemyError:
+            tally.extraction_failed += 1
+            return
+
+        tally.extraction = tally.extraction + counts
 
     def summarize(
         self,
@@ -163,6 +231,7 @@ class IngestionRun[ProviderRecordT]:
         failures: list[RecordFailure],
         *,
         stopped_at_budget: bool,
+        vocabulary: SkillVocabulary | None = None,
     ) -> IngestionSummary:
         return IngestionSummary(
             source_key=self.source.key,
@@ -175,4 +244,8 @@ class IngestionRun[ProviderRecordT]:
             # ran out of pages or out of allowance.
             reached_the_end=self.client.reached_the_end,
             stopped_at_budget=stopped_at_budget,
+            alias_version=vocabulary.version if vocabulary is not None else None,
+            mentions_resolved=tally.extraction.resolved,
+            mentions_unknown=tally.extraction.unknown,
+            extraction_failed=tally.extraction_failed,
         )
