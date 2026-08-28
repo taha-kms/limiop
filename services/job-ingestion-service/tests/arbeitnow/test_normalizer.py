@@ -12,6 +12,7 @@ from job_ingestion.arbeitnow.normalizer import (
     to_employment_type,
     to_plain_text,
     to_workplace_type,
+    without_aggregator_footer,
 )
 from job_ingestion.arbeitnow.records import ArbeitnowValidator
 from job_ingestion.errors import RecordValidationError
@@ -344,3 +345,48 @@ def test_flattening_gives_up_rather_than_looping(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(normalizer, "MAX_FLATTENING_PASSES", 1)
 
     assert to_plain_text("&lt;p&gt;text&lt;/p&gt;") == "<p>text</p>"
+
+
+@pytest.mark.parametrize(
+    "footer",
+    [
+        "Find Jobs in Germany on Arbeitnow",
+        "Find Jobs in United Kingdom on Arbeitnow",
+        "Find more English Speaking Jobs in Germany on Arbeitnow",
+        "Find more English Speaking Jobs in United Kingdom on Arbeitnow",
+    ],
+)
+def test_every_aggregator_footer_in_the_catalog_is_dropped(footer: str) -> None:
+    assert without_aggregator_footer(f"We are hiring.\n{footer}") == "We are hiring."
+
+
+def test_the_footer_is_only_dropped_from_the_end() -> None:
+    body = "Find Jobs in Germany on Arbeitnow\nYou will own the roadmap."
+    assert without_aggregator_footer(body) == body
+
+
+def test_the_footer_is_dropped_when_it_runs_onto_the_employer_last_line() -> None:
+    """Five catalog postings end this way, the footer following an inline link."""
+    body = "Ansprechpartner\nTill Everling\nE-Mail: Find Jobs in Germany on Arbeitnow"
+
+    assert without_aggregator_footer(body) == "Ansprechpartner\nTill Everling\nE-Mail:"
+
+
+def test_a_posting_that_merely_mentions_the_aggregator_keeps_its_text() -> None:
+    body = "We also list Jobs in Germany on Arbeitnow. Apply through our own site."
+    assert without_aggregator_footer(body) == body
+
+
+def test_a_posting_without_a_footer_is_untouched() -> None:
+    body = "We are hiring.\nApply today."
+    assert without_aggregator_footer(body) == body
+
+
+def test_the_footer_never_reaches_a_normalized_description() -> None:
+    job = normalize(
+        description=(
+            "<p>Own the roadmap.</p><p>Find more English Speaking Jobs in Germany on Arbeitnow</p>"
+        )
+    )
+
+    assert job.description == "Own the roadmap."

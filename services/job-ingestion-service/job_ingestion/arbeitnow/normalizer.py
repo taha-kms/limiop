@@ -4,6 +4,7 @@ Pure and deterministic: the same record always produces the same canonical job,
 and nothing here touches the network or the database.
 """
 
+import re
 from html.parser import HTMLParser
 
 from platform_db.models.catalog import EmploymentType, WorkplaceType
@@ -21,6 +22,21 @@ from job_ingestion.vocabulary import (
     stated_employments,
     stated_workplaces,
 )
+
+AGGREGATOR_FOOTER = re.compile(r"\s*Find (?:more [^\n]{1,40} )?Jobs in [^\n]{1,60} on Arbeitnow\Z")
+"""The advertisement Arbeitnow appends to every posting it serves.
+
+"Find more English Speaking Jobs in Germany on Arbeitnow" is the aggregator
+talking about itself, not something the employer wrote, and it closes 488 of
+the 491 Arbeitnow postings in the catalog. Left in, it makes English look like
+the most demanded skill on the board: the word fires on 290 of 491 postings
+with the footer and 112 without.
+
+Anchored to the very end of the description rather than to a whole line. Five
+postings end with the footer run onto the employer's own last sentence —
+"E-Mail: Find Jobs in Germany on Arbeitnow" — because the text it followed
+ended in an inline element that left no line break behind.
+"""
 
 IGNORED_HTML_CONTENT = frozenset({"script", "style"})
 HTML_LINE_BREAKS = frozenset(
@@ -116,6 +132,15 @@ def to_plain_text(markup: str) -> str:
     return text
 
 
+def without_aggregator_footer(text: str) -> str:
+    """Drop Arbeitnow's own trailing advertisement, if it is there.
+
+    Only a match that runs to the end of the description is removed, so a
+    posting that discusses finding jobs anywhere else keeps its text.
+    """
+    return AGGREGATOR_FOOTER.sub("", text)
+
+
 def to_employment_type(job_types: tuple[str, ...]) -> EmploymentType:
     """Pick the most specific employment type the provider named."""
     return most_specific(
@@ -160,7 +185,7 @@ class ArbeitnowNormalizer:
                 {
                     "company": {"display_name": record.company_name},
                     "title": record.title,
-                    "description": to_plain_text(record.description),
+                    "description": without_aggregator_footer(to_plain_text(record.description)),
                     "location": location,
                     "workplace_type": to_workplace_type(
                         record.remote, record.location, record.tags
