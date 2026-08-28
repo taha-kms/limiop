@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -319,20 +320,31 @@ sampled contexts, and the scores before and after are in
 
 
 def _alias_table(version: str) -> dict[str, object]:
-    return json.loads(
+    value: object = json.loads(
         (
             REPOSITORY_ROOT / "backend/app/modules/skills" / PUBLISHED_ALIAS_TABLES[version]
         ).read_text(encoding="utf-8")
     )
+    return cast(dict[str, object], value)
+
+
+def _concepts(version: str) -> list[dict[str, str]]:
+    return cast(list[dict[str, str]], _alias_table(version)["concepts"])
+
+
+def _surface_form_rows(version: str) -> list[dict[str, object]]:
+    return cast(list[dict[str, object]], _alias_table(version)["surface_forms"])
+
+
+def _surface_forms(version: str) -> set[str]:
+    return {cast(str, row["surface_form"]) for row in _surface_form_rows(version)}
 
 
 def test_v3_is_v2_with_exactly_the_audited_forms_removed() -> None:
-    v2 = _alias_table("2026.08.25.1")
-    v3 = _alias_table("2026.08.28.1")
+    assert _concepts("2026.08.28.1") == _concepts("2026.08.25.1")
 
-    assert v3["concepts"] == v2["concepts"]
-    v2_forms = {form["surface_form"] for form in v2["surface_forms"]}
-    v3_forms = {form["surface_form"] for form in v3["surface_forms"]}
+    v2_forms = _surface_forms("2026.08.25.1")
+    v3_forms = _surface_forms("2026.08.28.1")
     assert v2_forms - v3_forms == REMOVED_IN_V3
     assert not v3_forms - v2_forms, "the audit removes forms; adding them is a separate change"
     assert len(v3_forms) == 132
@@ -347,11 +359,15 @@ def test_v3_leaves_only_the_two_compound_head_concepts_unreachable() -> None:
     all longer — "people management", "security operations" — and adding those
     compound forms is a separate change. Asserted so the gap stays deliberate.
     """
-    v3 = _alias_table("2026.08.28.1")
-
-    reachable = {concept_id for form in v3["surface_forms"] for concept_id in form["concept_ids"]}
+    reachable = {
+        concept_id
+        for row in _surface_form_rows("2026.08.28.1")
+        for concept_id in cast(list[str], row["concept_ids"])
+    }
     unreachable = sorted(
-        concept["preferred_label"] for concept in v3["concepts"] if concept["id"] not in reachable
+        concept["preferred_label"]
+        for concept in _concepts("2026.08.28.1")
+        if concept["id"] not in reachable
     )
     assert unreachable == ["Management", "Operations"]
 
