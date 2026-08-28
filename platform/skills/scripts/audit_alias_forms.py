@@ -12,11 +12,14 @@ holding the catalog and writes its output wherever the caller asks.
 
 import argparse
 import json
+import os
 import random
+import subprocess
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import cast
+from urllib.parse import unquote, urlparse
 from uuid import UUID
 
 from platform_skills import extract_mentions
@@ -26,11 +29,15 @@ DEFAULT_VOCABULARY = REPOSITORY_ROOT / "backend/app/modules/skills/data/aliases.
 CONTEXT_WINDOW = 60
 SAMPLES_PER_FORM = 8
 
-_POSTINGS_QUERY = """
-select companies.display_name, jobs.description
-from jobs
-join companies on companies.id = jobs.company_id
-where jobs.description is not null and jobs.description <> ''
+CATALOG_QUERY = """
+select json_build_object(
+  'employer', c.display_name,
+  'description', j.description
+)::text
+from jobs j
+join companies c on c.id = j.company_id
+where j.description is not null and j.description <> ''
+order by c.display_name, j.id
 """
 
 
@@ -45,13 +52,57 @@ def load_vocabulary(path: Path) -> dict[str, UUID | None]:
     return vocabulary
 
 
-def read_postings(database_url: str) -> list[tuple[str, str]]:
-    import psycopg
+def psql_connection(database_url: str) -> tuple[list[str], dict[str, str]]:
+    """Read the catalog through psql, as the sibling recovery script does.
 
-    dsn = database_url.replace("postgresql+psycopg://", "postgresql://")
-    with psycopg.connect(dsn) as connection, connection.cursor() as cursor:
-        cursor.execute(_POSTINGS_QUERY)
-        return [(company, description) for company, description in cursor.fetchall()]
+    ``platform/skills`` deliberately carries no database driver: the package it
+    ships is pure, and a script is not a reason to add psycopg to it.
+    """
+    parsed = urlparse(database_url)
+    if parsed.scheme not in {"postgresql", "postgresql+psycopg"}:
+        raise ValueError("database URL must use postgresql or postgresql+psycopg")
+    if parsed.hostname is None or parsed.username is None or not parsed.path.strip("/"):
+        raise ValueError("database URL must include host, user, and database")
+
+    command = [
+        "psql",
+        "-X",
+        "--host",
+        parsed.hostname,
+        "--port",
+        str(parsed.port or 5432),
+        "--username",
+        unquote(parsed.username),
+        "--dbname",
+        unquote(parsed.path.strip("/")),
+        "--no-align",
+        "--tuples-only",
+        "--set",
+        "ON_ERROR_STOP=1",
+        "--command",
+        CATALOG_QUERY,
+    ]
+    environment = dict(os.environ)
+    if parsed.password is not None:
+        environment["PGPASSWORD"] = unquote(parsed.password)
+    return command, environment
+
+
+def read_postings(database_url: str) -> list[tuple[str, str]]:
+    command, environment = psql_connection(database_url)
+    result = subprocess.run(command, check=True, capture_output=True, text=True, env=environment)
+
+    postings: list[tuple[str, str]] = []
+    for line_number, line in enumerate(result.stdout.splitlines(), start=1):
+        if not line:
+            continue
+        row = cast(dict[str, object], json.loads(line))
+        employer = row.get("employer")
+        description = row.get("description")
+        if not isinstance(employer, str) or not isinstance(description, str):
+            raise ValueError(f"psql output line {line_number} is not an employer and a description")
+        postings.append((employer, description))
+    return postings
 
 
 def audit(
