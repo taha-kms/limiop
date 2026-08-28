@@ -34,7 +34,7 @@ def test_alias_table_has_an_explicit_version(resolver: KnownSkillResolver) -> No
 def test_newest_alias_table_is_the_default() -> None:
     resolver = load_default_resolver()
 
-    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.28.1"
+    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.29.1"
     assert resolver.resolve("machine learning").concepts[0].preferred_label == "Machine learning"
 
 
@@ -44,6 +44,7 @@ def test_newest_alias_table_is_the_default() -> None:
         ("2026.08.24.1", "Postgres", "PostgreSQL"),
         ("2026.08.25.1", "deep learning", "Machine learning"),
         ("2026.08.28.1", "deep learning", "Machine learning"),
+        ("2026.08.29.1", "deep learning", "Machine learning"),
     ],
 )
 def test_every_published_alias_table_loads_and_resolves(
@@ -53,7 +54,12 @@ def test_every_published_alias_table_loads_and_resolves(
 
     assert result.status is ResolutionStatus.RESOLVED
     assert result.concepts[0].preferred_label == preferred_label
-    assert set(PUBLISHED_ALIAS_TABLES) == {"2026.08.24.1", "2026.08.25.1", "2026.08.28.1"}
+    assert set(PUBLISHED_ALIAS_TABLES) == {
+        "2026.08.24.1",
+        "2026.08.25.1",
+        "2026.08.28.1",
+        "2026.08.29.1",
+    }
 
 
 def test_unpublished_alias_table_version_fails_loudly() -> None:
@@ -351,13 +357,12 @@ def test_v3_is_v2_with_exactly_the_audited_forms_removed() -> None:
 
 
 def test_v3_leaves_only_the_two_compound_head_concepts_unreachable() -> None:
-    """Management and Operations lose every surface form, deliberately.
+    """Management and Operations lost every surface form in the collision audit.
 
     Their only forms were `management`, `manage`, `managing`, `managers`,
-    `operations`, `operational`, and `operating`, and the audit found every one
-    of them reading as ordinary English. The gold spans that contain them are
-    all longer — "people management", "security operations" — and adding those
-    compound forms is a separate change. Asserted so the gap stays deliberate.
+    `operations`, `operational`, and `operating`, and every one of them read as
+    ordinary English. `2026.08.29.1` retires the two concepts rather than
+    restoring them; this pins the state they were retired from.
     """
     reachable = {
         concept_id
@@ -370,6 +375,39 @@ def test_v3_leaves_only_the_two_compound_head_concepts_unreachable() -> None:
         if concept["id"] not in reachable
     )
     assert unreachable == ["Management", "Operations"]
+
+
+def test_v4_retires_the_two_compound_heads_and_changes_nothing_else() -> None:
+    """A compound head is not a concept.
+
+    `management` and `operations` carry no meaning without their modifier, and
+    the modifiers that matter already have concepts of their own — stakeholder,
+    project, account, and program management all resolve. Retiring the two
+    empty concepts removes a trap for the next reader without touching a single
+    surface form.
+    """
+    v3_forms = _surface_form_rows("2026.08.28.1")
+    v4_forms = _surface_form_rows("2026.08.29.1")
+    assert v4_forms == v3_forms
+
+    retired = {concept["preferred_label"] for concept in _concepts("2026.08.28.1")} - {
+        concept["preferred_label"] for concept in _concepts("2026.08.29.1")
+    }
+    assert retired == {"Management", "Operations"}
+
+
+def test_every_concept_in_the_current_table_is_reachable() -> None:
+    reachable = {
+        concept_id
+        for row in _surface_form_rows(DEFAULT_VOCABULARY_VERSION)
+        for concept_id in cast(list[str], row["concept_ids"])
+    }
+    unreachable = sorted(
+        concept["preferred_label"]
+        for concept in _concepts(DEFAULT_VOCABULARY_VERSION)
+        if concept["id"] not in reachable
+    )
+    assert unreachable == []
 
 
 def test_own_no_longer_resolves_but_ownership_still_does() -> None:

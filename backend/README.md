@@ -120,7 +120,7 @@ After applying the database migrations, load a published known-skill vocabulary
 from `backend/` with:
 
 ```bash
-python -m scripts.load_alias_table --vocabulary-version 2026.08.28.1
+python -m scripts.load_alias_table --vocabulary-version 2026.08.29.1
 ```
 
 The command uses `SKILLSYNC_DATABASE_URL`. Repeating the same version is a

@@ -126,18 +126,52 @@ bare word is a skill. All six stay removed, and the gold-label resolution rate
 confirms it: none of these forms is an exact annotator label anywhere in the
 corpus.
 
-## Two concepts are now unreachable
+## Two concepts are now unreachable, and were then retired
 
 `Management` and `Operations` had no surface forms other than the ones removed
 — `management`, `manage`, `managing`, `managers`, and `operations`,
 `operational`, `operating` — and every one reads as ordinary English. Both
-concepts remain published in `2026.08.28.1`, and nothing resolves to them.
+concepts were still published in `2026.08.28.1` with nothing resolving to them.
 
-That is the correct outcome for this change and the wrong end state. Restoring
-them needs the compound forms the gold spans name — "people management",
-"incident management", "security operations", "revenue operations" — and adding
-surface forms is out of scope here. Filed as a follow-up, with the gold spans
-above as its evidence.
+The follow-up (#200) assumed they should be restored from the compound forms
+the gold spans name. Measuring those compounds against the live catalog said
+otherwise, and `2026.08.29.1` retires the two concepts instead. See
+[the retirement](#retiring-the-compound-heads-in-20260829-1).
+
+## Retiring the compound heads in `2026.08.29.1`
+
+`2026.08.29.1` removes the `Management` and `Operations` concepts and changes
+no surface form.
+
+**A compound head is not a concept.** The gold set carries 199 labels
+containing "management" across **64 distinct forms** — stakeholder, project,
+people, pipeline, risk, change, sales cycle, supplier, incident, inventory,
+release, performance, partnership, product, conflict, escalation — and 17
+containing "operations" across 13. The modifier carries the meaning: risk
+management and inventory management are not the same skill, and neither is
+"management".
+
+**The compounds that matter already resolve.** In the live catalog, ranked by
+employers rather than postings, the leading "management" compounds are
+`stakeholder management` (8 employers), `project management` (7),
+`account management` (6) and `program management` — all four already have their
+own concepts and resolved throughout. What a `Management` concept would have
+added is the bare head, which is what the audit removed.
+
+**The remainder are different skills, not this one.** `access management`
+(5 employers) is identity and access management. `risk management` (5) is risk.
+`change management` (5) is organizational change. `product management` (5) is
+product. Each deserves a concept of its own, decided and measured on its own
+evidence — which is vocabulary growth, not the restoration of a head that never
+named a skill. Filed separately.
+
+**`people management` does not appear in the live catalog at all.** Its 18 gold
+labels come from the same single employer that contributes half the corpus, and
+per-employer counting is the correction this audit already had to make once.
+
+Gold-label resolution is identical under `2026.08.28.1` and `2026.08.29.1`:
+455 of 2,059. Retiring a concept nothing resolves to costs nothing and removes
+a trap for the next reader.
 
 ## Removed in `2026.08.28.1`
 
