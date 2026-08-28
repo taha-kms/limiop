@@ -111,3 +111,4 @@ Desktop.ini
 
 # Measurement working files: large, re-derivable, and provider text must not be committed.
 .research/
+.sonar-venv/
