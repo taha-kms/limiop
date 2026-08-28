@@ -35,16 +35,22 @@ TEXT_MATCHING_HAZARD_FORMS: tuple[str, ...] = (
     "gcp",
     "gpu",
     "ml",
-    "own",
     "qa",
     "ux",
 )
+"""Short forms that carry a text-matching risk and survived the audit.
+
+``own`` was on this list until it was read against real postings and removed in
+``2026.08.28.1``. The rest were read the same way and kept; the audit records
+the contexts that justified each.
+"""
 
 PUBLISHED_ALIAS_TABLES: Mapping[str, str] = {
     "2026.08.24.1": "data/aliases.v1.json",
     "2026.08.25.1": "data/aliases.v2.json",
+    "2026.08.28.1": "data/aliases.v3.json",
 }
-DEFAULT_VOCABULARY_VERSION = "2026.08.25.1"
+DEFAULT_VOCABULARY_VERSION = "2026.08.28.1"
 
 
 def normalize_surface_form(value: str) -> str:

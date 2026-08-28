@@ -21,10 +21,16 @@ def run_measurement(*arguments: str) -> dict[str, object]:
     return cast(dict[str, object], json.loads(completed.stdout))
 
 
-def test_committed_gold_label_resolution_result_is_reproducible() -> None:
-    result = run_measurement()
+@pytest.mark.parametrize("vocabulary_version", ["2026.08.25.1", "2026.08.28.1"])
+def test_committed_gold_label_resolution_result_is_reproducible(vocabulary_version: str) -> None:
+    """The 2026-08-28 audit removed 50 surface forms and cost none of these.
 
-    assert result["vocabulary_version"] == "2026.08.25.1"
+    Pinned per version rather than left on the default so that publishing a new
+    alias table cannot silently rewrite what the committed measurement says.
+    """
+    result = run_measurement("--vocabulary-version", vocabulary_version)
+
+    assert result["vocabulary_version"] == vocabulary_version
     assert result["gold_mentions"] == 2059
     assert result["resolved_mentions"] == 455
     assert result["rate"] == pytest.approx(0.220981)
