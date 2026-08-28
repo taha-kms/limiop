@@ -25,7 +25,8 @@ This file only covers sequence and open decisions.
 | Skill model decision | #46 | Done |
 | Identity and sessions | #38, #39, #40 | Done |
 | Service extraction | #160–#168, #171 | Done |
-| CV processing and matching | #15 | Not started |
+| Skills at ingestion | #187–#194, #199, #202–#205 | Done |
+| CV processing and matching | #15 | In progress |
 | Analytics and production | #16 | Not started |
 
 Built so far: a source-independent job catalog in PostgreSQL, two ingestion
@@ -42,12 +43,12 @@ seeded catalog.
 
 Not built: accounts, CV handling, skills, matching, and analytics.
 
-The catalog has been proven against real postings, repeatedly, but only in
-throwaway databases. No environment holds them persistently yet, which is the
-one part of the Phase A exit criterion still outstanding and needs a decision
-about where that environment lives rather than more code. Only Arbeitnow is
-scheduled; Greenhouse runs on demand, because scheduling it without somewhere
-to schedule it into would be scheduling into nothing.
+A local environment now holds the catalog persistently, on an external Docker
+volume that survives `docker compose down -v`, and both sources are scheduled
+hourly. Postings carry canonical skills: extraction runs inside the transaction
+that stores each posting, against the alias table the backend publishes into the
+shared database, and 6,406 skill rows sit against 456 of the 1,252 stored
+postings.
 
 ## Decisions
 
@@ -150,6 +151,23 @@ to schedule it into would be scheduling into nothing.
   can tell whether what they fetched is what was scored. Storing a hash without
   the means to fetch the content, which is what happened here, is not enough.
 
+- **A measurement is only as good as the corpus it runs on.** Half the stored
+  catalog comes from one employer, whose postings share a long boilerplate
+  blurb, so any per-posting statistic measures who is hiring rather than what is
+  true. `interpretability` appears in 500 postings and one employer. Counts and
+  samples are reported per employer, and a sample is drawn at most once per
+  employer. Established in
+  [the alias-collision audit](skill-model-measurement/alias-collision-audit.md),
+  which found three verdicts reversed by the correction.
+
+- **Extraction is enrichment, and enrichment never fails a record.** Skills are
+  written inside the transaction that stores the posting, so a posting never
+  commits with half of them, but a failure while writing them rolls back only
+  the skills and never joins the run's failures. A failure there would make the
+  run neither processing-complete nor source-exhausted, and so would stop
+  reconciliation withdrawing a posting over a problem that says nothing about
+  whether the posting is gone.
+
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
   once no un-retired provenance remains.
@@ -194,8 +212,10 @@ workplace arrangement was being read from the one field that states it least
 often (#108). Rendering real postings found two more: excerpts that were
 headings rather than prose, and a badge shown on every card that said nothing.
 
-**Exit:** met, except that no persistent environment holds the real postings.
-That is a deployment decision rather than a coding one.
+**Exit:** met. A local environment now holds the real postings on an external
+Docker volume, proven by writing a job, running `docker compose down -v`, and
+reading it back. Moving that environment to a VPS is a deployment decision
+rather than a coding one.
 
 ### Phase A.5 — Second source — done
 
@@ -292,6 +312,26 @@ responsibility is the API.
 the backend, both Alembic chains build one database in ownership order, and the
 backend is only the API.
 
+### Phase B.5 — Skills at ingestion — done
+
+The alias table, the shared extractor, the two skill tables, and extraction
+wired into the pipeline. Issues #187 through #194, #199, and #202 through #205.
+
+Three things this phase found that measurement alone would not have:
+
+- **The vocabulary, not the extractor, was the precision problem.** The first
+  run over real postings scored 0.1417. Reading all 182 surface forms against
+  985 postings from 295 employers found 50 that read as ordinary English —
+  `own`, `flexible`, `management`, `platform`, `safety` — and removing them cost
+  none of the 455 gold labels the vocabulary could resolve.
+- **The committed gold set cannot score a vocabulary change.** All 14 of its
+  recoverable postings come from one employer, it annotates each term once per
+  posting while the extractor fires on every occurrence, and 184 of the 190
+  matches it credits are fragments of longer annotated phrases.
+- **The observation inbox cannot fill.** The extractor matches a vocabulary and
+  cannot see a term outside it, so the table the unknown-skill gate depends on
+  takes zero rows until #205 generates candidates.
+
 ### Phase C — Identity and CV intake
 
 Issues #38 through #45, plus the candidate profile and applying.
@@ -378,13 +418,13 @@ closed in the second-source phase, and the rules that replaced them are in
 - **#98, what applying does.** A gated redirect or a tracked application
   record. The second is a new entity and a migration, so it is a Phase C
   decision rather than an implementation detail.
-- **Where a persistent environment lives.** Needed before the catalog can hold
-  real postings outside a test run. It is not needed to decide the skill model,
-  which needs a measured snapshot rather than a running system.
-- **Whether Greenhouse gets scheduled, and how boards are found.** Only
-  Arbeitnow runs on a schedule. The board list is three names in code until
-  #120 replaces it with discovery, and scheduling a hand-written list into a
-  database nobody keeps would prove nothing.
+- **How boards are found.** Both sources are scheduled hourly now. The board
+  list is still three names in code until #120 replaces it with discovery.
+- **How unknown skills ever get observed.** `job_skill_mentions` is wired,
+  tested, and structurally empty: the extractor matches a vocabulary and cannot
+  see a term outside it, and no published alias table has an ambiguous surface
+  form. The gate decided in #190 stays closed and stays undecidable until #205
+  generates candidates the vocabulary does not already contain.
 - **Source filtering on the listing.** Deferred in Phase A on the condition
   that a second source exists to make it meaningful. It now does, so the
   condition is met and the deferral is a choice rather than a consequence.
