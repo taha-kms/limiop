@@ -31,7 +31,12 @@ DISPLAY_NAME = "Arbeitnow"
 PRECEDENCE = 10
 
 
-def build_run(client: ArbeitnowClient, max_records: int) -> IngestionRun[ArbeitnowJobRecord]:
+def build_run(
+    client: ArbeitnowClient,
+    max_records: int,
+    *,
+    skill_alias_version: str | None = None,
+) -> IngestionRun[ArbeitnowJobRecord]:
     """Assemble the stages around an already-built client."""
     return IngestionRun(
         client=client,
@@ -44,6 +49,7 @@ def build_run(client: ArbeitnowClient, max_records: int) -> IngestionRun[Arbeitn
             precedence=PRECEDENCE,
         ),
         max_records=max_records,
+        skill_alias_version=skill_alias_version,
     )
 
 
@@ -52,10 +58,15 @@ def arbeitnow_run(
     *,
     http_client: httpx2.AsyncClient | None = None,
     max_records: int = DEFAULT_MAX_RECORDS,
+    skill_alias_version: str | None = None,
 ) -> IngestionRun[ArbeitnowJobRecord]:
     """Build a bounded Arbeitnow ingestion run around a caller-managed client."""
     settings = config if config is not None else ArbeitnowConfig()
-    return build_run(ArbeitnowClient(settings, http_client=http_client), max_records)
+    return build_run(
+        ArbeitnowClient(settings, http_client=http_client),
+        max_records,
+        skill_alias_version=skill_alias_version,
+    )
 
 
 async def ingest_arbeitnow(
@@ -77,7 +88,11 @@ async def ingest_arbeitnow(
     started_at = datetime.now(UTC)
     try:
         async with ArbeitnowClient(resolved, http_client=http_client) as client:
-            summary = await build_run(client, max_records).execute(database)
+            summary = await build_run(
+                client,
+                max_records,
+                skill_alias_version=app_settings.skill_alias_version,
+            ).execute(database)
         await reconcile_after(database, summary, run_started_at=started_at)
         return summary
     finally:

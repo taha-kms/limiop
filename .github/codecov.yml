@@ -23,12 +23,9 @@ flags:
     paths:
       - frontend/
     carryforward: true
-  # platform/db has no flag of its own: its lines are measured by the ingestion
-  # suite, which drives the models against a real database.
   job-ingestion:
     paths:
       - services/job-ingestion-service/
-      - platform/db/
     carryforward: true
   platform-skills:
     paths:

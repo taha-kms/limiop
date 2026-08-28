@@ -22,9 +22,10 @@ concurrency:
 
 jobs:
   # The database package is declarative: models, a session factory, and two
-  # Alembic chains. Its behaviour is exercised by the suites that use it, and
-  # the ingestion suite measures it directly, so this job gates format, lint,
-  # types, and its own tests without a coverage floor of its own.
+  # Alembic chains, exercised by the suites that import it rather than by tests
+  # of its own. Measured alone it reports 1%, so this job gates format, lint,
+  # types, and its own tests, and publishes no coverage number that would be
+  # read as a verdict on how well it is tested.
   database:
     name: Validate the shared database package
     runs-on: ubuntu-latest

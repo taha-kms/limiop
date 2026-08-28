@@ -5,6 +5,7 @@ concrete parts, owns their lifecycles, and folds in the boards that could not
 be read, which the generic run has no way to learn about.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx2
@@ -43,6 +44,8 @@ DEFAULT_BOARDS = (
 def build_run(
     client: GreenhouseClient,
     max_records: int,
+    *,
+    skill_alias_version: str | None = None,
 ) -> IngestionRun[GreenhouseJobRecord]:
     """Assemble the stages around an already-built client."""
     return IngestionRun(
@@ -56,6 +59,7 @@ def build_run(
             precedence=PRECEDENCE,
         ),
         max_records=max_records,
+        skill_alias_version=skill_alias_version,
     )
 
 
@@ -72,16 +76,7 @@ def with_board_failures(summary: IngestionSummary, client: GreenhouseClient) -> 
     """
     if not client.failures:
         return summary
-    return IngestionSummary(
-        source_key=summary.source_key,
-        fetched=summary.fetched,
-        created=summary.created,
-        updated=summary.updated,
-        skipped=summary.skipped,
-        failures=summary.failures + tuple(client.failures),
-        reached_the_end=summary.reached_the_end,
-        stopped_at_budget=summary.stopped_at_budget,
-    )
+    return replace(summary, failures=summary.failures + tuple(client.failures))
 
 
 async def ingest_greenhouse(
@@ -99,7 +94,12 @@ async def ingest_greenhouse(
     try:
         async with GreenhouseClient(resolved, http_client=http_client) as client:
             summary = with_board_failures(
-                await build_run(client, max_records).execute(database), client
+                await build_run(
+                    client,
+                    max_records,
+                    skill_alias_version=app_settings.skill_alias_version,
+                ).execute(database),
+                client,
             )
         await reconcile_after(database, summary, run_started_at=started_at)
         return summary
