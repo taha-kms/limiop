@@ -15,19 +15,17 @@ and is closed: a mention that resolves to exactly one concept becomes a
 in `job_skill_mentions`, which nothing matches against.
 """
 
-from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+from platform_db.models.catalog import Job
 from platform_db.models.job_skills import JobSkill, JobSkillMention
 from platform_db.models.skills import SkillAliasVersion, SkillSurfaceForm
 from platform_skills import EXTRACTOR_VERSION, Vocabulary, extract_mentions
-from sqlalchemy import delete, select, tuple_
+from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
-
-SURFACE_FORM_LIMIT = 255
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,17 +51,26 @@ class ExtractionCounts:
 
 
 @dataclass(frozen=True, slots=True)
+class Observation:
+    """One unresolved surface form as this posting wrote it."""
+
+    normalized_form: str | None
+    occurrences: int
+    spans: tuple[tuple[int, int], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class SkillPlan:
     """The rows one posting's text implies, before anything is written."""
 
     concepts: dict[UUID, str]
-    observations: dict[str, tuple[str | None, int]]
+    observations: dict[str, Observation]
 
     @property
     def counts(self) -> ExtractionCounts:
         return ExtractionCounts(
-            resolved=sum(1 for _ in self.concepts),
-            unknown=sum(count for _, count in self.observations.values()),
+            resolved=len(self.concepts),
+            unknown=sum(observation.occurrences for observation in self.observations.values()),
         )
 
 
@@ -92,20 +99,27 @@ async def load_skill_vocabulary(
         return None
 
     rows = await session.execute(
-        select(SkillSurfaceForm.surface_form, SkillSurfaceForm.concept_id).where(
-            SkillSurfaceForm.alias_version == version
-        )
+        select(
+            SkillSurfaceForm.normalized_form,
+            SkillSurfaceForm.surface_form,
+            SkillSurfaceForm.concept_id,
+        ).where(SkillSurfaceForm.alias_version == version)
     )
 
-    # A surface form naming more than one concept is ambiguous, and the
-    # extractor is told so with None rather than being handed a guess.
+    # Grouped on the normalized form, which is what the table's own uniqueness
+    # key uses. Grouping on the raw spelling would let one ambiguous term reach
+    # the extractor as two keys that normalize alike with different concepts,
+    # and the extractor refuses that vocabulary outright rather than guessing —
+    # turning an ambiguous term into a failure of every record in the run.
     concepts_by_form: dict[str, set[UUID]] = {}
-    for surface_form, concept_id in rows:
-        concepts_by_form.setdefault(surface_form, set()).add(concept_id)
+    spelling_by_form: dict[str, str] = {}
+    for normalized_form, surface_form, concept_id in rows:
+        concepts_by_form.setdefault(normalized_form, set()).add(concept_id)
+        spelling_by_form.setdefault(normalized_form, surface_form)
 
     terms = {
-        surface_form: next(iter(concepts)) if len(concepts) == 1 else None
-        for surface_form, concepts in concepts_by_form.items()
+        spelling_by_form[normalized_form]: (next(iter(concepts)) if len(concepts) == 1 else None)
+        for normalized_form, concepts in concepts_by_form.items()
     }
     return SkillVocabulary(version=version, terms=terms) if terms else None
 
@@ -114,10 +128,14 @@ def collapse_whitespace(value: str) -> str:
     """Return the matched text as one line.
 
     Descriptions are flattened from provider markup, so a phrase can be matched
-    across a run of newlines that the employer never wrote. Storing the span
-    verbatim would put those newlines in the column and can exceed its length;
-    collapsing keeps the employer's spelling and casing and drops an artefact of
-    our own normalization.
+    across a run of newlines the employer never wrote. Collapsing keeps their
+    spelling and casing and drops an artefact of our own normalization.
+
+    Nothing truncates afterwards. A collapsed match is the vocabulary phrase as
+    the posting spelled it, so it is bounded by the same column that bounds the
+    vocabulary. A length filter here would be a shape-based rule on
+    observations, which the admission gate forbids, and truncating would corrupt
+    the value rather than refusing it.
     """
     return " ".join(value.split())
 
@@ -129,22 +147,26 @@ def plan_skills(text: str, vocabulary: SkillVocabulary) -> SkillPlan:
     `occurrences` is the field most likely to be quietly wrong.
     """
     concepts: dict[UUID, str] = {}
-    unresolved: list[tuple[str, str | None]] = []
+    normalized_by_form: dict[str, str | None] = {}
+    spans_by_form: dict[str, list[tuple[int, int]]] = {}
 
     for mention in extract_mentions(text, vocabulary.terms):
-        surface_form = collapse_whitespace(mention.surface_form)[:SURFACE_FORM_LIMIT]
-        if mention.concept_id is None:
-            unresolved.append((surface_form, mention.normalized_form))
+        surface_form = collapse_whitespace(mention.surface_form)
+        if mention.concept_id is not None:
+            # The first spelling in the posting wins, so re-running over
+            # unchanged text cannot rewrite the stored surface form.
+            concepts.setdefault(mention.concept_id, surface_form)
             continue
-        # The first spelling in the posting wins, so re-running over unchanged
-        # text cannot rewrite the stored surface form.
-        concepts.setdefault(mention.concept_id, surface_form)
+        normalized_by_form.setdefault(surface_form, mention.normalized_form)
+        spans_by_form.setdefault(surface_form, []).append(mention.span)
 
-    counted = Counter(surface_form for surface_form, _ in unresolved)
-    normalized_by_form = dict(unresolved)
     observations = {
-        surface_form: (normalized_by_form[surface_form], count)
-        for surface_form, count in counted.items()
+        surface_form: Observation(
+            normalized_form=normalized_by_form[surface_form],
+            occurrences=len(spans),
+            spans=tuple(spans),
+        )
+        for surface_form, spans in spans_by_form.items()
     }
     return SkillPlan(concepts=concepts, observations=observations)
 
@@ -153,16 +175,25 @@ async def store_job_skills(
     session: AsyncSession,
     *,
     job_id: UUID,
-    text: str,
     vocabulary: SkillVocabulary,
     seen_at: datetime,
 ) -> ExtractionCounts:
-    """Replace one posting's skills with what its text says now.
+    """Replace one posting's skills with what its stored text says now.
 
     Replacement rather than accumulation: a posting that stops mentioning a
     skill stops carrying it, and an hourly re-run over unchanged text is a
     no-op rather than a slow drift.
+
+    The text is read here, from the stored row, rather than taken from the
+    caller. It has to be the merged description — the one that won precedence
+    across sources — or a job two sources describe would flap between their two
+    accounts every run. Reading it here also keeps the read inside the caller's
+    savepoint, where a database error is contained.
     """
+    text = await session.scalar(select(Job.description).where(Job.id == job_id))
+    if not text:
+        return ExtractionCounts()
+
     plan = plan_skills(text, vocabulary)
 
     await session.execute(delete(JobSkill).where(JobSkill.job_id == job_id))
@@ -187,14 +218,17 @@ async def store_job_skills(
                 {
                     "job_id": job_id,
                     "surface_form": surface_form,
-                    "normalized_form": normalized_form,
-                    "occurrences": occurrences,
+                    "normalized_form": observation.normalized_form,
+                    "occurrences": observation.occurrences,
                     "first_seen_at": seen_at,
                     "last_seen_at": seen_at,
                     "extractor_version": EXTRACTOR_VERSION,
                     "alias_version": vocabulary.version,
+                    # Where it was found, so an observation can be read back
+                    # against the posting rather than taken on trust.
+                    "evidence": {"spans": [list(span) for span in observation.spans]},
                 }
-                for surface_form, (normalized_form, occurrences) in plan.observations.items()
+                for surface_form, observation in plan.observations.items()
             ]
         )
         await session.execute(
@@ -206,7 +240,13 @@ async def store_job_skills(
                     # is written.
                     "occurrences": statement.excluded.occurrences,
                     "normalized_form": statement.excluded.normalized_form,
-                    "last_seen_at": statement.excluded.last_seen_at,
+                    "evidence": statement.excluded.evidence,
+                    # first_seen_at is deliberately absent: an observation keeps
+                    # the moment it was first made. last_seen_at only ever moves
+                    # forward, so a clock that goes backwards cannot rewind it.
+                    "last_seen_at": func.greatest(
+                        JobSkillMention.last_seen_at, statement.excluded.last_seen_at
+                    ),
                 },
             )
         )

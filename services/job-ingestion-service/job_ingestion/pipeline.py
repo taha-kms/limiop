@@ -18,8 +18,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
-from platform_db.models.catalog import Job
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.contracts import (
@@ -135,8 +133,13 @@ class IngestionRun[ProviderRecordT]:
         async with database.session() as session:
             # Read once per run rather than per record: a publication landing
             # mid-run would otherwise split one run across two vocabularies and
-            # make its own counts unreadable.
-            vocabulary = await load_skill_vocabulary(session, version=self.skill_alias_version)
+            # make its own counts unreadable. A vocabulary that cannot be read
+            # is no vocabulary: the run stores postings without skills rather
+            # than not running at all.
+            try:
+                vocabulary = await load_skill_vocabulary(session, version=self.skill_alias_version)
+            except Exception:
+                vocabulary = None
             try:
                 async for page in self.client.fetch_pages():
                     for raw in page.records:
@@ -204,22 +207,20 @@ class IngestionRun[ProviderRecordT]:
         keeps the exception from escaping to `Database.session`, which rolls the
         whole session back and would discard the job this run just wrote.
 
-        Skills are enrichment: extraction failing is not the posting failing.
+        The catch is broad on purpose. A database error is not the only way this
+        fails: a vocabulary whose spellings collide after normalization makes
+        the extractor raise, and that would otherwise end the run on its first
+        record. Skills are enrichment, and no failure here is the posting's.
         """
-        job = await session.get(Job, job_id)
-        if job is None or not job.description:
-            return
-
         try:
             async with session.begin_nested():
                 counts = await store_job_skills(
                     session,
                     job_id=job_id,
-                    text=job.description,
                     vocabulary=vocabulary,
                     seen_at=seen_at,
                 )
-        except SQLAlchemyError:
+        except Exception:
             tally.extraction_failed += 1
             return
 

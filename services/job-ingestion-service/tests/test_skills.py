@@ -9,15 +9,20 @@ unique constraint, so those tests take a database or skip.
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 from platform_db.models import Company, Job, JobProvenance, JobSource
-from platform_db.models.job_skills import JobSkill, JobSkillMention
+from platform_db.models.job_skills import (
+    EXTRACTOR_VERSION_LENGTH,
+    JobSkill,
+    JobSkillMention,
+)
 from platform_db.models.skills import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 from platform_skills import EXTRACTOR_VERSION
 from pydantic import PostgresDsn
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy import text as sql
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,13 +70,14 @@ def test_an_unresolved_mention_never_reaches_the_concepts() -> None:
     plan = plan_skills("We need data analysis skills.", VOCABULARY)
 
     assert plan.concepts == {}
-    assert plan.observations == {"data analysis": ("data analysis", 1)}
+    assert plan.observations["data analysis"].occurrences == 1
+    assert plan.observations["data analysis"].normalized_form == "data analysis"
 
 
 def test_occurrences_counts_appearances_in_the_text() -> None:
     plan = plan_skills("data analysis, then more data analysis, and data analysis", VOCABULARY)
 
-    assert plan.observations == {"data analysis": ("data analysis", 3)}
+    assert plan.observations["data analysis"].occurrences == 3
     assert plan.counts.unknown == 3
 
 
@@ -83,9 +89,9 @@ def test_occurrences_groups_by_the_spelling_the_unique_key_uses() -> None:
     """
     plan = plan_skills("Data Analysis and data analysis and data analysis", VOCABULARY)
 
-    assert plan.observations == {
-        "Data Analysis": ("data analysis", 1),
-        "data analysis": ("data analysis", 2),
+    assert {form: it.occurrences for form, it in plan.observations.items()} == {
+        "Data Analysis": 1,
+        "data analysis": 2,
     }
 
 
@@ -93,7 +99,8 @@ def test_a_phrase_matched_across_flattened_markup_is_stored_as_one_line() -> Non
     """Descriptions are flattened from markup, so a match can span newlines."""
     plan = plan_skills("skills in data\n\n   analysis matter", VOCABULARY)
 
-    assert plan.observations == {"data analysis": ("data analysis", 1)}
+    assert plan.observations["data analysis"].occurrences == 1
+    assert plan.observations["data analysis"].normalized_form == "data analysis"
 
 
 def test_collapsing_whitespace_keeps_the_employer_spelling() -> None:
@@ -270,6 +277,12 @@ async def store_job(database: Database, description: str) -> UUID:
     return job_id
 
 
+async def rewrite_description(database: Database, job_id: UUID, description: str) -> None:
+    async with database.session() as session:
+        await session.execute(update(Job).where(Job.id == job_id).values(description=description))
+        await session.commit()
+
+
 async def skill_rows(database: Database, job_id: UUID) -> list[tuple[UUID, str, str]]:
     async with database.session() as session:
         rows = await session.execute(
@@ -328,11 +341,7 @@ def test_a_posting_gets_one_row_per_concept(database_url: PostgresDsn) -> None:
             vocabulary = await load_skill_vocabulary(session)
             assert vocabulary is not None
             counts = await store_job_skills(
-                session,
-                job_id=job_id,
-                text="Python, Python, and SQL.",
-                vocabulary=vocabulary,
-                seen_at=SEEN,
+                session, job_id=job_id, vocabulary=vocabulary, seen_at=SEEN
             )
             await session.commit()
 
@@ -358,7 +367,7 @@ def test_re_extracting_unchanged_text_changes_nothing(database_url: PostgresDsn)
                 vocabulary = await load_skill_vocabulary(session)
                 assert vocabulary is not None
                 await store_job_skills(
-                    session, job_id=job_id, text=text, vocabulary=vocabulary, seen_at=seen_at
+                    session, job_id=job_id, vocabulary=vocabulary, seen_at=seen_at
                 )
                 await session.commit()
 
@@ -380,19 +389,18 @@ def test_a_posting_that_stops_naming_a_skill_stops_carrying_it(
         await publish_vocabulary(database)
         job_id = await store_job(database, "Python and SQL.")
 
-        async def extract(text: str) -> None:
+        async def extract() -> None:
             async with database.session() as session:
                 vocabulary = await load_skill_vocabulary(session)
                 assert vocabulary is not None
-                await store_job_skills(
-                    session, job_id=job_id, text=text, vocabulary=vocabulary, seen_at=SEEN
-                )
+                await store_job_skills(session, job_id=job_id, vocabulary=vocabulary, seen_at=SEEN)
                 await session.commit()
 
-        await extract("Python and SQL.")
+        await extract()
         assert len(await skill_rows(database, job_id)) == 2
 
-        await extract("Python only now.")
+        await rewrite_description(database, job_id, "Python only now.")
+        await extract()
         assert await skill_rows(database, job_id) == [(PYTHON, "Python", VERSION)]
 
     run_database_test(database_url, test)
@@ -441,7 +449,7 @@ def test_an_unresolved_mention_is_observed_without_inflating_across_runs(
                 assert vocabulary is not None
                 assert vocabulary.terms["stack"] is None
                 await store_job_skills(
-                    session, job_id=job_id, text=text, vocabulary=vocabulary, seen_at=seen_at
+                    session, job_id=job_id, vocabulary=vocabulary, seen_at=seen_at
                 )
                 await session.commit()
 
@@ -562,5 +570,175 @@ def test_an_unchanged_posting_keeps_its_skills_across_runs(
 
         async with database.session() as session:
             assert await session.scalar(select(func.count()).select_from(JobSkill)) == 2
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_one_ambiguous_term_spelled_two_ways_is_one_vocabulary_key(
+    database_url: PostgresDsn,
+) -> None:
+    """The extractor refuses a vocabulary whose keys collide after normalization.
+
+    `skill_surface_forms` is unique on the normalized form, so "A.I." and "AI"
+    are two rows that normalize alike. Handing both to the extractor as separate
+    keys with different concepts makes it raise, and every record in the run
+    would then fail extraction rather than one term being ambiguous.
+    """
+
+    async def test(database: Database) -> None:
+        await publish_vocabulary(database)
+        async with database.session() as session:
+            session.add_all(
+                [
+                    SkillSurfaceForm(
+                        alias_version=VERSION,
+                        concept_id=PYTHON,
+                        surface_form="A.I.",
+                        normalized_form="a i",
+                    ),
+                    SkillSurfaceForm(
+                        alias_version=VERSION,
+                        concept_id=SQL_CONCEPT,
+                        surface_form="A I",
+                        normalized_form="a i",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        async with database.session() as session:
+            vocabulary = await load_skill_vocabulary(session)
+
+        assert vocabulary is not None
+        # One key, marked ambiguous, rather than two keys that collide.
+        assert sum(1 for value in vocabulary.terms.values() if value is None) == 1
+        # And the extractor accepts it.
+        assert plan_skills("we do A.I. here", vocabulary).concepts == {}
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_an_observation_records_where_it_was_found(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        await publish_vocabulary(database)
+        async with database.session() as session:
+            session.add_all(
+                [
+                    SkillSurfaceForm(
+                        alias_version=VERSION,
+                        concept_id=PYTHON,
+                        surface_form="stack",
+                        normalized_form="stack",
+                    ),
+                    SkillSurfaceForm(
+                        alias_version=VERSION,
+                        concept_id=SQL_CONCEPT,
+                        surface_form="Stack",
+                        normalized_form="stack",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        text = "our stack and their stack"
+        job_id = await store_job(database, text)
+        async with database.session() as session:
+            vocabulary = await load_skill_vocabulary(session)
+            assert vocabulary is not None
+            await store_job_skills(session, job_id=job_id, vocabulary=vocabulary, seen_at=SEEN)
+            await session.commit()
+
+        async with database.session() as session:
+            evidence = await session.scalar(
+                select(JobSkillMention.evidence).where(JobSkillMention.job_id == job_id)
+            )
+
+        assert evidence is not None
+        spans = cast(list[list[int]], evidence["spans"])
+        assert [text[start:end] for start, end in spans] == ["stack", "stack"]
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_a_vocabulary_that_cannot_be_read_does_not_stop_the_run(
+    database_url: PostgresDsn,
+) -> None:
+    """A run without skills is still a run. A run that raised is not."""
+
+    async def test(database: Database) -> None:
+        async def explode(*_: object, **__: object) -> SkillVocabulary | None:
+            raise RuntimeError("the vocabulary could not be read")
+
+        with pytest.MonkeyPatch.context() as patcher:
+            patcher.setattr(pipeline, "load_skill_vocabulary", explode)
+            summary = await ingest_one(database, "We need Python.")
+
+        assert summary.created == 1
+        assert summary.alias_version is None
+        assert summary.extraction_failed == 0
+        assert not summary.failures
+        assert summary.processing_complete
+
+    run_database_test(database_url, test)
+
+
+def test_the_extractor_version_fits_the_column_that_stores_it() -> None:
+    """Asserted here rather than in platform/skills, which has no database."""
+    assert len(EXTRACTOR_VERSION) <= EXTRACTOR_VERSION_LENGTH
+
+
+@pytest.mark.integration
+def test_last_seen_at_never_moves_backwards(database_url: PostgresDsn) -> None:
+    """A clock that goes backwards must not rewind an observation."""
+
+    async def test(database: Database) -> None:
+        await publish_vocabulary(database)
+        async with database.session() as session:
+            session.add_all(
+                [
+                    SkillSurfaceForm(
+                        alias_version=VERSION,
+                        concept_id=PYTHON,
+                        surface_form="stack",
+                        normalized_form="stack",
+                    ),
+                    SkillSurfaceForm(
+                        alias_version=VERSION,
+                        concept_id=SQL_CONCEPT,
+                        surface_form="Stack",
+                        normalized_form="stack",
+                    ),
+                ]
+            )
+            await session.commit()
+
+        job_id = await store_job(database, "our stack")
+
+        async def extract(seen_at: datetime) -> None:
+            async with database.session() as session:
+                vocabulary = await load_skill_vocabulary(session)
+                assert vocabulary is not None
+                await store_job_skills(
+                    session, job_id=job_id, vocabulary=vocabulary, seen_at=seen_at
+                )
+                await session.commit()
+
+        await extract(LATER)
+        await extract(SEEN)
+
+        async with database.session() as session:
+            row = (
+                await session.execute(
+                    select(JobSkillMention.first_seen_at, JobSkillMention.last_seen_at).where(
+                        JobSkillMention.job_id == job_id
+                    )
+                )
+            ).one()
+
+        assert row.first_seen_at == LATER
+        assert row.last_seen_at == LATER
 
     run_database_test(database_url, test)
