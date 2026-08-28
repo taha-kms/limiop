@@ -25,24 +25,12 @@ jobs:
           cache: pip
           cache-dependency-path: platform/skills/pyproject.toml
 
-      - name: Install shared extractor and test dependencies
+      # This job runs on every pull request, because a boundary can be broken
+      # by a change to any package. Formatting, linting, type checks, and the
+      # extractor's own tests belong to the Shared packages workflow, which
+      # only runs when platform/ changes; only pytest itself is needed here.
+      - name: Install test dependencies
         run: python -m pip install -e 'platform/skills[dev]'
-
-      - name: Check shared extractor formatting
-        working-directory: platform/skills
-        run: ruff format --check .
-
-      - name: Lint shared extractor
-        working-directory: platform/skills
-        run: ruff check .
-
-      - name: Type-check shared extractor
-        working-directory: platform/skills
-        run: mypy
-
-      - name: Test shared extractor
-        working-directory: platform/skills
-        run: pytest
 
       - name: Check architecture boundaries
         run: python -m pytest tests/architecture/test_boundaries.py

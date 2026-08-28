@@ -47,12 +47,31 @@ jobs:
           cache-dependency-path: |
             backend/pyproject.toml
             platform/db/pyproject.toml
+            platform/skills/pyproject.toml
+            services/job-ingestion-service/pyproject.toml
 
       - name: Generate backend coverage
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ../platform/db
+          python -m pip install -e '.[dev]'
+          pytest
+
+      # Analysis covers every production Python package, so every one of them
+      # has to produce a report. A package Sonar sees without coverage is
+      # reported as untested rather than as unmeasured.
+      - name: Generate shared extractor coverage
+        working-directory: platform/skills
+        run: |
+          python -m pip install -e '.[dev]'
+          pytest
+
+      # This report also carries platform_db, which the ingestion suite drives
+      # against a real database. The package has no report of its own.
+      - name: Generate ingestion coverage
+        working-directory: services/job-ingestion-service
+        run: |
           python -m pip install -e '.[dev]'
           pytest
 

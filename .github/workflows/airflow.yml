@@ -4,15 +4,17 @@ on:
   pull_request:
     paths:
       - 'airflow/**'
-      - 'backend/**'
+      - 'services/job-ingestion-service/**'
       - 'platform/db/**'
+      - 'platform/skills/**'
       - '.github/workflows/airflow.yml'
   push:
     branches: [main]
     paths:
       - 'airflow/**'
-      - 'backend/**'
+      - 'services/job-ingestion-service/**'
       - 'platform/db/**'
+      - 'platform/skills/**'
       - '.github/workflows/airflow.yml'
 
 permissions:

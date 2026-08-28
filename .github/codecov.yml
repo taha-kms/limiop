@@ -1,5 +1,5 @@
-# Coverage policy. The upload step is added to the first workflow that runs a
-# test suite; no component produces coverage yet.
+# Coverage policy. Every deployable and shared package uploads under its own
+# flag, so a change to one cannot be masked by another's coverage.
 coverage:
   status:
     project:
@@ -22,6 +22,17 @@ flags:
   frontend:
     paths:
       - frontend/
+    carryforward: true
+  # platform/db has no flag of its own: its lines are measured by the ingestion
+  # suite, which drives the models against a real database.
+  job-ingestion:
+    paths:
+      - services/job-ingestion-service/
+      - platform/db/
+    carryforward: true
+  platform-skills:
+    paths:
+      - platform/skills/
     carryforward: true
   airflow:
     paths:
