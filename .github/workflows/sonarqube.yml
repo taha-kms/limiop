@@ -47,14 +47,45 @@ jobs:
           cache-dependency-path: |
             backend/pyproject.toml
             platform/db/pyproject.toml
+            platform/skills/pyproject.toml
+            services/job-ingestion-service/pyproject.toml
 
+      # Analysis covers every production Python package, so every one of them
+      # has to produce a report: a package Sonar sees without coverage reads as
+      # untested rather than as unmeasured.
+      #
+      # Each package gets its own virtualenv. They cannot share one, because
+      # the ingestion suite asserts that no web framework is importable from
+      # its environment — the guard that keeps the deployable free of the
+      # backend's dependencies — and installing the backend alongside it would
+      # make that assertion fail for the wrong reason.
       - name: Generate backend coverage
         working-directory: backend
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ../platform/db
-          python -m pip install -e '.[dev]'
-          pytest
+          python -m venv .sonar-venv
+          .sonar-venv/bin/python -m pip install --upgrade pip
+          .sonar-venv/bin/python -m pip install -e ../platform/db
+          .sonar-venv/bin/python -m pip install -e '.[dev]'
+          .sonar-venv/bin/python -m pytest
+
+      - name: Generate shared extractor coverage
+        working-directory: platform/skills
+        run: |
+          python -m venv .sonar-venv
+          .sonar-venv/bin/python -m pip install --upgrade pip
+          .sonar-venv/bin/python -m pip install -e '.[dev]'
+          .sonar-venv/bin/python -m pytest
+
+      # This report also carries platform_db, which the ingestion suite drives
+      # against a real database. The package has no report of its own.
+      - name: Generate ingestion coverage
+        working-directory: services/job-ingestion-service
+        run: |
+          python -m venv .sonar-venv
+          .sonar-venv/bin/python -m pip install --upgrade pip
+          .sonar-venv/bin/python -m pip install -e ../../platform/db
+          .sonar-venv/bin/python -m pip install -e '.[dev]'
+          .sonar-venv/bin/python -m pytest
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
