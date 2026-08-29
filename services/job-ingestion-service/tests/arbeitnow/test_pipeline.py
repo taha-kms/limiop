@@ -415,3 +415,56 @@ def test_the_entry_point_reports_an_unreachable_provider(database_url: PostgresD
         assert summary.failures[0].stage is IngestionStage.FETCH
 
     run_database_test(database_url, exercise)
+
+
+BLURB = "Acme is a public benefit corporation headquartered in San Francisco."
+
+
+def posting(index: int) -> dict[str, Any]:
+    """One employer's posting, carrying the blurb it puts on all of them."""
+    record: dict[str, Any] = dict(board_body()["data"][0])
+    record.update(
+        {
+            "slug": f"engineer-{index}",
+            "title": f"Engineer {index}",
+            "url": f"https://www.arbeitnow.com/jobs/companies/acme/engineer-{index}",
+            "description": (
+                f"<p>{BLURB}</p><p>Working fluency with data, including SQL.</p>"
+                f"<p>Role {index}: build the pipelines that carry it.</p>"
+            ),
+        }
+    )
+    return record
+
+
+async def stored_descriptions(database: Database) -> list[str]:
+    async with database.session() as session:
+        return list(await session.scalars(select(Job.description).order_by(Job.title)))
+
+
+@pytest.mark.integration
+def test_an_employers_blurb_is_gone_before_it_is_stored(database_url: PostgresDsn) -> None:
+    """The candidate generator reads what is stored, so this is where it has to go."""
+
+    async def exercise(database: Database) -> None:
+        summary = await ingest(database, responding(page([posting(index) for index in range(5)])))
+
+        assert summary.created == 5
+        stored = await stored_descriptions(database)
+        assert all(BLURB not in description for description in stored)
+        assert all("including SQL" in description for description in stored)
+        assert all(f"Role {index}" in stored[index] for index in range(5))
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_too_few_postings_to_establish_a_pattern_keep_the_blurb(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest(database, responding(page([posting(index) for index in range(4)])))
+
+        assert all(BLURB in description for description in await stored_descriptions(database))
+
+    run_database_test(database_url, exercise)

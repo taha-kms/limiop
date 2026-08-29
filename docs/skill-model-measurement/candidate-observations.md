@@ -76,7 +76,10 @@ the overlapping-runs rule working as intended rather than failing.
 come from one employer's standard blurb listing its own papers;
 `anthropic.com/careers` and `About Anthropic Anthropic` from its anti-scam
 notice. All from the employer that contributes half the catalogue, which is the
-distortion this repository has had to correct for at every stage.
+distortion this repository has had to correct for at every stage. #245 removed
+these blocks before storage and measured what that does: a quarter of every
+proposal in this inbox came from text no employer wrote about a role. See
+[employer-boilerplate.md](employer-boilerplate.md).
 
 **Noise — 8.** `and/or`, `e.g`, `Earnings`, `Customer`, `Do`,
 `RESPONSIBILITIES Manage`, `Center Electrical`, `CesiumAstro` — a company name,
