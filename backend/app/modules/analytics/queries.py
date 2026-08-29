@@ -142,7 +142,10 @@ def posting_trend(filters: AnalyticsFilters, bucket: TrendBucket) -> Select[tupl
     publication date belongs in no period, and putting it in one would be an
     invention the chart could not distinguish from a real observation.
     """
-    truncated = func.date_trunc(bucket.value, func.timezone("UTC", Job.published_at))
+    # Three-argument date_trunc: the zone is named rather than inherited from
+    # the server, and the result stays timezone-aware so a bucket boundary is
+    # served as an instant rather than as a naive local-looking timestamp.
+    truncated = func.date_trunc(bucket.value, Job.published_at, "UTC")
     return (
         narrowed(active_jobs(), filters)
         .where(Job.published_at.is_not(None))

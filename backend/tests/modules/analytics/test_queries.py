@@ -283,7 +283,9 @@ def test_a_trend_buckets_by_publication_date(
 ) -> None:
     result = fetch(database_url, posting_trend(AnalyticsFilters(), bucket))
 
-    assert [(row[0].replace(tzinfo=UTC), row[1]) for row in result] == expected
+    # Timezone-aware out, because `date_trunc` is given the zone by name.
+    assert all(row[0].tzinfo is not None for row in result)
+    assert [(row[0], row[1]) for row in result] == expected
 
 
 def test_weekly_buckets_start_on_the_same_day_every_time(
