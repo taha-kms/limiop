@@ -8,7 +8,7 @@ import argparse
 import json
 from pathlib import Path
 
-from app.modules.matching.evaluation import evaluate, load_corpus
+from app.modules.matching.evaluation import OVERLAP, TFIDF, evaluate, load_corpus
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CORPUS = REPOSITORY_ROOT / "docs/matching-evaluation/corpus.json"
@@ -17,9 +17,10 @@ DEFAULT_CORPUS = REPOSITORY_ROOT / "docs/matching-evaluation/corpus.json"
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
+    parser.add_argument("--matcher", choices=[OVERLAP, TFIDF], default=OVERLAP)
     arguments = parser.parse_args()
 
-    print(json.dumps(evaluate(load_corpus(arguments.corpus)), indent=2))
+    print(json.dumps(evaluate(load_corpus(arguments.corpus), matcher=arguments.matcher), indent=2))
 
 
 if __name__ == "__main__":

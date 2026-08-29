@@ -18,15 +18,18 @@ and how often it names at least one thing the candidate already has.
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import log2
 from pathlib import Path
 from typing import cast
 from uuid import UUID
 
 from app.modules.matching.overlap import SkillMatch, match_skills
+from app.modules.matching.tfidf import cosine, inverse_document_frequency
 
 RANK_CUTOFF = 5
+OVERLAP = "skill-overlap baseline"
+TFIDF = "tf-idf cosine"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,20 +49,22 @@ def rank(
     candidate_skills: set[UUID],
     jobs: dict[str, set[UUID]],
     relevance: dict[str, int],
+    weights: dict[UUID, float] | None = None,
 ) -> list[Ranked]:
     """Every posting scored and ordered as the endpoint would order it.
 
     Ties break on the job key. Any total order will do — what matters is that it
     is fixed, because an unstable one makes a ranking metric measure the sort.
     """
-    scored = [
-        Ranked(
-            job=key,
-            match=match_skills(candidate_skills, skills),
-            relevance=relevance.get(key, 0),
-        )
-        for key, skills in jobs.items()
-    ]
+    scored = []
+    for key, skills in jobs.items():
+        match = match_skills(candidate_skills, skills)
+        if weights is not None:
+            # Same matched and missing concepts, a different number in front of
+            # them. Replacing only the score is what keeps the two rankings
+            # comparable on the one thing that differs.
+            match = replace(match, score=cosine(candidate_skills, skills, weights))
+        scored.append(Ranked(job=key, match=match, relevance=relevance.get(key, 0)))
     return sorted(scored, key=lambda entry: (-entry.match.score, entry.job))
 
 
@@ -75,19 +80,26 @@ def ndcg(ranked: list[Ranked], cutoff: int) -> float:
     return discounted_gain(grades) / best if best else 0.0
 
 
-def evaluate(corpus: dict[str, object]) -> dict[str, object]:
-    """Every metric the baseline is judged on, from one corpus."""
+def evaluate(corpus: dict[str, object], *, matcher: str = OVERLAP) -> dict[str, object]:
+    """Every metric a matcher is judged on, from one corpus.
+
+    Both matchers are scored the same way, on the same corpus, with the same
+    metrics. Anything else would compare two measurements rather than two
+    matchers.
+    """
     jobs = {
         cast(str, job["key"]): {UUID(value) for value in cast(list[str], job["skills"])}
         for job in cast(list[dict[str, object]], corpus["jobs"])
     }
+
+    weights = inverse_document_frequency(list(jobs.values())) if matcher == TFIDF else None
 
     per_candidate: list[dict[str, object]] = []
     shown: list[SkillMatch] = []
     for entry in cast(list[dict[str, object]], corpus["candidates"]):
         skills = {UUID(value) for value in cast(list[str], entry["skills"])}
         relevance = cast(dict[str, int], entry["relevance"])
-        ranked = rank(skills, jobs, relevance)
+        ranked = rank(skills, jobs, relevance, weights)
         offered = [item for item in ranked[:RANK_CUTOFF] if item.match.score > 0]
         shown.extend(item.match for item in offered)
         per_candidate.append(
@@ -111,7 +123,7 @@ def evaluate(corpus: dict[str, object]) -> dict[str, object]:
     sizes = [match.required_count for match in shown]
     naming_a_match = [match for match in shown if match.matched_count > 0]
     return {
-        "measurement": "skill-overlap baseline",
+        "measurement": matcher,
         "corpus_version": corpus["version"],
         "vocabulary_version": corpus["vocabulary_version"],
         "candidates": len(per_candidate),
