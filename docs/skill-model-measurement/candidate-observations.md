@@ -102,3 +102,58 @@ exactly the join the gate evaluation could not make.
 The per-employer count is the number to promote on. `Senior` leads on employer
 count at 35 and is not a skill; `Python` sits at 18 and plainly is. Frequency
 alone will not separate them, and this document does not pretend it can.
+
+## The promotion decision — 2026-08-29
+
+Issue #152 asked how an out-of-vocabulary term gets admitted. With the inbox
+finally holding something, the answer is measurable, and it is that **frequency
+cannot promote**.
+
+`platform/skills/scripts/rank_candidates.py` ranks the inbox by distinct
+employers. The top thirty:
+
+```
+Senior 35   Manager 28   Product 27   UK 27   Engineering 25   Management 25
+Europe 24   e.g 23   and/or 22   Role 22   Engineer 21   Do 19   Team 19
+Python 18   London 18   Data 17   C 17   Germany 17   LI 17   Experience 17
+Operations 16   Customer 16   Business 16   Director 16   Software 15
+European 15   Privacy 15   Account 14   Success 14   Google 14
+```
+
+One of those is a skill. `Senior` leads at 35 employers and names a seniority;
+`Python` sits at 18 and is the only unambiguous technology in the list. `LI` is
+a fragment of the `#LI-` LinkedIn tracking marker. `UK`, `Europe`, `London` and
+`Germany` are places. `Manager`, `Engineer` and `Director` are job titles.
+
+No threshold separates them, and there is no version of this list where one
+does. A rule admitting `Python` at 18 employers admits eleven ordinary words
+above it.
+
+### The decision
+
+**The gate stays closed to automatic admission. Promotion is a reviewed act.**
+
+An observed term becomes a concept when a person reads it in context and
+publishes it in a new alias version, exactly as `2026.08.29.2` added five. What
+this work changes is that the review now has an input: 7,736 terms, each with
+its employer count and a quoted context, instead of a vocabulary derived from a
+corpus snapshot nobody can re-run.
+
+Nothing is admitted silently, which is the same conclusion #190 reached from
+the opposite direction — it could not score a permissive rule for want of
+evidence, and the evidence now says a permissive rule scored on frequency would
+be wrong.
+
+### What this is not
+
+It is not a refusal to grow the vocabulary. Five concepts were added the same
+day from measured evidence, and the queue is how the next five are found.
+
+It is not "unknown skills are worthless". A third of a hand-read sample were
+plausible, and they are in the queue rather than discarded. What is refused is
+promoting them without reading them.
+
+`PROVISIONAL_MINIMUM_USABLE_SKILLS` was the other thing #152 asked to revisit.
+It was replaced in #215 by a threshold of three, decided against the matching
+evaluation rather than left at one because every stored skill happened to be a
+resolved concept.
