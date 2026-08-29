@@ -1,16 +1,22 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
     CurrentUser,
     get_application_settings,
     get_cv_storage,
+    get_database,
     get_database_session,
 )
 from app.core.config import Settings
+from app.db.session import Database
+from app.modules.cvs.models import CV
+from app.modules.cvs.parsing import PDFParserLimits
 from app.modules.cvs.policy import CVUploadPolicy, CVUploadRejected, UploadRejectionReason
+from app.modules.cvs.processing import process_cv
 from app.modules.cvs.schemas import CVRead
 from app.modules.cvs.service import CVMetadataPersistenceError, intake_cv
 from app.modules.cvs.storage import CVObjectTooLarge, CVStorage, CVStorageError
@@ -32,7 +38,9 @@ router = APIRouter(prefix="/api/v1/cvs", tags=["cvs"])
 )
 async def upload_cv(
     user: CurrentUser,
+    background: BackgroundTasks,
     session: Annotated[AsyncSession, Depends(get_database_session)],
+    database: Annotated[Database, Depends(get_database)],
     settings: Annotated[Settings, Depends(get_application_settings)],
     storage: Annotated[CVStorage, Depends(get_cv_storage)],
     file: Annotated[UploadFile, File(description="PDF CV")],
@@ -67,7 +75,47 @@ async def upload_cv(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="the CV could not be stored",
         ) from None
+    # Queued rather than awaited. Parsing spawns a process with a timeout, and
+    # holding the upload open for it makes its latency a function of whatever
+    # PDF somebody chose. The row records `pending` until it runs, so a CV
+    # whose processing was lost is visibly unprocessed rather than silently
+    # missing its skills.
+    background.add_task(
+        process_cv,
+        database,
+        storage,
+        cv_id=cv.id,
+        limits=PDFParserLimits(
+            max_file_bytes=settings.cv_max_upload_bytes,
+            max_pages=settings.cv_pdf_max_pages,
+            max_text_characters=settings.cv_pdf_max_text_characters,
+            timeout_seconds=settings.cv_pdf_timeout_seconds,
+        ),
+    )
     return CVRead.model_validate(cv)
+
+
+@router.get("", summary="The CV you last uploaded")
+async def read_cv(
+    user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> CVRead | None:
+    """The owner's most recent CV, or null when there is none.
+
+    Scoped by the session. There is no identifier a caller could supply to read
+    somebody else's, and the body carries metadata rather than any of the
+    document's contents.
+    """
+    latest = (
+        (
+            await session.execute(
+                select(CV).where(CV.owner_id == user.id).order_by(CV.created_at.desc()).limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    return CVRead.model_validate(latest) if latest is not None else None
 
 
 def _policy_status(reason: UploadRejectionReason) -> int:
