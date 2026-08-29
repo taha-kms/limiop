@@ -7,12 +7,14 @@ from typing import IO, Protocol
 from uuid import UUID
 
 from anyio import to_thread
+from sqlalchemy import delete, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.cvs.models import CV
 from app.modules.cvs.policy import PDF_MAGIC, AcceptedCVUpload, CVUploadPolicy
 from app.modules.cvs.storage import CVStorage, CVStorageError
+from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill, SkillSource
 
 UPLOAD_CHUNK_BYTES = 64 * 1024
 UPLOAD_MEMORY_SPOOL_BYTES = 1024 * 1024
@@ -29,6 +31,10 @@ class UploadStream(Protocol):
 
 class CVMetadataPersistenceError(Exception):
     """The object was stored but its database record could not be committed."""
+
+
+class CVNotFound(LookupError):
+    """No CV with that identifier belongs to this owner."""
 
 
 async def copy_upload_bounded(
@@ -119,3 +125,43 @@ def _metadata(
         media_type=accepted.media_type,
         size_bytes=accepted.size_bytes,
     )
+
+
+async def delete_cv(
+    session: AsyncSession,
+    storage: CVStorage,
+    *,
+    cv_id: UUID,
+    owner_id: UUID,
+) -> None:
+    """Remove a CV: its stored bytes, its metadata, and the skills it inferred.
+
+    Scoped to the owner. A CV that belongs to somebody else is not found rather
+    than refused, so the endpoint cannot be used to learn that an identifier
+    names a real document.
+
+    The object goes before the row, because the row is what makes a retry
+    possible. A failed object delete leaves both and the caller can ask again;
+    the other order would leave bytes nothing points at, which is exactly what
+    the upload policy promises not to keep.
+
+    The skills the CV wrote go with it. `store_cv_skills` replaces every
+    CV-sourced row on each read, so the CV being deleted wrote all of them. A
+    concept the candidate picked by hand is `manual` and survives, because
+    deleting a document is not withdrawing a choice.
+    """
+    cv = await session.scalar(select(CV).where(CV.id == cv_id, CV.owner_id == owner_id))
+    if cv is None:
+        raise CVNotFound
+
+    await storage.delete(cv.storage_key)
+    await session.execute(
+        delete(CandidateProfileSkill).where(
+            CandidateProfileSkill.source == SkillSource.CV,
+            CandidateProfileSkill.profile_id.in_(
+                select(CandidateProfile.id).where(CandidateProfile.user_id == owner_id)
+            ),
+        )
+    )
+    await session.delete(cv)
+    await session.commit()

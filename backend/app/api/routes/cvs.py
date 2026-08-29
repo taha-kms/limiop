@@ -1,4 +1,5 @@
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
@@ -18,7 +19,12 @@ from app.modules.cvs.parsing import PDFParserLimits
 from app.modules.cvs.policy import CVUploadPolicy, CVUploadRejected, UploadRejectionReason
 from app.modules.cvs.processing import process_cv
 from app.modules.cvs.schemas import CVRead
-from app.modules.cvs.service import CVMetadataPersistenceError, intake_cv
+from app.modules.cvs.service import (
+    CVMetadataPersistenceError,
+    CVNotFound,
+    delete_cv,
+    intake_cv,
+)
 from app.modules.cvs.storage import CVObjectTooLarge, CVStorage, CVStorageError
 
 router = APIRouter(prefix="/api/v1/cvs", tags=["cvs"])
@@ -116,6 +122,39 @@ async def read_cv(
         .first()
     )
     return CVRead.model_validate(latest) if latest is not None else None
+
+
+@router.delete(
+    "/{cv_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a CV",
+    responses={
+        status.HTTP_401_UNAUTHORIZED: {"description": "Authentication is required"},
+        status.HTTP_404_NOT_FOUND: {"description": "No such CV"},
+        status.HTTP_503_SERVICE_UNAVAILABLE: {"description": "The CV could not be deleted"},
+    },
+)
+async def remove_cv(
+    cv_id: UUID,
+    user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+    storage: Annotated[CVStorage, Depends(get_cv_storage)],
+) -> None:
+    """Delete the caller's CV, the stored file, and the skills it inferred.
+
+    A CV that is not the caller's answers exactly as one that never existed, so
+    the endpoint cannot be used to find out which identifiers are real. Deleting
+    the same CV twice therefore says "no such CV" the second time.
+    """
+    try:
+        await delete_cv(session, storage, cv_id=cv_id, owner_id=user.id)
+    except CVNotFound:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="no such CV") from None
+    except CVStorageError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="the CV could not be deleted",
+        ) from None
 
 
 def _policy_status(reason: UploadRejectionReason) -> int:

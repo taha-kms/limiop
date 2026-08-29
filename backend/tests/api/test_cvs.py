@@ -4,7 +4,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from tempfile import SpooledTemporaryFile
 from typing import IO, Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -346,3 +346,121 @@ def test_a_failed_upload_closes_its_spool_off_the_event_loop(
     assert upload(cv_client).status_code == 503
     assert closes.total == 1
     assert closes.on_the_event_loop == 0
+
+
+def profile_with_skills(context: CVClient, owner_id: UUID) -> tuple[UUID, UUID]:
+    """A profile holding one CV-derived skill and one the candidate picked."""
+    from_cv, by_hand = uuid4(), uuid4()
+    engine = create_engine(str(context.database_url))
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO skill_concepts (id, preferred_label) "
+                "VALUES (:cv, 'From the CV'), (:manual, 'Picked by hand')"
+            ),
+            {"cv": from_cv, "manual": by_hand},
+        )
+        profile_id = connection.execute(
+            text("INSERT INTO candidate_profiles (id, user_id) VALUES (:id, :user) RETURNING id"),
+            {"id": uuid4(), "user": owner_id},
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO candidate_profile_skills "
+                "(profile_id, concept_id, vocabulary_version, source) VALUES "
+                "(:profile, :cv, 'test.1', 'cv'), "
+                "(:profile, :manual, 'test.1', 'manual')"
+            ),
+            {"profile": profile_id, "cv": from_cv, "manual": by_hand},
+        )
+    engine.dispose()
+    return from_cv, by_hand
+
+
+def stored_concepts(context: CVClient) -> set[UUID]:
+    engine = create_engine(str(context.database_url))
+    with engine.connect() as connection:
+        found = {
+            row[0]
+            for row in connection.execute(text("SELECT concept_id FROM candidate_profile_skills"))
+        }
+    engine.dispose()
+    return found
+
+
+def test_deleting_a_cv_removes_the_object_and_the_metadata(cv_client: CVClient) -> None:
+    """The upload policy promises a CV is kept until its owner deletes it."""
+    sign_in(cv_client)
+    cv_id = upload(cv_client).json()["id"]
+    key = cv_client.storage.writes[0][1]
+
+    response = cv_client.client.delete(f"/api/v1/cvs/{cv_id}")
+
+    assert response.status_code == 204
+    assert cv_client.storage.deleted == [key]
+    assert key not in cv_client.storage.objects
+    assert cv_rows(cv_client.database_url) == []
+
+
+def test_deleting_a_cv_takes_the_skills_it_inferred_and_leaves_the_chosen_ones(
+    cv_client: CVClient,
+) -> None:
+    """Deleting a document is not withdrawing a choice."""
+    owner_id = sign_in(cv_client)
+    cv_id = upload(cv_client).json()["id"]
+    from_cv, by_hand = profile_with_skills(cv_client, owner_id)
+
+    assert cv_client.client.delete(f"/api/v1/cvs/{cv_id}").status_code == 204
+    assert stored_concepts(cv_client) == {by_hand}
+    assert from_cv not in stored_concepts(cv_client)
+
+
+def test_deleting_the_same_cv_twice_says_no_such_cv(cv_client: CVClient) -> None:
+    sign_in(cv_client)
+    cv_id = upload(cv_client).json()["id"]
+
+    assert cv_client.client.delete(f"/api/v1/cvs/{cv_id}").status_code == 204
+    assert cv_client.client.delete(f"/api/v1/cvs/{cv_id}").status_code == 404
+
+
+def test_a_cv_that_is_not_yours_is_not_found_rather_than_refused(cv_client: CVClient) -> None:
+    """A different answer would say which identifiers name a real document."""
+    sign_in(cv_client)
+    cv_id = upload(cv_client).json()["id"]
+    cv_client.client.delete("/api/v1/sessions")
+    other = {"email": "grace@example.com", "password": "another correct horse"}
+    assert cv_client.client.post("/api/v1/accounts", json=other).status_code == 201
+    assert cv_client.client.post("/api/v1/sessions", json=other).status_code == 204
+
+    response = cv_client.client.delete(f"/api/v1/cvs/{cv_id}")
+
+    assert response.status_code == 404
+    assert len(cv_rows(cv_client.database_url)) == 1
+    assert cv_client.storage.deleted == []
+
+
+def test_an_unauthenticated_caller_cannot_delete_a_cv(cv_client: CVClient) -> None:
+    sign_in(cv_client)
+    cv_id = upload(cv_client).json()["id"]
+    cv_client.client.delete("/api/v1/sessions")
+
+    assert cv_client.client.delete(f"/api/v1/cvs/{cv_id}").status_code == 401
+    assert len(cv_rows(cv_client.database_url)) == 1
+
+
+def test_a_storage_failure_keeps_the_row_so_the_delete_can_be_retried(
+    cv_client: CVClient,
+) -> None:
+    """Bytes nothing points at are what the policy promises not to keep."""
+    sign_in(cv_client)
+    cv_id = upload(cv_client).json()["id"]
+    cv_client.storage.fail_delete = True
+
+    response = cv_client.client.delete(f"/api/v1/cvs/{cv_id}")
+
+    assert response.status_code == 503
+    assert "storage" not in response.text
+    assert len(cv_rows(cv_client.database_url)) == 1
+
+    cv_client.storage.fail_delete = False
+    assert cv_client.client.delete(f"/api/v1/cvs/{cv_id}").status_code == 204

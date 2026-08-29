@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { CVDeleteButton } from "@/components/cv-delete-button";
 import { CVUploadForm } from "@/components/cv-upload-form";
 import {
   CVUnavailableError,
@@ -50,6 +51,7 @@ function Status({ cv }: { cv: StoredCV }) {
         Uploaded {new Date(cv.created_at).toLocaleDateString()} ·{" "}
         {Math.max(1, Math.round(cv.size_bytes / 1024))} KB
       </p>
+      <CVDeleteButton cvId={cv.id} />
     </section>
   );
 }
