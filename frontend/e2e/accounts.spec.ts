@@ -135,3 +135,30 @@ test("matches are not reachable without a session", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/sign-in\?next=%2Fmatches$/);
 });
+
+test("a signed-in candidate can reach the CV page and is told what it accepts", async ({
+  page,
+}) => {
+  const email = newAddress();
+
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText(email)).toBeVisible();
+
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Your CV" })
+    .click();
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your CV");
+  await expect(page.getByText(/PDF, up to 5 MB/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload CV" })).toBeVisible();
+});
+
+test("the CV page is not reachable without a session", async ({ page }) => {
+  await page.goto("/cv");
+
+  await expect(page).toHaveURL(/\/sign-in\?next=%2Fcv$/);
+});
