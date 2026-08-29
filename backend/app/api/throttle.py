@@ -8,6 +8,20 @@ stuffing into something slow and account creation into something bounded.
 One process, one counter. A shared store would be the right answer for several
 replicas and the wrong amount of machinery for the one that is deployed; what
 matters is that the limit exists and that it cannot grow without bound.
+
+Counted per account rather than per caller, and the reason is the topology. The
+browser never reaches the API directly: it posts to the frontend, which
+re-issues the call server-side, so every browser-originated attempt arrives from
+one address. Keying on that address made the limit a single shared budget —
+ten failed sign-ins from anybody would have refused sign-in for everybody, which
+is the denial of service the limit exists to prevent, introduced by the limit.
+
+What that bounds and what it does not is worth being exact about. Guessing one
+account's password is bounded, whatever address the guesses come from, which is
+the attack. Creating many accounts under many addresses is not: the only signal
+that would bound it is a caller identity this process cannot see, so it belongs
+at the edge, and the deployment note says so rather than leaving the claim
+implied.
 """
 
 import time
@@ -16,7 +30,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from math import ceil
 
-from fastapi import Request
+from app.modules.accounts.models import normalize_email
 
 # Above what a person typing their own password reaches, below what a script
 # needs to be useful.
@@ -92,33 +106,11 @@ class AttemptThrottle:
             self._windows.popitem(last=False)
 
 
-@dataclass(frozen=True, slots=True)
-class AttemptRecorder:
-    """One endpoint's budget for one caller, already checked.
+def account_key(purpose: str, email: str) -> str:
+    """The account being attempted, normalized the way the account itself is.
 
-    Handed to a handler that has been let through, so it can say whether the
-    attempt was worth counting. Sign-in counts failures; registration counts
-    every attempt, because creating accounts in a loop is the abuse there.
+    Normalized, or `Ada@Example.com` and `ada@example.com` would be two budgets
+    for one account. Keyed per purpose too, so exhausting the sign-in budget
+    does not also refuse registration.
     """
-
-    throttle: AttemptThrottle
-    key: str
-
-    def record(self) -> None:
-        self.throttle.record(self.key)
-
-
-def client_key(request: Request, purpose: str) -> str:
-    """Who is asking, as far as this process can honestly tell.
-
-    The peer address, not `X-Forwarded-For`: a header the caller sets is a
-    header the caller varies, and reading it without a trusted proxy in front
-    would make the limit opt-out. Behind a proxy the deployment must have the
-    server populate the peer address from it — uvicorn's `--proxy-headers` —
-    which is where trust belongs.
-
-    Keyed per purpose, so exhausting the sign-in budget does not also refuse
-    registration.
-    """
-    client = request.client
-    return f"{purpose}:{client.host if client is not None else 'unknown'}"
+    return f"{purpose}:{normalize_email(email)}"

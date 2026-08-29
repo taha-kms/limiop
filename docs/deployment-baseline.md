@@ -121,20 +121,27 @@ posting cannot be re-fetched once it leaves its board.
 ## Rate limiting
 
 Registration and sign-in are the only unauthenticated write endpoints, and both
-cost an argon2id hash. Each client gets `SKILLSYNC_AUTH_ATTEMPTS` attempts per
-`SKILLSYNC_AUTH_ATTEMPT_WINDOW_SECONDS`, refused with **429** and a
+cost an argon2id hash. Each **account** gets `SKILLSYNC_AUTH_ATTEMPTS` attempts
+per `SKILLSYNC_AUTH_ATTEMPT_WINDOW_SECONDS`, refused with **429** and a
 `Retry-After` before any hashing happens. Sign-in counts only failures;
-registration counts every attempt.
+registration counts every attempt on one address.
+
+Per account rather than per caller, because of the topology. The browser never
+reaches the API directly: it posts to the frontend, which re-issues the call
+server-side, so every browser-originated attempt arrives from one address.
+Keying on that address made the limit a single shared budget — ten failed
+sign-ins from anybody refused sign-in for everybody.
+
+So be exact about what this bounds. Guessing one account's password is bounded,
+from however many addresses. **Creating many accounts under many addresses is
+not**: the only signal that would bound it is a caller identity this process
+cannot see through the frontend hop, so volume abuse belongs at the edge — a
+rate limit on the ingress or CDN in front of the frontend, not here.
 
 The counter is per process and in memory, which is right for the single replica
-that is deployed and is not right for several: two replicas give a caller two
-budgets. It is bounded, so a caller varying its address cannot grow it.
-
-It keys on the peer address, not `X-Forwarded-For` — a header the caller sets is
-a header the caller varies. **Behind a proxy the server must populate the peer
-address from the proxy's headers** (uvicorn's `--proxy-headers` with
-`--forwarded-allow-ips`), or every request arrives from the proxy and shares one
-budget.
+that is deployed and is not right for several: two replicas give an account two
+budgets. It is bounded in size, so the number of distinct addresses attempted
+cannot grow it without limit.
 
 ## Persistent state
 
