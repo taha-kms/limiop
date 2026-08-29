@@ -27,7 +27,7 @@ This file only covers sequence and open decisions.
 | Service extraction | #160–#168, #171 | Done |
 | Skills at ingestion | #187–#194, #199, #202–#205 | Done |
 | CV processing and matching | #15 | Done |
-| Analytics and production | #16 | Not started |
+| Analytics and production | #16 | Done |
 
 Built so far: a source-independent job catalog in PostgreSQL, two ingestion
 paths that fetch postings from Arbeitnow and from configured Greenhouse company
@@ -548,13 +548,31 @@ Three findings the phase turned on:
 skills, and the ranking was evaluated against a committed corpus before it was
 served rather than after.
 
-### Phase E — Analytics and production
+### Phase E — Analytics and production — done
 
-Issues #54 through #65.
+Issues #54 through #65, plus #120, #129, #152, #205 and #208.
 
-Analytics queries, endpoints, and dashboard; correlation logging, pipeline run
-tracking, and readiness checks; ranking refinement and the embeddings
-evaluation; the deployment baseline and the container release workflow.
+Analytics queries, endpoints, and a dashboard; correlation logging, pipeline
+run tracking, and readiness checks; the deployment baseline and the container
+release workflow. Ranking refinement and the embeddings evaluation both ended
+in a rejection, which is what refinement looks like when the measurements say
+no.
+
+Four things this phase found that were not on anyone's list:
+
+- **A rate limit was the one transient failure neither client retried.** Two
+  runs against the same board ingested 1450 and then 1150 records, so how much
+  of a source was read depended on how the provider felt about the traffic.
+- **The observation inbox was structurally empty**, because the extractor
+  matches a vocabulary and cannot see a term outside it. It now holds 28,172
+  observations over 7,736 terms, which is what let the promotion question be
+  answered.
+- **Frequency cannot promote a term.** Ranked by employer, the top thirty
+  observations contain exactly one skill.
+- **Board discovery cannot read a board out of stored data.** The aggregator
+  rewrites every application URL to its own page, so the only input is the
+  company's name — and what makes guessing safe is verifying the answer against
+  the company the board states.
 
 Ranking was refined by measuring three matchers and keeping the simplest.
 TF-IDF gains 0.0101 NDCG@5 and breaks the agreement between the score and its
