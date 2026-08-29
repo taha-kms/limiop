@@ -1,5 +1,7 @@
 """Proposing terms that look like skills but resolve to no concept."""
 
+import time
+
 import pytest
 
 from platform_skills.candidates import (
@@ -127,3 +129,23 @@ def test_a_term_the_vocabulary_already_holds_is_not_a_candidate() -> None:
 def test_every_candidate_span_points_at_its_own_text(text: str) -> None:
     for candidate in propose(text):
         assert text[candidate.start : candidate.end] == candidate.surface_form
+
+
+@pytest.mark.parametrize("term", ["Node.js", "CI/CD", "C++", "C#", "F#", "e.g", "and/or"])
+def test_punctuated_terms_are_matched_whole(term: str) -> None:
+    assert term in forms(f"We use {term} here.")
+
+
+def test_the_pattern_does_not_backtrack_on_hostile_text() -> None:
+    """Provider text is untrusted and this runs over every posting.
+
+    The first pattern put `+` and `#` in both the separator class and the token
+    body, so the engine could split a run two ways at every step. This input is
+    the shape that exploits it.
+    """
+    hostile = "A" + "+#./" * 20000
+
+    started = time.perf_counter()
+    list(propose(hostile))
+
+    assert time.perf_counter() - started < 1.0

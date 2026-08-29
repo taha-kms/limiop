@@ -63,7 +63,12 @@ MEASURABLE_WORDS = 30
 # does. The character classes are explicit rather than \w so that a digit-only
 # token cannot start a run: `2024 Berlin` is a year and a city, not a term.
 _CAPITALISED = r"[A-ZÀ-Þ][\wÀ-ɏ]*"
-_PUNCTUATED = r"[A-Za-z][\w]*(?:[+#./][\w+#]+)+"
+# Two disjoint shapes rather than one: a separator run and a suffix run. The
+# first attempt put `+` and `#` in both the separator class and the token body,
+# which lets the engine split a run two ways at every step — exponential
+# backtracking on text a provider controls. Nothing here shares a character
+# between the parts it alternates over.
+_PUNCTUATED = r"[A-Za-z]\w*(?:[./][A-Za-z]\w*)+|[A-Za-z]\w*[+#]+"
 _TOKEN = re.compile(rf"{_PUNCTUATED}|{_CAPITALISED}|[\wÀ-ɏ]+")
 
 # Where a sentence ends, so the token after it is not read as a name.
