@@ -50,8 +50,9 @@ PUBLISHED_ALIAS_TABLES: Mapping[str, str] = {
     "2026.08.25.1": "data/aliases.v2.json",
     "2026.08.28.1": "data/aliases.v3.json",
     "2026.08.29.1": "data/aliases.v4.json",
+    "2026.08.29.2": "data/aliases.v5.json",
 }
-DEFAULT_VOCABULARY_VERSION = "2026.08.29.1"
+DEFAULT_VOCABULARY_VERSION = "2026.08.29.2"
 
 
 def normalize_surface_form(value: str) -> str:

@@ -297,3 +297,49 @@ python platform/skills/scripts/evaluate_partial_gold.py \
 
 The catalog text is not committed under the repository's data policy, so the
 audit and recovery scripts read it from a database holding the catalog.
+
+## Restoring the disciplines in `2026.08.29.2`
+
+Retiring the two heads left real terms with nowhere to resolve. `2026.08.29.2`
+adds five concepts and six surface forms, and no bare head.
+
+| Concept | Surface forms | Employers |
+| --- | --- | ---: |
+| Product management | `product management` | 17 |
+| Risk management | `risk management` | 12 |
+| Change management | `change management` | 11 |
+| Identity and access management | `identity and access management`, `access management` | 11 |
+| People management | `people management` | 6 |
+
+Every form is multi-word on purpose. The audit removed `management` and
+`operations` for reading as ordinary English, and admitting either back under a
+new name would undo that.
+
+Each was read in context, sampled once per employer, and each names a different
+discipline: `access management` is a security control, `change management` is
+organizational, `risk management` is finance and compliance, `product
+management` is not project management, and `people management` is the
+leadership competency the retired head was reaching for.
+
+**Gold-label resolution rises from 455 to 490 of 2,059**, 0.220981 to 0.23798.
+The 35 newly resolving mentions are exactly the four labels the annotators
+wrote and the vocabulary could not read: `people management` 16, `risk
+management` 9, `change management` 7, `product management` 3.
+
+### What was refused
+
+`iam` is not added. It is a Latin and German word and a text-matching hazard of
+the kind this audit removed; no sampled context showed it used as the acronym
+where the long form was not also present.
+
+The operations family is not added at all, and the reason is the largest
+member. `business operations` appears across 13 employers — more than three of
+the concepts above — and reads as the bare head with a filler modifier, which
+is precisely what was retired. Admitting the narrower `revenue operations` and
+`sales operations` while refusing the biggest term in their own family would be
+incoherent, and admitting all three would put back what #200 removed. Whether a
+function name is a skill is a different question from whether a compound is one,
+and it is not answered here.
+
+`incident management` reads correctly but appears across four employers, below
+the bar the rest of this table clears.
