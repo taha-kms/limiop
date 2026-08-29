@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AuthUnavailableError,
   CredentialsRejectedError,
+  PasswordNotConfirmedError,
   RegistrationRefusedError,
   TooManyAttemptsError,
+  deleteAccount,
   register,
   signIn,
   signOut,
@@ -152,5 +154,30 @@ describe("being throttled", () => {
     await expect(signIn({ email: "a@b.example", password: "x" })).rejects.not.toBeInstanceOf(
       CredentialsRejectedError,
     );
+  });
+});
+
+describe("deleteAccount", () => {
+  it("sends the password to the account endpoint", async () => {
+    fetchMock.mockResolvedValue(answered(204));
+
+    await expect(deleteAccount("correct horse")).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/auth/account");
+    expect(init.method).toBe("DELETE");
+    expect(JSON.parse(init.body)).toEqual({ password: "correct horse" });
+  });
+
+  it("reports a refused password as its own failure", async () => {
+    fetchMock.mockResolvedValue(answered(403));
+
+    await expect(deleteAccount("wrong")).rejects.toBeInstanceOf(PasswordNotConfirmedError);
+  });
+
+  it("reports anything else as the service being unavailable", async () => {
+    fetchMock.mockResolvedValue(answered(503));
+
+    await expect(deleteAccount("correct horse")).rejects.toBeInstanceOf(AuthUnavailableError);
   });
 });

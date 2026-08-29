@@ -11,10 +11,16 @@ from app.modules.accounts.passwords import (
     verify_password_in_thread,
 )
 from app.modules.accounts.schemas import RegistrationRequest
+from app.modules.cvs.models import CV
+from app.modules.cvs.storage import CVStorage
 
 
 class EmailAlreadyRegistered(Exception):
     """Raised rather than returned, so a caller cannot forget to check."""
+
+
+class PasswordNotConfirmed(Exception):
+    """The password offered to authorise something destructive did not match."""
 
 
 async def register(session: AsyncSession, request: RegistrationRequest) -> User:
@@ -67,4 +73,33 @@ async def end_all_sessions(session: AsyncSession, user: User) -> None:
     """
     user.token_version += 1
     session.add(user)
+    await session.commit()
+
+
+async def delete_account(
+    session: AsyncSession,
+    storage: CVStorage,
+    *,
+    user: User,
+    password: str,
+) -> None:
+    """Delete an account and everything it owns.
+
+    The password is re-stated because this is irreversible: a cookie is enough
+    to read and to write, and not enough to destroy.
+
+    The profile, its skills and the CV rows go with the user row, which the
+    schema already says by cascading them. The stored files do not: a database
+    cannot reach a filesystem, so they are removed here, and before the row —
+    an account that still exists can be deleted again, while files nothing
+    points at are what the upload policy promises not to keep.
+    """
+    if not await verify_password_in_thread(password, user.password_hash):
+        raise PasswordNotConfirmed
+
+    keys = (await session.scalars(select(CV.storage_key).where(CV.owner_id == user.id))).all()
+    for key in keys:
+        await storage.delete(key)
+
+    await session.delete(user)
     await session.commit()
