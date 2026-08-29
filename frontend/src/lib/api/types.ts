@@ -41,6 +41,12 @@ export interface SourceAttribution {
   url: string;
 }
 
+/** A board the catalogue ingests, as a filter a reader can pick. */
+export interface JobSource {
+  key: string;
+  display_name: string;
+}
+
 /** A job as it appears in a listing. Carries an excerpt, never the description. */
 export interface JobSummary {
   id: string;
@@ -83,6 +89,8 @@ export interface JobFilters {
   workplaceTypes?: readonly WorkplaceType[];
   employmentTypes?: readonly EmploymentType[];
   query?: string;
+  /** A source key. A job several boards carry appears under each of them. */
+  source?: string;
 }
 
 export const DEFAULT_PAGE_SIZE = 20;

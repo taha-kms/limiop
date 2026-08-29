@@ -2,7 +2,7 @@ import { Suspense } from "react";
 
 import { JobFilters } from "@/components/job-filters";
 import { JobList } from "@/components/job-list";
-import { listJobs } from "@/lib/api/client";
+import { listJobs, listSources } from "@/lib/api/client";
 import { DEFAULT_PAGE_SIZE } from "@/lib/api/types";
 import { parseFilters, toQueryString } from "@/lib/search-params";
 
@@ -17,7 +17,10 @@ export const dynamic = "force-dynamic";
 
 export default async function JobsPage(props: PageProps<"/jobs">) {
   // Promises in Next 16. Synchronous access was removed, not deprecated.
-  const filters = parseFilters(await props.searchParams);
+  // The boards are a filter option, not the catalogue: failing to read them
+  // costs a dropdown, and taking the listing down with it would be worse.
+  const [raw, sources] = await Promise.all([props.searchParams, listSources().catch(() => [])]);
+  const filters = parseFilters(raw, { sources: sources.map((source) => source.key) });
   const page = await listJobs({ filters, limit: DEFAULT_PAGE_SIZE });
 
   return (
@@ -32,7 +35,7 @@ export default async function JobsPage(props: PageProps<"/jobs">) {
       {/* useSearchParams suspends, and the boundary keeps that from holding up
           the whole page while the filters resolve. */}
       <Suspense fallback={null}>
-        <JobFilters />
+        <JobFilters sources={sources} />
       </Suspense>
 
       {/* Keyed on the filter set, so changing a filter remounts the list and

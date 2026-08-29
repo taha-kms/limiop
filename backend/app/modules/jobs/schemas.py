@@ -213,6 +213,10 @@ class JobListQuery(BaseModel):
     workplace_type: list[WorkplaceType] = Field(default_factory=list)
     employment_type: list[EmploymentType] = Field(default_factory=list)
     q: SearchTerm | None = Field(default=None, description="Free-text search over job titles.")
+    source: SourceKey | None = Field(
+        default=None,
+        description="Narrow to jobs a source lists. A job two sources carry appears under both.",
+    )
 
     def to_filters(self) -> JobFilters:
         return JobFilters(
@@ -221,6 +225,7 @@ class JobListQuery(BaseModel):
             workplace_types=frozenset(self.workplace_type),
             employment_types=frozenset(self.employment_type),
             title_query=self.q,
+            source_key=self.source,
         )
 
 
@@ -298,3 +303,23 @@ class JobDetail(BaseModel):
             status=job.status,
             sources=[SourceAttribution.of(record) for record in job.provenance_records],
         )
+
+
+class SourceRead(BaseModel):
+    """One board the catalog ingests, as a filter a reader can pick.
+
+    Carries no base URL: that address is where ingestion reads from, not
+    somewhere a reader would go, and the boards a reader can filter by are the
+    ones that have been registered rather than a list held in the client.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    key: str
+    display_name: str
+
+
+class SourceListResponse(BaseModel):
+    """Every board the catalog ingests. Small and unpaged; there are a handful."""
+
+    sources: list[SourceRead]

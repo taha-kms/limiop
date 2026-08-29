@@ -15,7 +15,13 @@ import {
   StaleCursorError,
   UnexpectedResponseError,
 } from "./errors";
-import { DEFAULT_PAGE_SIZE, type JobDetail, type JobFilters, type JobPage } from "./types";
+import {
+  DEFAULT_PAGE_SIZE,
+  type JobDetail,
+  type JobFilters,
+  type JobPage,
+  type JobSource,
+} from "./types";
 
 export interface ListJobsRequest {
   filters?: JobFilters;
@@ -49,6 +55,9 @@ export function toSearchParams({ filters = {}, cursor, limit }: ListJobsRequest)
   }
   if (filters.query?.trim()) {
     params.set("q", filters.query.trim());
+  }
+  if (filters.source) {
+    params.set("source", filters.source);
   }
   // Repeated rather than comma-joined, because the API reads each vocabulary
   // filter as a list of separate values.
@@ -112,6 +121,22 @@ export async function listJobs({
     throw new InvalidRequestError(await rejectionDetail(response));
   }
   throw new UnexpectedResponseError(response.status);
+}
+
+/**
+ * Read the boards the catalogue ingests.
+ *
+ * The source filter is catalogue data rather than a fixed vocabulary, so the
+ * choices are read from the API rather than held here, where a board added
+ * tomorrow would go missing.
+ */
+export async function listSources(signal?: AbortSignal): Promise<JobSource[]> {
+  const response = await request("/jobs/sources", signal);
+
+  if (!response.ok) {
+    throw new UnexpectedResponseError(response.status);
+  }
+  return (await readJson<{ sources: JobSource[] }>(response)).sources;
 }
 
 /** Read one job by identifier. */

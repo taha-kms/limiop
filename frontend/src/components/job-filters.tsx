@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
 
-import { EMPLOYMENT_TYPES, WORKPLACE_TYPES } from "@/lib/api/types";
+import { EMPLOYMENT_TYPES, WORKPLACE_TYPES, type JobSource } from "@/lib/api/types";
 import { employmentLabel, workplaceLabel } from "@/lib/format";
 
 /**
@@ -14,8 +14,11 @@ import { employmentLabel, workplaceLabel } from "@/lib/format";
  * navigates to the filtered URL on its own and the page still works. With
  * JavaScript the same submission is intercepted and routed, which keeps the
  * scroll position and avoids a full reload.
+ *
+ * The boards are passed in rather than read here: they are catalogue data, and
+ * the page has already read them by the time this renders.
  */
-export function JobFilters() {
+export function JobFilters({ sources = [] }: { sources?: readonly JobSource[] }) {
   const router = useRouter();
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
@@ -63,6 +66,24 @@ export function JobFilters() {
           />
         </label>
       </div>
+
+      {sources.length > 0 && (
+        <label className="flex flex-col gap-1 text-sm sm:max-w-xs">
+          <span className="font-medium">Source</span>
+          <select
+            name="source"
+            defaultValue={params.get("source") ?? ""}
+            className="rounded-md border border-slate-300 px-3 py-2 dark:border-slate-700 dark:bg-slate-900"
+          >
+            <option value="">Any source</option>
+            {sources.map((source) => (
+              <option key={source.key} value={source.key}>
+                {source.display_name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <fieldset className="flex flex-wrap items-center gap-3">
         <legend className="text-sm font-medium">Workplace</legend>

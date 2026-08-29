@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getJob, listJobs, toSearchParams } from "./client";
+import { getJob, listJobs, listSources, toSearchParams } from "./client";
 import {
   ApiError,
   ApiUnreachableError,
@@ -121,6 +121,14 @@ describe("toSearchParams", () => {
     expect(toSearchParams({ cursor: "MXx8YQ" }).get("cursor")).toBe("MXx8YQ");
   });
 
+  it("narrows to one source", () => {
+    expect(toSearchParams({ filters: { source: "greenhouse" } }).get("source")).toBe("greenhouse");
+  });
+
+  it("omits an unset source rather than sending an empty one", () => {
+    expect(toSearchParams({ filters: { source: "" } }).has("source")).toBe(false);
+  });
+
   it("narrows to one company", () => {
     expect(toSearchParams({ filters: { companyId: "acme-id" } }).get("company_id")).toBe("acme-id");
   });
@@ -198,6 +206,36 @@ describe("listJobs", () => {
     stubFetch(new DOMException("aborted", "AbortError"));
 
     await expect(listJobs()).rejects.toBeInstanceOf(DOMException);
+  });
+});
+
+describe("listSources", () => {
+  it("returns the boards the catalogue ingests", async () => {
+    stubFetch(respond({ sources: [{ key: "greenhouse", display_name: "Greenhouse" }] }));
+
+    await expect(listSources()).resolves.toEqual([
+      { key: "greenhouse", display_name: "Greenhouse" },
+    ]);
+  });
+
+  it("asks the listing which boards it has rather than holding a list", async () => {
+    const stub = stubFetch(respond({ sources: [] }));
+
+    await listSources();
+
+    expect(requestedUrl(stub).pathname).toBe("/jobs/sources");
+  });
+
+  it("reports an unreachable API", async () => {
+    stubFetch(new TypeError("Failed to fetch"));
+
+    await expect(listSources()).rejects.toBeInstanceOf(ApiUnreachableError);
+  });
+
+  it("reports an unhandled status", async () => {
+    stubFetch(respond({}, 500));
+
+    await expect(listSources()).rejects.toBeInstanceOf(UnexpectedResponseError);
   });
 });
 
