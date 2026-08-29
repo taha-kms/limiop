@@ -78,3 +78,10 @@ def configure_logging(level: int = logging.INFO) -> None:
         logger = logging.getLogger(name)
         logger.handlers = []
         logger.propagate = True
+
+    # Uvicorn logs a line per request too, without a correlation identifier and
+    # without knowing which paths are probes — so a liveness check every few
+    # seconds appears there however quiet our own request log is. Ours carries
+    # the method, route, status and duration, so its access log is duplication
+    # that only ever hides things.
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)

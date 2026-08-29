@@ -92,6 +92,15 @@ def test_configuring_logging_leaves_exactly_one_handler() -> None:
     assert logging.getLogger("uvicorn.access").handlers == []
 
 
+def test_uvicorns_own_access_log_is_silenced() -> None:
+    """It logs a line per request with no correlation identifier and no notion
+    of which paths are probes, so a liveness check appears there however quiet
+    our own request log is."""
+    configure_logging()
+
+    assert logging.getLogger("uvicorn.access").level == logging.WARNING
+
+
 @pytest.fixture
 def instrumented() -> TestClient:
     application = FastAPI()
