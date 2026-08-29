@@ -27,6 +27,9 @@ export async function SiteHeader() {
           <Link href="/jobs" className="underline underline-offset-2">
             Jobs
           </Link>
+          <Link href="/insights" className="underline underline-offset-2">
+            Job market
+          </Link>
           {account ? (
             <>
               <Link href="/matches" className="underline underline-offset-2">
