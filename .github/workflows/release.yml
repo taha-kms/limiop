@@ -30,9 +30,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Only ever granted on a push. A pull request keeps the read-only default
-      # above, so an untrusted contributor cannot publish under this name.
-      packages: ${{ github.event_name == 'push' && 'write' || 'read' }}
+      # Static, because `permissions` takes no expressions. Two things stop a
+      # pull request publishing anyway: the login and push steps are guarded on
+      # the event, and GitHub issues a fork's pull request a read-only token
+      # whatever this block asks for.
+      packages: write
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
