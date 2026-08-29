@@ -28,6 +28,7 @@ This file only covers sequence and open decisions.
 | Skills at ingestion | #187–#194, #199, #202–#205 | Done |
 | CV processing and matching | #15 | Done |
 | Analytics and production | #16 | Done |
+| Gaps found after the phases | #242–#256 | Done |
 
 Built so far: a source-independent job catalog in PostgreSQL, two ingestion
 paths that fetch postings from Arbeitnow and from configured Greenhouse company
@@ -41,13 +42,18 @@ endpoint, and rendered by a Next.js application with URL-backed filters and
 infinite scroll. A browser test covers the three layers together against a
 seeded catalog.
 
-Not built: accounts, CV handling, skills, matching, and analytics.
+On top of that: accounts with argon2id and HttpOnly sessions, a CV that is
+uploaded, parsed and read for the skills it names, a candidate profile either
+route can fill, ranked matches with both halves of the reason shown, and
+job-market aggregates. Every one of those is reachable in the browser, which is
+a separate claim from the API existing and was for a while the difference
+between a shipped feature and an unreachable one.
 
-A local environment now holds the catalog persistently, on an external Docker
+A local environment holds the catalog persistently, on an external Docker
 volume that survives `docker compose down -v`, and both sources are scheduled
 hourly. Postings carry canonical skills: extraction runs inside the transaction
 that stores each posting, against the alias table the backend publishes into the
-shared database, and 6,406 skill rows sit against 456 of the 1,252 stored
+shared database, and 7,654 skill rows sit against 604 of the 1,422 stored
 postings.
 
 ## Decisions
@@ -319,10 +325,23 @@ Ordered by how expensive each is to reverse.
 
 | Decision | Reversibility | Decide in |
 | --- | --- | --- |
-| What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
-| CV file storage backend | Cheap: behind one interface | Phase C |
-| Server-side caching | Premature: needs measured read patterns | Phase E |
-| Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Phase C |
+| Server-side caching | Premature: needs measured read patterns | When there is a measured read pattern |
+| Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Still open |
+
+Two rows left this table by being decided. **What makes a profile complete** is
+three canonical skills, decided in #215 against the matching evaluation rather
+than against a guess — the corpus candidate holding one generic concept scored
+0.0 while being served a confident-looking match. **The CV storage backend** is
+the local filesystem behind `CVStorage`, one interface with one implementation:
+moving it to object storage is a new implementation and no other change, which
+is what the interface was for.
+
+Server-side caching is still open and still on the same terms: nothing about the
+read path has been measured, and #217 priced precomputed match scores as a
+correctness problem bought with a table, since three unattended writers
+invalidate one. German is open in the sense that nothing has decided it; what is
+known is narrower than the row suggests, because the embeddings evaluation that
+would have made the encoder relevant was rejected on its own numbers.
 
 The skill model was the hinge and is now decided. It went to a hybrid because
 each single option failed differently and the failures were measured: free text
@@ -511,11 +530,14 @@ object leaked request state on every rejection, and password hashing ran on the
 event loop where ten concurrent logins stalled the public catalogue for the best
 part of a second.
 
-**Exit:** a signed-in user has a complete candidate profile, reached by either
-route, and can apply to a job. Applying already works for everyone, because it
-is a link on a public page. Identity is met in both halves now — the API since
-#38–#40, the browser since #210 — so a visitor can register, sign in, reach
-their profile, and sign out. The CV route into a profile remains.
+**Exit:** met. A signed-in user has a complete candidate profile, reached by
+either route, and can apply to a job. Applying already works for everyone,
+because it is a link on a public page. Identity is met in both halves — the API
+since #38–#40, the browser since #210 — so a visitor can register, sign in,
+reach their profile, and sign out. The CV route closed last: #240 made the
+upload actually parse and store skills, and #241 gave it a page. #253 then made
+the retention promise true, since a policy saying a CV is kept "until the owner
+deletes it" needs a way to delete it.
 
 ### Phase D — Matching — done
 
@@ -580,10 +602,32 @@ explanation; embeddings lose 0.0159 and cost 5.1 GB. No signal was added,
 because none was justified — which is what "improve only through measured
 changes" means when the measurements say no.
 
-Caching is decided here, against measured read patterns.
+Caching was to be decided here, against measured read patterns. It was not:
+nothing about the read path has been measured, so the row stays open rather than
+being closed by a guess.
 
-**Exit:** the application is deployed, observable, and reports job-market
-insights from collected data.
+**Exit:** met. The application is deployed, observable, and reports job-market
+insights from collected data — narrowed by a window and a source since #255,
+which uses parameters the endpoints had accepted since they were written.
+
+### Gaps found after the phases
+
+Issues #242 through #256. Not a phase: things the phases left behind, found by
+reading the repository against what it claims.
+
+- **The plan said what nobody had checked.** Two of the endpoints' own
+  capabilities were unreachable from the product — source filtering (#248) and
+  every analytics parameter (#255) — and `ingestion_runs` had been written since
+  Phase A and read by nothing (#250).
+- **A written policy promised what the code did not do.** The CV upload policy
+  said a CV is kept until its owner deletes it; deleting one was impossible
+  until #253.
+- **The measurement moved.** #245 removed one employer's blurb about itself from
+  stored descriptions, which is a quarter of everything the candidate generator
+  proposes, and measured it before and after rather than asserting it.
+- **The cheapest attack was the one nobody had priced.** Registration and
+  sign-in are unauthenticated and both cost an argon2id hash that was made
+  expensive deliberately. #254 put a ceiling on both.
 
 ## Known gaps — closed
 
@@ -604,24 +648,47 @@ closed in the second-source phase, and the rules that replaced them are in
   provider and not between providers. Replaced by a two-stage rule that blocks
   on employer and title and confirms on place and prose.
 
-## Open questions carried forward
+## Questions that were carried forward, and their answers
 
-- **How boards are found.** Both sources are scheduled hourly now. The board
-  list is still three names in code until #120 replaces it with discovery.
-- **How unknown skills ever get observed.** `job_skill_mentions` is wired,
-  tested, and structurally empty: the extractor matches a vocabulary and cannot
-  see a term outside it, and no published alias table has an ambiguous surface
-  form. The gate decided in #190 stays closed and stays undecidable until #205
-  generates candidates the vocabulary does not already contain.
-- **Source filtering on the listing.** Deferred in Phase A on the condition
-  that a second source exists to make it meaningful. It now does, so the
-  condition is met and the deferral is a choice rather than a consequence.
+- **How boards are found.** Answered in #120: nothing in the stored data names
+  a board, because the aggregator rewrites every application URL to its own
+  page, so the only input is the company's name and what makes guessing safe is
+  verifying the guess against the company the board states. #249 then made the
+  list configuration rather than code, so a confirmed board is a config change
+  and not a release. Promoting one stays deliberate: a board that starts
+  answering for somebody else would ingest under the wrong employer.
+- **How unknown skills ever get observed.** Answered in #205. The inbox was
+  structurally empty because the extractor matches a vocabulary and cannot see a
+  term outside it; a candidate generator now proposes terms it does not contain,
+  and the inbox holds 28,172 observations over 7,736 terms. #152 followed from
+  that measurement: frequency cannot promote a term, because the top thirty
+  observations by employer contain exactly one skill. #245 then removed what
+  turned out to be a quarter of the inbox — one employer's blurb about itself.
+- **Source filtering on the listing.** Shipped in #248. A job carries provenance
+  from every source that found it, so the filter asks whether a board lists the
+  job rather than whether it alone does, and a key nothing ingests is refused
+  rather than matching nothing.
 
-## Issues that need rewriting before they are picked up
+## Open questions
+
+- **What a stalled ingestion should trigger.** #250 made the last run of every
+  source readable, deliberately without thresholds: what counts as too old
+  depends on a schedule nobody has committed to. Alerting is the open half.
+- **Whether the throttle needs to be shared.** #254 bounds registration and
+  sign-in per process, which is right for the single replica that is deployed
+  and gives a caller one budget per replica when there is more than one.
+
+## Issues that were rewritten before they were picked up
+
+Both are closed. Kept because the rewriting is the part worth remembering: an
+issue written before the decision it depends on describes work nobody can do.
 
 - **#46** asked for deterministic skill normalization and named no vocabulary.
-  Phase B has now decided one, so it is rewritten as the canonical-concept
-  model: concepts, surface forms, aliases, and the gate that decides which
-  unknown skills are legitimate enough to store.
-- **#43** presumes a CV storage abstraction. Whether an abstraction is
-  warranted, rather than one concrete backend, is a Phase C decision.
+  Phase B decided one, so it was rewritten as the canonical-concept model —
+  concepts, surface forms, aliases, and the gate that decides which unknown
+  skills are legitimate enough to store. The gate is closed and #152 says why
+  frequency cannot open it.
+- **#43** presumed a CV storage abstraction. Phase C decided the abstraction was
+  warranted: `CVStorage` is one interface with one implementation, the local
+  filesystem, and object storage would be a second implementation and no other
+  change.
