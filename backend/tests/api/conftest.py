@@ -10,11 +10,12 @@ from app.core.config import Environment, Settings
 from app.db.session import Database
 from app.main import create_app
 from tests.support.catalog import clear, seed
+from tests.support.ingestion import clear_runs, seed_runs
 
 
 @pytest.fixture
 def catalog_client(database_url: PostgresDsn) -> Iterator[TestClient]:
-    """A client wired to the test database, over a catalog that starts empty."""
+    """A client wired to the test database, over a catalog and history that start empty."""
     application = create_app(
         Settings(
             app_name="SkillSync Test API",
@@ -28,6 +29,7 @@ def catalog_client(database_url: PostgresDsn) -> Iterator[TestClient]:
         database = Database(database_url)
         try:
             await clear(database)
+            await clear_runs(database)
         finally:
             await database.dispose()
 
@@ -52,5 +54,22 @@ def seed_catalog(database_url: PostgresDsn) -> Callable[..., dict[str, Any]]:
                 await database.dispose()
 
         return asyncio.run(run())
+
+    return insert
+
+
+@pytest.fixture
+def seed_ingestion_runs(database_url: PostgresDsn) -> Callable[..., None]:
+    """Insert ingestion runs from a synchronous test."""
+
+    def insert(*specs: dict[str, Any]) -> None:
+        async def run() -> None:
+            database = Database(database_url)
+            try:
+                await seed_runs(database, *specs)
+            finally:
+                await database.dispose()
+
+        asyncio.run(run())
 
     return insert

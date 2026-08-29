@@ -99,6 +99,7 @@ the previous image.
 | --- | --- | --- |
 | `GET /health` | Is this process alive | Liveness |
 | `GET /health/ready` | Can it serve — database reachable, CV storage writable | Readiness |
+| `GET /health/ingestion` | What each source's most recent run did | Neither |
 
 Liveness touches nothing external, deliberately. A liveness probe that talks to
 the database turns one outage into a restart loop. Readiness checks both
@@ -107,6 +108,14 @@ unusable, because a load balancer reads the status code.
 
 A deployment is not complete until readiness answers 200. A rollout that waits
 only for liveness will route traffic to a process whose database is unreachable.
+
+The ingestion report is neither probe. It answers 200 even when the last run
+failed: a stalled pipeline serves a catalogue that is merely getting staler, and
+taking the API out of rotation over it would turn a stale catalogue into no
+catalogue. It reports facts — state, when the run finished, and its counts — and
+leaves "too old" to whoever set the schedule. A source that has never run is
+absent rather than listed as idle. What makes silence expensive here is that a
+posting cannot be re-fetched once it leaves its board.
 
 ## Persistent state
 

@@ -1,14 +1,25 @@
-"""Liveness and readiness.
+"""Liveness, readiness, and whether the catalogue is still being fed.
 
-Two endpoints because they answer two questions. Liveness decides whether to
+Three endpoints because they answer three questions. Liveness decides whether to
 restart this process and touches nothing external — a probe that talks to the
 database turns one outage into a restart loop. Readiness decides whether to
 send traffic here, so it checks what a request actually needs.
+
+The third is neither. Ingestion runs elsewhere, on a schedule, unattended, and
+a stalled pipeline serves a catalogue that is merely getting staler — which is
+worth seeing and is not a reason to take this process out of rotation. So it
+reports and never fails.
 """
 
-from fastapi import APIRouter, Request, Response, status
+from typing import Annotated
 
+from fastapi import APIRouter, Depends, Request, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.dependencies import get_database_session
 from app.core.config import Settings
+from app.modules.ingestion.queries import read_latest_runs
+from app.modules.ingestion.schemas import IngestionRunReport, IngestionStatusResponse
 from app.observability.readiness import DependencyState, check_database, check_storage
 from app.schemas.health import DependencyStatus, HealthResponse, ReadinessResponse
 
@@ -52,3 +63,20 @@ async def readiness_check(request: Request, response: Response) -> ReadinessResp
             for report in reports
         ),
     )
+
+
+@router.get(
+    "/health/ingestion",
+    summary="What each source's most recent run did",
+)
+async def ingestion_status(
+    session: Annotated[AsyncSession, Depends(get_database_session)],
+) -> IngestionStatusResponse:
+    """Report the most recent run of every source that has ever run.
+
+    Always 200, including when the last run failed. A failed ingestion is not a
+    reason to stop sending traffic here, and a status code that says otherwise
+    would eventually be wired into something that acts on it.
+    """
+    runs = await read_latest_runs(session)
+    return IngestionStatusResponse(runs=[IngestionRunReport.of(run) for run in runs])
