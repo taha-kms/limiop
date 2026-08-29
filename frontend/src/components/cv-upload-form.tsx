@@ -82,7 +82,7 @@ export function CVUploadForm({ current }: Props) {
         />
         <p className="text-sm text-slate-600 dark:text-slate-400">
           PDF, up to {Math.round(MAXIMUM_BYTES / (1024 * 1024))} MB. It is read once for the skills
-          it names, and replaces whatever a previous CV added.
+          it names, and replaces any CV you uploaded before — that file is deleted.
         </p>
       </div>
 

@@ -1,5 +1,6 @@
 """Coordinate a bounded upload across policy, object storage, and metadata."""
 
+import logging
 from contextlib import suppress
 from functools import partial
 from tempfile import SpooledTemporaryFile
@@ -15,6 +16,8 @@ from app.modules.cvs.models import CV
 from app.modules.cvs.policy import PDF_MAGIC, AcceptedCVUpload, CVUploadPolicy
 from app.modules.cvs.storage import CVStorage, CVStorageError
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill, SkillSource
+
+logger = logging.getLogger("app.cvs")
 
 UPLOAD_CHUNK_BYTES = 64 * 1024
 UPLOAD_MEMORY_SPOOL_BYTES = 1024 * 1024
@@ -101,6 +104,7 @@ async def intake_cv(
                 with suppress(CVStorageError):
                     await storage.delete(stored.key)
                 raise CVMetadataPersistenceError("the CV metadata could not be stored") from None
+            await _remove_superseded(session, storage, owner_id=owner_id, keeping=cv.id)
             return cv
         finally:
             # An upload past the spool threshold has rolled over to a real
@@ -110,6 +114,37 @@ async def intake_cv(
     finally:
         with suppress(OSError):
             await upload.close()
+
+
+async def _remove_superseded(
+    session: AsyncSession,
+    storage: CVStorage,
+    *,
+    owner_id: UUID,
+    keeping: UUID,
+) -> None:
+    """Delete the CVs this upload replaced, files and all.
+
+    Only the newest CV is read or shown, so the ones before it are bytes and
+    rows kept past any purpose — which the upload policy says they are not, and
+    the form calls this action "Replace CV".
+
+    Never fails the upload. The new CV is the point, and refusing it because an
+    old file would not go would trade the thing the candidate asked for against
+    the thing they no longer care about. A file that cannot be removed keeps its
+    row, because an orphan row is still deletable and an orphan file is not.
+    """
+    superseded = (
+        await session.scalars(select(CV).where(CV.owner_id == owner_id, CV.id != keeping))
+    ).all()
+    for cv in superseded:
+        try:
+            await storage.delete(cv.storage_key)
+        except CVStorageError:
+            logger.warning("a replaced CV file could not be removed", extra={"cv_id": str(cv.id)})
+            continue
+        await session.delete(cv)
+    await session.commit()
 
 
 def _metadata(

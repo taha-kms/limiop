@@ -533,3 +533,43 @@ def test_a_storage_failure_leaves_an_account_that_can_be_deleted_again(
         == 204
     )
     assert cv_rows(cv_client.database_url) == []
+
+
+def test_a_second_upload_replaces_the_first_rather_than_joining_it(
+    cv_client: CVClient,
+) -> None:
+    """Only the newest is read or shown, so the ones before it are bytes kept
+    past any purpose."""
+    sign_in(cv_client)
+    first = upload(cv_client).json()["id"]
+    replaced_key = cv_client.storage.writes[0][1]
+
+    second = upload(cv_client, b"%PDF-1.7\nnewer").json()["id"]
+
+    assert second != first
+    rows = cv_rows(cv_client.database_url)
+    assert [str(row["id"]) for row in rows] == [second]
+    assert cv_client.storage.deleted == [replaced_key]
+    assert replaced_key not in cv_client.storage.objects
+
+
+def test_a_replacement_that_cannot_remove_the_old_file_still_succeeds(
+    cv_client: CVClient,
+) -> None:
+    """The new CV is the point. A row that outlives its file stays deletable."""
+    sign_in(cv_client)
+    upload(cv_client)
+    cv_client.storage.fail_delete = True
+
+    replacement = upload(cv_client, b"%PDF-1.7\nnewer")
+
+    assert replacement.status_code == 201
+    assert len(cv_rows(cv_client.database_url)) == 2
+
+
+def test_the_current_cv_is_the_one_that_was_uploaded_last(cv_client: CVClient) -> None:
+    sign_in(cv_client)
+    upload(cv_client)
+    second = upload(cv_client, b"%PDF-1.7\nnewer").json()["id"]
+
+    assert cv_client.client.get("/api/v1/cvs").json()["id"] == second
