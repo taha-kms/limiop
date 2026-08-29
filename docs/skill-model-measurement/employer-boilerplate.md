@@ -7,14 +7,18 @@ observations read by hand, six came from one employer's blurb about itself.
 
 ## The rule
 
-A block is removed when all three hold:
+A block is removed when all four hold:
 
-1. its employer has at least **5 postings** in the run, so there is a pattern
-   rather than a coincidence;
-2. the block appears in at least **60%** of that employer's postings;
-3. the block **names the employer**.
+1. its employer has at least **5 postings**, counting the run and the catalogue,
+   so there is a pattern rather than a coincidence;
+2. at least **2 of the postings in hand** are that employer's, so the block has
+   something to have repeated across;
+3. the block appears in at least **60%** of the postings in hand;
+4. the block **names the employer**, matched as a whole word on the first name
+   token that is neither a legal form nor shorter than four characters. A name
+   with no such token names nothing, and nothing is removed.
 
-The third condition is the one doing the work. Repetition alone does not
+The fourth condition is the one doing the work. Repetition alone does not
 establish that a block says nothing about the role — an employer whose postings
 share a real requirement repeats that too. A block that names the employer is
 the employer talking about itself; a requirement talks about the role.
@@ -115,7 +119,9 @@ one employer's blurb, not a word from the language.
 - **Employers are grouped per run, and the catalogue supplies the pattern.**
   Whether an employer has a template at all is asked of every posting stored
   under them (#272); whether a block is part of it is asked only of the postings
-  in the run. That split matters: a stored posting that was already stripped no
+  in hand, of which there must be at least two (#280 — with one, every block in
+  it is carried by all of them, which over this catalogue would have stripped
+  1,384 blocks the corpus rule keeps). That split matters: a stored posting that was already stripped no
   longer carries the block, and counting it as one that lacks the block would
   make it evidence against the template it is proof of. An employer with fewer
   than five postings anywhere is still left alone.

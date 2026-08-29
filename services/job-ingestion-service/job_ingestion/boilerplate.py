@@ -49,6 +49,13 @@ MINIMUM_POSTINGS = 5
 # A block has to be most of an employer's postings, not merely several of them.
 MINIMUM_SHARE = 0.6
 
+# A share needs something to be a share of. With one posting in hand every block
+# in it is carried by all of them, and the rule collapses to "remove every
+# paragraph that names the employer" — measured over this catalogue, that strips
+# 1,384 blocks the whole-corpus rule keeps, including role descriptions. Two is
+# where the error collapses: 87.
+MINIMUM_POSTINGS_IN_HAND = 2
+
 # Short enough to be ambiguous. `Init` is a name, `init` is a prefix of
 # ordinary words, and the word boundary below is what keeps them apart; a
 # two-letter marker has no such protection.
@@ -101,10 +108,13 @@ class BoilerplatePolicy:
 
     minimum_postings: int = MINIMUM_POSTINGS
     minimum_share: float = MINIMUM_SHARE
+    minimum_postings_in_hand: int = MINIMUM_POSTINGS_IN_HAND
 
     def __post_init__(self) -> None:
         if self.minimum_postings < 2:
             raise ValueError("minimum_postings must be at least 2")
+        if self.minimum_postings_in_hand < 2:
+            raise ValueError("minimum_postings_in_hand must be at least 2")
         if not 0 < self.minimum_share <= 1:
             raise ValueError("minimum_share must be above zero and at most one")
 
@@ -147,7 +157,10 @@ def employer_marker(employer: str) -> str:
     for part in parts:
         if len(part) >= MINIMUM_MARKER_LENGTH:
             return part
-    return " ".join(parts)
+    # No distinctive token, so no marker: `E.ON SE` would otherwise be `on`, and
+    # a two-letter marker matched as a whole word is in most prose. An employer
+    # nothing can name has nothing removed.
+    return ""
 
 
 def self_describing_blocks(
@@ -166,7 +179,14 @@ def self_describing_blocks(
     `known_postings` is how many postings this employer has anywhere, which is
     what decides whether there is a pattern to find. It defaults to the ones
     given, so a caller with no catalogue behind it gets the plain rule.
+
+    Two conditions, because they answer different questions. The catalogue says
+    whether this employer has a template; the postings in hand say whether this
+    block is part of it. The second needs enough postings to be a share of: with
+    one, everything in it is carried by all of it.
     """
+    if len(descriptions) < policy.minimum_postings_in_hand:
+        return frozenset()
     if (known_postings if known_postings is not None else len(descriptions)) < (
         policy.minimum_postings
     ):
@@ -246,9 +266,10 @@ def strip_employer_boilerplate(
             employer,
             [job.description for job in employer_jobs],
             applied,
-            # The catalogue's count already includes any of these postings it
-            # has seen before, so the larger of the two is the honest total
-            # rather than their sum.
+            # The larger of the two rather than their sum: a re-ingested
+            # posting is in both populations and a new one is in neither, and
+            # nothing here can tell which is which. Undercounting only ever
+            # withholds stripping.
             known_postings=max(len(employer_jobs), known.get(employer, 0)),
         )
         for employer, employer_jobs in grouped.items()

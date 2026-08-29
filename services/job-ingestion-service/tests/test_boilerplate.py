@@ -83,6 +83,35 @@ def test_an_employer_with_too_few_postings_keeps_everything() -> None:
     assert removal == removal.__class__()
 
 
+def test_one_posting_in_hand_strips_nothing_whatever_the_catalogue_knows() -> None:
+    """A share needs something to be a share of.
+
+    With one posting every block in it is carried by all of them, and the rule
+    collapses to "remove every paragraph that names the employer". Measured over
+    the stored catalogue that is 1,384 blocks the whole-corpus rule keeps,
+    including role descriptions.
+    """
+    alone = [posting(BLURB, "As an engineer at Acme you will build pipelines.")]
+
+    stripped, removal = strip_employer_boilerplate(alone, stored_postings={"acme gmbh": 500})
+
+    assert stripped[0].description == alone[0].description
+    assert removal.blocks == 0
+
+
+def test_two_postings_strip_only_what_both_carry() -> None:
+    jobs = [
+        posting(BLURB, "As an engineer at Acme you will build pipelines."),
+        posting(BLURB, "As a designer at Acme you will draw things."),
+    ]
+
+    stripped, _ = strip_employer_boilerplate(jobs, stored_postings={"acme gmbh": 500})
+
+    assert all(BLURB not in job.description for job in stripped)
+    assert "build pipelines" in stripped[0].description
+    assert "draw things" in stripped[1].description
+
+
 def test_postings_the_catalogue_already_holds_establish_the_pattern() -> None:
     """A source that delivers an employer a few at a time is still an employer.
 
@@ -189,8 +218,16 @@ def test_a_legal_form_is_not_the_employer_name() -> None:
     assert employer_marker("Tabel GmbH") == "tabel"
 
 
-def test_a_name_of_only_short_words_falls_back_to_the_whole_thing() -> None:
-    assert employer_marker("MY AG") == "my"
+def test_a_name_with_no_distinctive_token_names_nothing() -> None:
+    """`E.ON SE` would be `on`, and a two-letter word is in most prose."""
+    assert employer_marker("E.ON SE") == ""
+    assert employer_marker("MY AG") == ""
+
+    stripped, _ = strip_employer_boilerplate(
+        board("E.ON is on the grid.", employer="E.ON SE", count=6)
+    )
+
+    assert all("on the grid" in job.description for job in stripped)
 
 
 def test_nothing_is_dropped_from_an_employer_that_never_names_itself() -> None:
@@ -201,6 +238,7 @@ def test_nothing_is_dropped_from_an_employer_that_never_names_itself() -> None:
     ("field", "value"),
     [
         pytest.param("minimum_postings", 1, id="a pattern of one posting"),
+        pytest.param("minimum_postings_in_hand", 1, id="a repetition of one posting"),
         pytest.param("minimum_share", 0.0, id="a share of nothing"),
         pytest.param("minimum_share", 1.5, id="a share above everything"),
     ],
