@@ -101,6 +101,12 @@ one employer's blurb, not a word from the language.
   stored, so the 536 postings above keep their boilerplate until they are
   ingested again. The "after" column is what the next run produces, not the
   state of the catalogue.
+- **Re-ingestion updates those rows rather than duplicating them.** The match
+  key is built from the employer and the title, not from the description, so a
+  stripped posting matches the row it already has. What changes is the outcome:
+  the next run reports 661 postings as updated rather than skipped, because the
+  description is one of the fields a merge compares, and re-extracts their
+  skills. That spike is the change arriving, not a reconciliation problem.
 - **Employers are grouped per run.** An employer whose postings arrive a few at
   a time — most Arbeitnow employers — stays below the five-posting minimum and
   is left alone. That is the honest reading of having too little to establish a
