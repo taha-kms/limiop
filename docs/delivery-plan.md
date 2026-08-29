@@ -160,6 +160,13 @@ postings.
   can tell whether what they fetched is what was scored. Storing a hash without
   the means to fetch the content, which is what happened here, is not enough.
 
+- **Crossing the session boundary replaces the document.** Every page renders
+  on the server from the session cookie, and the router cache holds entries
+  built before that cookie existed — including, for a visitor arriving from a
+  redirect, an entry for the page they are being sent back to. Signing in and
+  out therefore replace the document rather than navigating within it. Found by
+  the browser test, not by reasoning about it.
+
 - **A measurement is only as good as the corpus it runs on.** Half the stored
   catalog comes from one employer, whose postings share a long boilerplate
   blurb, so any per-posting statistic measures who is hiring rather than what is
@@ -388,8 +395,12 @@ nothing: #38, #39, #40. The profile track starts once the user row exists and
 runs beside the CV work, because skills do not gate completeness. The CV track
 waits on the session.
 
-**Identity is done.** Accounts, argon2id hashing, registration, login, the
-current-user dependency, and logout here versus everywhere. Sessions are a
+**Identity is done, in both halves.** Accounts, argon2id hashing, registration,
+login, the current-user dependency, and logout here versus everywhere — and
+since #210, the routes that let anyone reach them. The API half shipped first
+and sat unreachable for weeks, which is worth remembering: a backend feature
+with no way in is not a shipped feature, and the plan recorded identity as done
+throughout. Sessions are a
 token in an HttpOnly cookie, which is as much a rendering decision as a
 security one: a token held in JavaScript cannot be read by a server component,
 so every personalized page would have become a client fetch and undone the
@@ -406,9 +417,9 @@ part of a second.
 
 **Exit:** a signed-in user has a complete candidate profile, reached by either
 route, and can apply to a job. Applying already works for everyone, because it
-is a link on a public page. Identity is met in the backend and unreachable in
-the browser: there is no sign-in route, so nobody can become the signed-in user
-this criterion describes. That, the profile track, and the CV track remain.
+is a link on a public page. Identity is met in both halves now — the API since
+#38–#40, the browser since #210 — so a visitor can register, sign in, reach
+their profile, and sign out. The CV route into a profile remains.
 
 ### Phase D — Matching
 
@@ -454,11 +465,6 @@ closed in the second-source phase, and the rules that replaced them are in
 
 ## Open questions carried forward
 
-- **Nobody can sign in.** Identity is done in the backend — registration,
-  login, sessions, logout — and `frontend/src/app` has no route for any of it.
-  Every personalized feature is therefore unreachable, and Phase C cannot exit
-  until it is built. Surfaced while settling #98, which found that the apply
-  gate it assumed had no signed-in branch to gate.
 - **How boards are found.** Both sources are scheduled hourly now. The board
   list is still three names in code until #120 replaces it with discovery.
 - **How unknown skills ever get observed.** `job_skill_mentions` is wired,
