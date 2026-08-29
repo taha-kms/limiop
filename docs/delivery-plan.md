@@ -128,6 +128,20 @@ postings.
   a trained model. Decided against measurement rather than in the abstract:
   [the decision](superpowers/specs/2026-08-24-skill-model-decision.md),
   [the evidence](skill-model-measurement/results.md).
+- **A term is promoted by being read, never by being frequent.** The
+  observation inbox now holds 7,736 distinct terms with per-employer counts,
+  and they settle the question #152 asked. Ranked by employers, the top thirty
+  contain exactly one skill: `Senior` leads at 35 and names a seniority, while
+  `Python` sits at 18 and is the only unambiguous technology above it. Eleven
+  ordinary words, four places and three job titles sit in between, so no
+  threshold separates them and none can.
+
+  The gate stays closed to automatic admission. A term becomes a concept when a
+  person reads it in context and publishes it in a new alias version, which is
+  how `2026.08.29.2` added five. What changed is that the review has an input
+  instead of a corpus snapshot nobody can re-run. Recorded in
+  [the observations](skill-model-measurement/candidate-observations.md).
+
 - **Unknown skills are closed to matching and open to observation.** The
   committed evidence cannot score a permissive rule against identifiable
   unknowns and labelled junk, so no unresolved candidate reaches `job_skills`
