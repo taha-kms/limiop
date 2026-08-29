@@ -13,6 +13,7 @@ A provider that cannot be reached ends the run, and everything already processed
 is reported rather than discarded.
 """
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -20,6 +21,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from job_ingestion.boilerplate import BoilerplatePolicy, strip_employer_boilerplate
 from job_ingestion.contracts import (
     IngestionStage,
     IngestionSummary,
@@ -40,6 +42,8 @@ from job_ingestion.skills import (
     load_skill_vocabulary,
     store_job_skills,
 )
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_RECORDS = 1000
 
@@ -94,6 +98,7 @@ class IngestionRun[ProviderRecordT]:
     source: SourceRegistration
     max_records: int = DEFAULT_MAX_RECORDS
     skill_alias_version: str | None = None
+    boilerplate: BoilerplatePolicy = field(default_factory=BoilerplatePolicy)
 
     def __post_init__(self) -> None:
         if self.max_records < 1:
@@ -123,12 +128,18 @@ class IngestionRun[ProviderRecordT]:
     ) -> IngestionSummary:
         """Run every stage in order and report what happened.
 
-        Each record commits on its own, so a run interrupted halfway leaves the
-        records it already handled durably stored.
+        Fetching and normalizing come first, storing second. An employer's
+        boilerplate is only visible across that employer's postings, so it
+        cannot be recognised while they arrive one at a time. What is bounded is
+        the record budget, which is also the bound on what is held here.
+
+        Each record still commits on its own, so a run interrupted while storing
+        leaves the records it already wrote durably stored.
         """
         tally = RunTally()
         failures: list[RecordFailure] = []
         stopped_at_budget = False
+        prepared: list[NormalizedJob] = []
 
         async with database.session() as session:
             # Read once per run rather than per record: a publication landing
@@ -147,37 +158,49 @@ class IngestionRun[ProviderRecordT]:
                             # The rest of the source is unread, which is a
                             # different thing from there being no rest.
                             stopped_at_budget = True
-                            return self.summarize(
-                                tally, failures, stopped_at_budget=True, vocabulary=vocabulary
-                            )
+                            break
                         tally.fetched += 1
-                        await self.handle(
-                            session, raw, tally, failures, clock(), vocabulary=vocabulary
-                        )
+                        try:
+                            prepared.append(self.prepare(raw))
+                        except StageRejection as rejection:
+                            failures.append(rejection.as_failure())
+                    if stopped_at_budget:
+                        break
             except IngestionError as error:
                 failures.append(RecordFailure(stage=IngestionStage.FETCH, reason=error.message))
+
+            for normalized in self.deboilerplate(prepared):
+                await self.store(
+                    session, normalized, tally, failures, clock(), vocabulary=vocabulary
+                )
 
         return self.summarize(
             tally, failures, stopped_at_budget=stopped_at_budget, vocabulary=vocabulary
         )
 
-    async def handle(
+    def deboilerplate(self, prepared: list[NormalizedJob]) -> list[NormalizedJob]:
+        """Drop each employer's self-description, and say how much that was."""
+        stripped, removal = strip_employer_boilerplate(prepared, self.boilerplate)
+        if removal.blocks:
+            logger.info(
+                "removed %d repeated employer blocks (%d characters) from %d postings",
+                removal.blocks,
+                removal.characters,
+                removal.postings,
+            )
+        return stripped
+
+    async def store(
         self,
         session: AsyncSession,
-        raw: RawRecord,
+        normalized: NormalizedJob,
         tally: RunTally,
         failures: list[RecordFailure],
         seen_at: datetime,
         *,
         vocabulary: SkillVocabulary | None = None,
     ) -> None:
-        """Take one untrusted record as far as it can go."""
-        try:
-            normalized = self.prepare(raw)
-        except StageRejection as rejection:
-            failures.append(rejection.as_failure())
-            return
-
+        """Write one normalized posting and everything that hangs off it."""
         result = await persist_job(session, normalized, source=self.source, seen_at=seen_at)
         tally.record(result.outcome)
         if result.failure is not None:
