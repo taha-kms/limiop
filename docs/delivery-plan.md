@@ -184,6 +184,32 @@ postings.
   reconciliation withdrawing a posting over a problem that says nothing about
   whether the posting is gone.
 
+- **Match scores are computed per request.** The baseline is a set
+  intersection over the handful of canonical concepts a posting carries, so
+  computing one costs less than reading a stored one would.
+
+  Precomputing was priced as the expensive option and it is worse than its cost
+  suggests. A stored score is keyed on a candidate and a job, and three
+  existing write paths invalidate it: the candidate editing their profile, the
+  hourly ingestion re-extracting a posting's skills, and a new alias table
+  being published, which re-extracts the whole catalogue. Two of those run
+  unattended. A cache that three unattended writers invalidate is a
+  correctness problem bought with a table.
+
+  This is revisited against a measured read pattern, not before. Nothing in the
+  ranking is stored, so reversing it adds a table rather than changing one.
+
+- **The score is coverage of the job's skills, not similarity.** Matched
+  concepts over required concepts: the share of what a posting asks for that
+  the candidate already has. Set similarity divides by the union instead, which
+  scores a broad candidate below a narrow one for the same job, and a candidate
+  who knows more than was asked is not a worse fit. Skills the posting did not
+  ask for are never held against anybody.
+
+  A posting naming no skills scores zero rather than one. There is no share of
+  nothing, and scoring silence as a perfect match would rank every posting whose
+  extraction found nothing above every posting that matched genuinely.
+
 - **Applying is a link, and nothing is recorded.** The candidate follows the
   source's own `application_url`. There is no application entity, no status, and
   no endpoint on the path.
@@ -222,7 +248,6 @@ Ordered by how expensive each is to reverse.
 
 | Decision | Reversibility | Decide in |
 | --- | --- | --- |
-| Where match scores live: computed per request or precomputed | Expensive: schema and pipeline | Phase D |
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
