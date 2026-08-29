@@ -97,10 +97,15 @@ one employer's blurb, not a word from the language.
 
 ## What this does not do
 
-- **Nothing already stored changes.** The rule runs before a description is
-  stored, so the 536 postings above keep their boilerplate until they are
-  ingested again. The "after" column is what the next run produces, not the
-  state of the catalogue.
+- **Nothing already stored changes by itself.** The rule runs before a
+  description is stored, so the 536 postings above keep their boilerplate until
+  they are ingested again — or until the backfill is run. `scripts/strip_stored_boilerplate.py`
+  applies the same rule to what is in the database, reports before it writes and
+  writes only when told to. Against this catalogue it reports 661 of 1,422
+  postings, 3,537 blocks and 1,271,346 characters, which is the same 661
+  postings the measurement above predicts. It does not re-extract skills:
+  ingestion does that on its next pass over each posting, inside the transaction
+  that stores it.
 - **Re-ingestion updates those rows rather than duplicating them.** The match
   key is built from the employer and the title, not from the description, so a
   stripped posting matches the row it already has. What changes is the outcome:

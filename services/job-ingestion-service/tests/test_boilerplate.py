@@ -13,7 +13,9 @@ import pytest
 from job_ingestion.boilerplate import (
     BoilerplatePolicy,
     blocks,
+    blocks_to_remove,
     employer_marker,
+    folded,
     self_describing_blocks,
     strip_employer_boilerplate,
     without_blocks,
@@ -214,6 +216,28 @@ def test_a_share_can_be_tightened_to_every_posting() -> None:
 
     assert self_describing_blocks("Acme GmbH", descriptions(jobs), strict) == frozenset()
     assert self_describing_blocks("Acme GmbH", descriptions(jobs), BoilerplatePolicy())
+
+
+def test_a_whole_catalogue_is_judged_employer_by_employer() -> None:
+    """What the measurement and the backfill both need: every employer at once."""
+    removable = blocks_to_remove(
+        {
+            "acme gmbh": [f"{BLURB}\n{REQUIREMENT}" for _ in range(5)],
+            "globex ag": [f"{BLURB}\n{REQUIREMENT}" for _ in range(5)],
+            "tiny ltd": [BLURB, BLURB],
+        }
+    )
+
+    assert removable["acme gmbh"] == frozenset({folded(BLURB)})
+    # Acme's blurb names Acme, so it says nothing about Globex.
+    assert removable["globex ag"] == frozenset()
+    assert removable["tiny ltd"] == frozenset()
+
+
+def test_a_catalogue_takes_the_same_policy_as_a_run() -> None:
+    strict = BoilerplatePolicy(minimum_postings=6)
+
+    assert blocks_to_remove({"acme gmbh": [BLURB] * 5}, strict) == {"acme gmbh": frozenset()}
 
 
 def test_blocks_are_the_paragraphs_the_normalizer_stored() -> None:
