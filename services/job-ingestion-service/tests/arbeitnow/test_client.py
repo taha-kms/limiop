@@ -233,8 +233,10 @@ def test_a_single_attempt_never_sleeps() -> None:
     assert slept == []
 
 
-@pytest.mark.parametrize("status_code", [400, 404, 429, 500, 503])
+@pytest.mark.parametrize("status_code", [400, 404, 500, 503])
 def test_non_success_status_is_not_retried_and_keeps_its_code(status_code: int) -> None:
+    """429 is deliberately absent: a rate limit is a request to wait rather
+    than an answer, and #129 made it the one non-success status that retries."""
     attempts = 0
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -334,3 +336,72 @@ def test_a_real_board_page_shape_is_accepted() -> None:
 
     assert page.records[0]["company_name"] == "Acme GmbH"
     assert page.next_page == 2
+
+
+def rate_limited(retry_after: str | None = None) -> httpx2.Response:
+    headers = {"retry-after": retry_after} if retry_after is not None else {}
+    return httpx2.Response(429, headers=headers)
+
+
+def test_a_rate_limit_that_lifts_is_retried_and_the_page_is_read() -> None:
+    """The failure that used to end a run where it stood."""
+    client, slept = client_for(
+        responding(rate_limited(), json_response(board_page([job_record()])))
+    )
+
+    page = asyncio.run(client.fetch_page(1))
+
+    assert len(page.records) == 1
+    assert slept == [FAST_CONFIG.retry_backoff_seconds]
+
+
+def test_a_rate_limit_that_does_not_lift_still_fails_the_run() -> None:
+    """Bounded, so `reached_the_end` stays honest and nothing is withdrawn."""
+    client, _ = client_for(responding(*[rate_limited()] * FAST_CONFIG.max_attempts))
+
+    with pytest.raises(SourceUnavailableError, match="rate limited"):
+        asyncio.run(client.fetch_page(1))
+
+
+def test_retry_after_is_waited_rather_than_the_default_backoff() -> None:
+    client, slept = client_for(
+        responding(rate_limited("3"), json_response(board_page([job_record()])))
+    )
+
+    asyncio.run(client.fetch_page(1))
+
+    assert slept == [3.0]
+
+
+def test_a_malformed_retry_after_falls_back_to_the_configured_backoff() -> None:
+    config = ArbeitnowConfig(retry_backoff_seconds=0.25)
+    client, slept = client_for(
+        responding(rate_limited("whenever"), json_response(board_page([job_record()]))), config
+    )
+
+    asyncio.run(client.fetch_page(1))
+
+    assert slept == [0.25]
+
+
+def test_a_status_that_is_not_a_rate_limit_is_still_not_retried() -> None:
+    """A 500 is the board answering, and asking again does not change it."""
+    client, slept = client_for(responding(json_response({}, status_code=500)))
+
+    with pytest.raises(SourceResponseError):
+        asyncio.run(client.fetch_page(1))
+    assert slept == []
+
+
+def test_a_rate_limit_part_way_through_pagination_keeps_the_pages_already_read() -> None:
+    async def collect() -> int:
+        client, _ = client_for(
+            responding(
+                json_response(board_page([job_record()], has_next=True)),
+                rate_limited(),
+                json_response(board_page([job_record()])),
+            )
+        )
+        return len([page async for page in client.fetch_pages()])
+
+    assert asyncio.run(collect()) == 2

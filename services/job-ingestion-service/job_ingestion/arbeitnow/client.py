@@ -15,6 +15,7 @@ import httpx2
 
 from job_ingestion.contracts import RawPage, RawRecord
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
+from job_ingestion.rate_limit import is_rate_limited, retry_delay
 
 SOURCE_KEY = "arbeitnow"
 DEFAULT_BASE_URL = "https://www.arbeitnow.com/api/job-board-api"
@@ -93,10 +94,17 @@ class ArbeitnowClient:
     async def fetch_page(self, page: int) -> RawPage:
         """Return one page of untrusted records.
 
-        Retries only transport failures, at most `max_attempts` times.
+        Retries transport failures and rate limits, at most `max_attempts`
+        times. A rate limit is transient by definition and is the most
+        predictable non-200 a public API returns, which made it the one
+        transient failure that used to end a run where it stood.
+
+        Exhausting the attempts still raises, so a truncated read reports
+        `reached_the_end: false` and may not withdraw what it never saw.
         """
         last_failure: SourceUnavailableError | None = None
         for attempt in range(1, self.config.max_attempts + 1):
+            delay = self.config.retry_backoff_seconds
             try:
                 response = await self._http_client.get(
                     self.config.base_url,
@@ -110,10 +118,13 @@ class ArbeitnowClient:
                     SOURCE_KEY, f"page {page} could not be reached: {error}"
                 )
             else:
-                return self._read_page(page, response)
+                if not is_rate_limited(response):
+                    return self._read_page(page, response)
+                last_failure = SourceUnavailableError(SOURCE_KEY, f"page {page} was rate limited")
+                delay = retry_delay(response, fallback=delay)
 
             if attempt < self.config.max_attempts:
-                await self._sleeper(self.config.retry_backoff_seconds)
+                await self._sleeper(delay)
 
         raise (
             last_failure

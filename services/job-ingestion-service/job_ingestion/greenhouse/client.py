@@ -21,6 +21,7 @@ import httpx2
 
 from job_ingestion.contracts import IngestionStage, RawPage, RawRecord, RecordFailure
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
+from job_ingestion.rate_limit import is_rate_limited, retry_delay
 
 SOURCE_KEY = "greenhouse"
 DEFAULT_BASE_URL = "https://boards-api.greenhouse.io/v1/boards"
@@ -105,11 +106,15 @@ class GreenhouseClient:
     async def fetch_board(self, board: str) -> RawPage:
         """Return every posting on one board.
 
-        Retries only transport failures, at most `max_attempts` times. A board
-        that answers with a non-success status is not retried: it is answering.
+        Retries transport failures and rate limits, at most `max_attempts`
+        times. A board answering with any other non-success status is not
+        retried: it is answering, and asking again will not change what it
+        said. A rate limit is the exception, because it is a request to wait
+        rather than a refusal.
         """
         last_failure: SourceUnavailableError | None = None
         for attempt in range(1, self.config.max_attempts + 1):
+            delay = self.config.retry_backoff_seconds
             try:
                 response = await self._http_client.get(
                     self.board_url(board),
@@ -127,10 +132,13 @@ class GreenhouseClient:
                     SOURCE_KEY, f"board {board} could not be reached: {error}"
                 )
             else:
-                return self._read_board(board, response)
+                if not is_rate_limited(response):
+                    return self._read_board(board, response)
+                last_failure = SourceUnavailableError(SOURCE_KEY, f"board {board} was rate limited")
+                delay = retry_delay(response, fallback=delay)
 
             if attempt < self.config.max_attempts:
-                await self.sleeper(self.config.retry_backoff_seconds)
+                await self.sleeper(delay)
 
         raise (
             last_failure
