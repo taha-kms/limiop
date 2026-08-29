@@ -27,6 +27,7 @@ describe("SiteHeader", () => {
     currentAccount.mockResolvedValue(null);
     const { unmount } = render(await SiteHeader());
     expect(screen.getByRole("link", { name: "Jobs" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Job market" })).toBeVisible();
     unmount();
 
     currentAccount.mockResolvedValue({ id: "u1", email: "candidate@example.com" });

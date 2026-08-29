@@ -28,9 +28,20 @@ export interface MatchList {
 }
 
 /** The API refused the session. The caller sends the visitor to sign in. */
-export class NotSignedInError extends Error {}
+export class NotSignedInError extends Error {
+  constructor() {
+    super("You are not signed in.");
+    this.name = "NotSignedInError";
+  }
+}
+
 /** Anything else. The page says so rather than rendering an empty ranking. */
-export class MatchesUnavailableError extends Error {}
+export class MatchesUnavailableError extends Error {
+  constructor() {
+    super("Your matches could not be read.");
+    this.name = "MatchesUnavailableError";
+  }
+}
 
 export async function getMatches(limit = 20): Promise<MatchList> {
   const cookie = (await cookies()).toString();

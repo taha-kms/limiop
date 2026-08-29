@@ -138,3 +138,15 @@ test("provider text is never rendered as markup", async ({ page }) => {
   const injected = await page.locator("section[aria-label='Job description'] script").count();
   expect(injected).toBe(0);
 });
+
+test("the job-market page is public and counts the seeded catalogue", async ({ page }) => {
+  await page.goto("/insights");
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Job market");
+  // Public, like the catalogue it summarises: no account, no sign-in prompt.
+  await expect(
+    page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Sign in" }),
+  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where the jobs are" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "How the work happens" })).toBeVisible();
+});
