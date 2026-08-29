@@ -71,9 +71,18 @@ postings.
 - **External job data is untrusted.** Validated at the boundary, never rendered
   as markup, never used to drive control flow.
 - **The job catalogue is public.** Anonymous visitors read the whole catalogue,
-  listings and detail pages alike. Authentication gates applying and the
-  personalized features, which additionally require a completed candidate
-  profile.
+  listings and detail pages alike. Authentication gates the personalized
+  features, which additionally require a completed candidate profile.
+
+  This bullet used to say that authentication gates applying too, and that half
+  was unenforceable by the other half. `application_url` is a required field on
+  every served job, both job endpoints take no user dependency, and both the
+  listing card and the detail page render it as a link. The URL is in every
+  anonymous response, so a gate on applying could only ever have been a prompt
+  drawn on our own page, never access control. Settling #98 chose which half
+  survives: the public catalogue is shipped, tested, and load-bearing, and the
+  gate was neither built nor buildable without withholding a field the same
+  sentence promises to publish.
 - **A candidate profile is reachable two ways.** Uploading a CV and extracting
   the profile from it, or manual step-by-step onboarding. Neither is the
   fallback for the other; both must produce the same profile.
@@ -168,6 +177,34 @@ postings.
   reconciliation withdrawing a posting over a problem that says nothing about
   whether the posting is gone.
 
+- **Applying is a link, and nothing is recorded.** The candidate follows the
+  source's own `application_url`. There is no application entity, no status, and
+  no endpoint on the path.
+
+  A tracked record was refused on product grounds rather than cost — the
+  migration is cheap. All three benefits offered for it are unwritten or
+  contradicted. Analytics is contradicted: #54's first acceptance criterion is
+  that counts derive only from canonical stored jobs and skills, and every
+  insight the project context lists is computed from job data rather than
+  candidate behaviour. Suppressing an already-applied job is not in Phase D's
+  exit, and building it would widen "a cursor is meaningful only inside the
+  filter set that produced it" to include the viewer, which settles the still
+  open server-caching row by side effect. An application history could not be
+  honestly named: SkillSync would be listing link renders under a heading that
+  claims applications.
+
+  Every status a tracked record would carry — submitted, screening,
+  interviewing, offered, rejected — is a state of an applicant tracking system
+  that never reports back. The plan already refuses to type an inference as a
+  fact.
+
+  There is not even a click to record. Under a plain link the navigation happens
+  in the browser to a third-party origin with no SkillSync route on the path, so
+  the signal is never produced rather than discarded. Manufacturing one would
+  take a redirect route or a click beacon, and reversing this decision means
+  reopening that, not merely adding a table. The cost is named: no record of who
+  was sent where exists for the period this runs, and it cannot be backfilled.
+
 - **A posting is retired per source and withdrawn per job.** An unseen posting
   retires that source's provenance row. The job itself is only marked removed
   once no un-retired provenance remains.
@@ -179,7 +216,6 @@ Ordered by how expensive each is to reverse.
 | Decision | Reversibility | Decide in |
 | --- | --- | --- |
 | Where match scores live: computed per request or precomputed | Expensive: schema and pipeline | Phase D |
-| How applying works: a gated redirect, or a tracked application record | Expensive if tracked: new entity, migrations, and endpoints | Phase C |
 | What makes a candidate profile complete, and what manual onboarding asks for | Expensive: the skill question inside it is the Phase B decision | Phase B, then C |
 | CV file storage backend | Cheap: behind one interface | Phase C |
 | Server-side caching | Premature: needs measured read patterns | Phase E |
@@ -339,7 +375,8 @@ Issues #38 through #45, plus the candidate profile and applying.
 Accounts, authentication, the CV upload policy, CV metadata, storage, the upload
 endpoint, and PDF text extraction. On top of those: the candidate profile
 itself, the manual onboarding path into it, the rule that decides when it counts
-as complete, and what applying to a job actually does.
+as complete. What applying does is settled: the candidate follows the source's
+own link, and nothing is recorded.
 
 This follows Phase B because both routes into a profile need the skill model
 settled. CV extraction has to write skills somewhere, and manual onboarding has
@@ -368,8 +405,10 @@ event loop where ten concurrent logins stalled the public catalogue for the best
 part of a second.
 
 **Exit:** a signed-in user has a complete candidate profile, reached by either
-route, and can apply to a job. Identity is met; the profile and CV tracks
-remain.
+route, and can apply to a job. Applying already works for everyone, because it
+is a link on a public page. Identity is met in the backend and unreachable in
+the browser: there is no sign-in route, so nobody can become the signed-in user
+this criterion describes. That, the profile track, and the CV track remain.
 
 ### Phase D — Matching
 
@@ -415,9 +454,11 @@ closed in the second-source phase, and the rules that replaced them are in
 
 ## Open questions carried forward
 
-- **#98, what applying does.** A gated redirect or a tracked application
-  record. The second is a new entity and a migration, so it is a Phase C
-  decision rather than an implementation detail.
+- **Nobody can sign in.** Identity is done in the backend — registration,
+  login, sessions, logout — and `frontend/src/app` has no route for any of it.
+  Every personalized feature is therefore unreachable, and Phase C cannot exit
+  until it is built. Surfaced while settling #98, which found that the apply
+  gate it assumed had no signed-in branch to gate.
 - **How boards are found.** Both sources are scheduled hourly now. The board
   list is still three names in code until #120 replaces it with discovery.
 - **How unknown skills ever get observed.** `job_skill_mentions` is wired,
