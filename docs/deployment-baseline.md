@@ -110,8 +110,14 @@ unusable, because a load balancer reads the status code.
 A deployment is not complete until readiness answers 200. A rollout that waits
 only for liveness will route traffic to a process whose database is unreachable.
 
-The ingestion report is neither probe. It answers 200 even when the last run
-failed: a stalled pipeline serves a catalogue that is merely getting staler, and
+The ingestion report is neither probe. The rule it exists to be read against:
+**a source is stale when its last completed run finished more than six hours
+ago, and failed when its most recent run failed.** Both DAGs run hourly, so six
+hours is six missed runs. An uptime check reads `runs[].state` and
+`runs[].finished_at`; a source that has never run is absent, and a pipeline
+that was never deployed is not an incident.
+
+It answers 200 even when the last run failed: a stalled pipeline serves a catalogue that is merely getting staler, and
 taking the API out of rotation over it would turn a stale catalogue into no
 catalogue. It reports facts — state, when the run finished, and its counts — and
 leaves "too old" to whoever set the schedule. A source that has never run is
