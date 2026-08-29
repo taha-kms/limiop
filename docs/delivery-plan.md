@@ -676,7 +676,10 @@ closed in the second-source phase, and the rules that replaced them are in
   depends on a schedule nobody has committed to. Alerting is the open half.
 - **Whether the throttle needs to be shared.** #254 bounds registration and
   sign-in per process, which is right for the single replica that is deployed
-  and gives a caller one budget per replica when there is more than one.
+  and gives an account one budget per replica when there is more than one. It
+  counts per account rather than per caller because every browser attempt
+  reaches the API from the frontend (#264): what is bounded is guessing one
+  account's password, and volume abuse belongs at the edge.
 
 ## Issues that were rewritten before they were picked up
 

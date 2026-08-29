@@ -145,23 +145,41 @@ async def delete_cv(
     the other order would leave bytes nothing points at, which is exactly what
     the upload policy promises not to keep.
 
-    The skills the CV wrote go with it. `store_cv_skills` replaces every
-    CV-sourced row on each read, so the CV being deleted wrote all of them. A
-    concept the candidate picked by hand is `manual` and survives, because
-    deleting a document is not withdrawing a choice.
+    The row is taken with `FOR UPDATE` first, before anything is removed. A CV
+    can be read in the background while this runs, and that read takes the same
+    row: without the lock here, this could delete the skills that existed before
+    the read and then wait while the read wrote new ones, leaving a profile
+    holding skills from a CV that no longer exists.
+
+    The skills the CV wrote go with it, but only when this is the CV that wrote
+    them. `store_cv_skills` replaces every CV-sourced row on each read, so they
+    belong to the owner's most recent CV; deleting an older one must leave them
+    alone. A concept the candidate picked by hand is `manual` and survives
+    either way, because deleting a document is not withdrawing a choice.
     """
-    cv = await session.scalar(select(CV).where(CV.id == cv_id, CV.owner_id == owner_id))
+    cv = await session.scalar(
+        select(CV).where(CV.id == cv_id, CV.owner_id == owner_id).with_for_update()
+    )
     if cv is None:
         raise CVNotFound
 
     await storage.delete(cv.storage_key)
-    await session.execute(
-        delete(CandidateProfileSkill).where(
-            CandidateProfileSkill.source == SkillSource.CV,
-            CandidateProfileSkill.profile_id.in_(
-                select(CandidateProfile.id).where(CandidateProfile.user_id == owner_id)
-            ),
+    if await _is_most_recent(session, cv):
+        await session.execute(
+            delete(CandidateProfileSkill).where(
+                CandidateProfileSkill.source == SkillSource.CV,
+                CandidateProfileSkill.profile_id.in_(
+                    select(CandidateProfile.id).where(CandidateProfile.user_id == owner_id)
+                ),
+            )
         )
-    )
     await session.delete(cv)
     await session.commit()
+
+
+async def _is_most_recent(session: AsyncSession, cv: CV) -> bool:
+    """Whether this is the owner's newest CV, and so the one that wrote the skills."""
+    newest = await session.scalar(
+        select(CV.id).where(CV.owner_id == cv.owner_id).order_by(CV.created_at.desc()).limit(1)
+    )
+    return newest == cv.id
