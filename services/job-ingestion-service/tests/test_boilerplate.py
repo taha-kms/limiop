@@ -81,6 +81,51 @@ def test_an_employer_with_too_few_postings_keeps_everything() -> None:
     assert removal == removal.__class__()
 
 
+def test_postings_the_catalogue_already_holds_establish_the_pattern() -> None:
+    """A source that delivers an employer a few at a time is still an employer.
+
+    Three postings are not a template. Three of a hundred are, and the three
+    arriving now are the ones being written.
+    """
+    stripped, _ = strip_employer_boilerplate(
+        board(BLURB, count=3),
+        stored_postings={"acme gmbh": 100},
+    )
+
+    assert all(BLURB not in job.description for job in stripped)
+
+
+def test_a_stored_count_below_the_minimum_still_changes_nothing() -> None:
+    stripped, _ = strip_employer_boilerplate(
+        board(BLURB, count=3),
+        stored_postings={"acme gmbh": 4},
+    )
+
+    assert all(BLURB in job.description for job in stripped)
+
+
+def test_the_share_is_measured_on_the_postings_in_hand() -> None:
+    """Not on the catalogue's, whose copies may already have been stripped.
+
+    Counting a stripped stored posting as one that lacks the block would make
+    it evidence against the template it is proof of.
+    """
+    jobs = [*board(BLURB, count=2), *board(ROLE, count=2)]
+
+    stripped, _ = strip_employer_boilerplate(jobs, stored_postings={"acme gmbh": 100})
+
+    assert sum(BLURB in job.description for job in stripped) == 2
+
+
+def test_another_employers_catalogue_is_not_this_ones() -> None:
+    stripped, _ = strip_employer_boilerplate(
+        board(BLURB, count=3),
+        stored_postings={"globex ag": 100},
+    )
+
+    assert all(BLURB in job.description for job in stripped)
+
+
 def test_a_block_in_only_some_postings_is_kept() -> None:
     jobs = [*board(ROLE, count=10), *board(BLURB, count=4)]
 
