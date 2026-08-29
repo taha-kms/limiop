@@ -59,14 +59,6 @@ export function windowStart(window: MarketWindow, now: Date): string | undefined
   return days === null ? undefined : new Date(now.getTime() - days * DAY_MS).toISOString();
 }
 
-/** Render the filters back into a query string, so a link reproduces the view. */
-export function toQueryString(filters: InsightsFilters): string {
-  const params = new URLSearchParams();
-  if (filters.window !== DEFAULT_WINDOW) params.set("window", filters.window);
-  if (filters.source) params.set("source", filters.source);
-  return params.toString();
-}
-
 function first(raw: RawSearchParams, key: string): string | undefined {
   const value = raw[key];
   const found = Array.isArray(value) ? value[0] : value;
