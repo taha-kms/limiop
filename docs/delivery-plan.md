@@ -198,6 +198,23 @@ postings.
   reconciliation withdrawing a posting over a problem that says nothing about
   whether the posting is gone.
 
+- **Embeddings were measured and not adopted.** NDCG@5 0.7896 against the
+  baseline's 0.8055, on the same corpus and metrics, for 5.1 GB of runtime and
+  4.84 seconds of model load per process. Precision@1 is identical, so the
+  encoder buys nothing at the top of the ranking and loses below it.
+
+  Two reasons beyond the number. It scores partial credit for nearness, which
+  is not the question — a recruiter's skills sit close to a seller's, and the
+  model cannot know the candidate lacks them. And it makes a meaningless
+  profile look confident: the candidate holding one generic concept is offered
+  a 0.77 match where the baseline offers 0.33. A wrong answer that looks
+  confident is the failure this project has now met three times.
+
+  This closes #131 as well. There is nothing to precompute for a matcher that
+  was not adopted, and the storage, versioning, lifecycle and re-embedding costs
+  it named all buy a worse ranking. Recorded in
+  [the evaluation](matching-evaluation/embeddings.md).
+
 - **TF-IDF was measured and not adopted.** Same corpus, same metrics: NDCG@5
   0.8156 against the baseline's 0.8055, precision@1 identical, latency 0.471 ms
   against 0.271 ms. Neither number decides it. A gain of 0.0101 across six
@@ -538,6 +555,12 @@ Issues #54 through #65.
 Analytics queries, endpoints, and dashboard; correlation logging, pipeline run
 tracking, and readiness checks; ranking refinement and the embeddings
 evaluation; the deployment baseline and the container release workflow.
+
+Ranking was refined by measuring three matchers and keeping the simplest.
+TF-IDF gains 0.0101 NDCG@5 and breaks the agreement between the score and its
+explanation; embeddings lose 0.0159 and cost 5.1 GB. No signal was added,
+because none was justified — which is what "improve only through measured
+changes" means when the measurements say no.
 
 Caching is decided here, against measured read patterns.
 
