@@ -184,6 +184,21 @@ postings.
   reconciliation withdrawing a posting over a problem that says nothing about
   whether the posting is gone.
 
+- **TF-IDF was measured and not adopted.** Same corpus, same metrics: NDCG@5
+  0.8156 against the baseline's 0.8055, precision@1 identical, latency 0.471 ms
+  against 0.271 ms. Neither number decides it. A gain of 0.0101 across six
+  candidates is two of them moving, on a corpus whose own write-up said in
+  advance that it could not resolve a difference that size.
+
+  What decided it is that the score stops agreeing with the explanation. A
+  candidate holding every skill a posting asks for is shown "3 of 3 skills" and
+  a cosine score of 0.84, because cosine normalises by the candidate's own
+  vector and so penalises knowing more than was asked — the asymmetry the
+  baseline exists to refuse, returning as a number nobody can check. This
+  product promises matched and missing skills, not a similarity, and a score
+  that cannot be read back to the list beside it is a different product.
+  Recorded in [the comparison](matching-evaluation/tfidf.md).
+
 - **A profile with fewer than three skills is not ranked.** Not clamped, not
   ordered arbitrarily: nothing is returned.
 

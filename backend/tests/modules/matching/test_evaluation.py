@@ -11,7 +11,14 @@ from uuid import UUID
 
 import pytest
 
-from app.modules.matching.evaluation import evaluate, load_corpus, ndcg, rank
+from app.modules.matching.evaluation import (
+    OVERLAP,
+    TFIDF,
+    evaluate,
+    load_corpus,
+    ndcg,
+    rank,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 CORPUS_PATH = REPOSITORY_ROOT / "docs/matching-evaluation/corpus.json"
@@ -105,3 +112,47 @@ def test_a_better_order_scores_higher_than_a_worse_one() -> None:
 
 def test_nothing_relevant_scores_zero_rather_than_dividing_by_zero() -> None:
     assert ndcg([], 5) == 0.0
+
+
+def test_tfidf_is_measured_on_the_same_corpus_and_metrics() -> None:
+    """Comparing two measurements instead of two matchers proves nothing."""
+    overlap = evaluate(CORPUS, matcher=OVERLAP)
+    tfidf = evaluate(CORPUS, matcher=TFIDF)
+
+    assert overlap["candidates"] == tfidf["candidates"]
+    assert overlap["jobs"] == tfidf["jobs"]
+    assert overlap["corpus_version"] == tfidf["corpus_version"]
+
+
+def test_the_committed_tfidf_comparison_is_reproducible() -> None:
+    tfidf = evaluate(CORPUS, matcher=TFIDF)
+
+    assert tfidf["ndcg@5"] == 0.8156
+    assert tfidf["precision@1"] == 0.8333
+
+
+def test_the_documented_comparison_matches_the_measured_one() -> None:
+    overlap = evaluate(CORPUS, matcher=OVERLAP)
+    tfidf = evaluate(CORPUS, matcher=TFIDF)
+    document = (REPOSITORY_ROOT / "docs/matching-evaluation/tfidf.md").read_text(encoding="utf-8")
+
+    assert f"| NDCG@5 | {overlap['ndcg@5']} | **{tfidf['ndcg@5']}** |" in document
+
+
+def test_tfidf_scores_a_complete_match_below_one() -> None:
+    """The finding that decided it.
+
+    A candidate holding every skill a posting asks for is shown "3 of 3 skills"
+    and a score of 0.84. Nothing in the explanation produces that number.
+    """
+    tfidf = evaluate(CORPUS, matcher=TFIDF)
+    seller = next(
+        row
+        for row in cast(list[dict[str, object]], tfidf["per_candidate"])
+        if row["candidate"] == "seller"
+    )
+    best = cast(list[dict[str, object]], seller["top"])[0]
+
+    assert best["job"] == "account-executive"
+    assert best["matched"] == best["required"]
+    assert cast(float, best["score"]) < 1.0
