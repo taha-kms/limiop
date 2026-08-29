@@ -56,6 +56,7 @@ the API at the same address, and a single value cannot be right for both.
 `SKILLSYNC_SESSION_LIFETIME_MINUTES` (60), `SKILLSYNC_CV_MAX_UPLOAD_BYTES`,
 `SKILLSYNC_CV_STORAGE_ROOT`, `SKILLSYNC_CV_PDF_MAX_PAGES`,
 `SKILLSYNC_SKILL_ALIAS_VERSION` (unset follows the newest published table),
+`SKILLSYNC_AUTH_ATTEMPTS` (10) and `SKILLSYNC_AUTH_ATTEMPT_WINDOW_SECONDS` (60),
 `SKILLSYNC_SOURCE_CONFIG` (per-source JSON; `{"greenhouse":{"boards":["hudl"]}}`
 polls those boards instead of the shipped list, and an absent or empty list
 means the shipped one rather than no boards).
@@ -116,6 +117,24 @@ catalogue. It reports facts — state, when the run finished, and its counts —
 leaves "too old" to whoever set the schedule. A source that has never run is
 absent rather than listed as idle. What makes silence expensive here is that a
 posting cannot be re-fetched once it leaves its board.
+
+## Rate limiting
+
+Registration and sign-in are the only unauthenticated write endpoints, and both
+cost an argon2id hash. Each client gets `SKILLSYNC_AUTH_ATTEMPTS` attempts per
+`SKILLSYNC_AUTH_ATTEMPT_WINDOW_SECONDS`, refused with **429** and a
+`Retry-After` before any hashing happens. Sign-in counts only failures;
+registration counts every attempt.
+
+The counter is per process and in memory, which is right for the single replica
+that is deployed and is not right for several: two replicas give a caller two
+budgets. It is bounded, so a caller varying its address cannot grow it.
+
+It keys on the peer address, not `X-Forwarded-For` — a header the caller sets is
+a header the caller varies. **Behind a proxy the server must populate the peer
+address from the proxy's headers** (uvicorn's `--proxy-headers` with
+`--forwarded-allow-ips`), or every request arrives from the proxy and shares one
+budget.
 
 ## Persistent state
 

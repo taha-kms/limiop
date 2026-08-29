@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Annotated, cast
 
@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.throttle import AttemptRecorder, AttemptThrottle, client_key
 from app.core.config import Settings
 from app.db.session import Database
 from app.modules.accounts.models import User
@@ -34,6 +35,41 @@ def get_application_settings(request: Request) -> Settings:
 
 def get_cv_storage(request: Request) -> CVStorage:
     return cast(CVStorage, request.app.state.cv_storage)
+
+
+def get_attempt_throttle(request: Request) -> AttemptThrottle:
+    return cast(AttemptThrottle, request.app.state.attempt_throttle)
+
+
+def _guard(purpose: str) -> Callable[[Request, AttemptThrottle], AttemptRecorder]:
+    """A dependency that refuses a caller who has spent its attempts.
+
+    Refused before the handler runs, which is the point: the work being
+    protected is the password hash, and a handler that has already started is a
+    handler that has already paid for it.
+    """
+
+    def guard(
+        request: Request,
+        throttle: Annotated[AttemptThrottle, Depends(get_attempt_throttle)],
+    ) -> AttemptRecorder:
+        key = client_key(request, purpose)
+        retry_after = throttle.retry_after(key)
+        if retry_after is not None:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                # The same words whether or not the account exists, like every
+                # other rejection on these two endpoints.
+                detail="too many attempts; try again later",
+                headers={"Retry-After": str(retry_after)},
+            )
+        return AttemptRecorder(throttle=throttle, key=key)
+
+    return guard
+
+
+guard_registration_attempts = _guard("accounts")
+guard_sign_in_attempts = _guard("sessions")
 
 
 def _unauthorised() -> HTTPException:

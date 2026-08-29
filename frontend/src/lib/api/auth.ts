@@ -21,6 +21,18 @@ export class CredentialsRejectedError extends Error {
   }
 }
 
+/** Too many attempts from here. Says how long only if the API said. */
+export class TooManyAttemptsError extends Error {
+  constructor(retryAfterSeconds?: number) {
+    super(
+      retryAfterSeconds
+        ? `Too many attempts. Try again in about ${Math.max(1, Math.ceil(retryAfterSeconds / 60))} minute(s).`
+        : "Too many attempts. Wait a little and try again.",
+    );
+    this.name = "TooManyAttemptsError";
+  }
+}
+
 /** The account could not be created. The API refuses to say why, so nor do we. */
 export class RegistrationRefusedError extends Error {
   constructor(message: string) {
@@ -56,6 +68,7 @@ async function post(path: string, body: Credentials): Promise<Response> {
 export async function register(credentials: Credentials): Promise<void> {
   const response = await post("register", credentials);
   if (response.status === 201) return;
+  if (response.status === 429) throw tooManyAttempts(response);
   if (response.status === 409) {
     // The API answers identically however creation failed, so that a stranger
     // cannot learn which addresses have accounts. Repeating its wording keeps
@@ -73,6 +86,7 @@ export async function register(credentials: Credentials): Promise<void> {
 export async function signIn(credentials: Credentials): Promise<void> {
   const response = await post("session", credentials);
   if (response.status === 204) return;
+  if (response.status === 429) throw tooManyAttempts(response);
   if (response.status === 401) throw new CredentialsRejectedError();
   if (response.status === 422) throw new CredentialsRejectedError();
   throw new AuthUnavailableError();
@@ -90,4 +104,10 @@ export async function signOut(): Promise<void> {
     throw new AuthUnavailableError();
   }
   if (response.status !== 204) throw new AuthUnavailableError();
+}
+
+/** The API's own `Retry-After`, when it sent a usable one. */
+function tooManyAttempts(response: Response): TooManyAttemptsError {
+  const seconds = Number(response.headers.get("retry-after"));
+  return new TooManyAttemptsError(Number.isFinite(seconds) && seconds > 0 ? seconds : undefined);
 }

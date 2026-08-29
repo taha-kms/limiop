@@ -6,6 +6,7 @@ from typing import Annotated
 from pydantic import Field, PostgresDsn, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.api.throttle import DEFAULT_ATTEMPTS, DEFAULT_WINDOW_SECONDS
 from app.modules.cvs.policy import DEFAULT_CV_MAX_UPLOAD_BYTES, CVFormat
 
 
@@ -44,6 +45,11 @@ class Settings(BaseSettings):
     cv_pdf_max_pages: int = Field(default=20, gt=0)
     cv_pdf_max_text_characters: int = Field(default=100_000, gt=0)
     cv_pdf_timeout_seconds: float = Field(default=5.0, gt=0)
+    # How many registration or sign-in attempts one client gets per window.
+    # Above what a person typing their own password reaches, below what a
+    # script needs to be useful.
+    auth_attempts: int = Field(default=DEFAULT_ATTEMPTS, gt=0)
+    auth_attempt_window_seconds: float = Field(default=DEFAULT_WINDOW_SECONDS, gt=0)
 
     @field_validator("database_url")
     @classmethod
