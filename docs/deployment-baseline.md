@@ -55,7 +55,10 @@ the API at the same address, and a single value cannot be right for both.
 
 `SKILLSYNC_SESSION_LIFETIME_MINUTES` (60), `SKILLSYNC_CV_MAX_UPLOAD_BYTES`,
 `SKILLSYNC_CV_STORAGE_ROOT`, `SKILLSYNC_CV_PDF_MAX_PAGES`,
-`SKILLSYNC_SKILL_ALIAS_VERSION` (unset follows the newest published table).
+`SKILLSYNC_SKILL_ALIAS_VERSION` (unset follows the newest published table),
+`SKILLSYNC_SOURCE_CONFIG` (per-source JSON; `{"greenhouse":{"boards":["hudl"]}}`
+polls those boards instead of the shipped list, and an absent or empty list
+means the shipped one rather than no boards).
 
 ### Secrets, by handling
 

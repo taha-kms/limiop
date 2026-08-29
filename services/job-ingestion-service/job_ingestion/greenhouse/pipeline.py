@@ -34,12 +34,15 @@ PRECEDENCE = 20
 
 # Boards are listed rather than discovered. A guessed board name that resolves
 # to a different company would ingest its postings under the wrong employer, so
-# adding one is a deliberate act until #120 makes it a safe one.
+# adding one is a deliberate act. Discovery finds and verifies candidates; a
+# deployment decides which of them to read, through the setting below.
 DEFAULT_BOARDS = (
     "anthropic",
     "datadog",
     "hudl",
 )
+
+BOARDS_SETTING = "boards"
 
 
 def build_run(
@@ -64,8 +67,34 @@ def build_run(
     )
 
 
-def default_config() -> GreenhouseConfig:
-    return GreenhouseConfig(boards=DEFAULT_BOARDS, base_url=DEFAULT_BASE_URL)
+def configured_boards(settings: Settings) -> tuple[str, ...]:
+    """The boards to read, from configuration when it names any.
+
+    An absent or empty list means the shipped default rather than no boards. A
+    run that reads nothing looks exactly like a run whose every board went away,
+    and only one of those is a deployment mistake worth reporting as one.
+
+    A setting that is present but not a list of names is refused. Falling back
+    would turn a typo into a run that quietly ingests the shipped list while the
+    operator believes it is reading the boards they configured.
+    """
+    configured = settings.source_config.get(SOURCE_KEY, {}).get(BOARDS_SETTING)
+    if configured is None:
+        return DEFAULT_BOARDS
+    if not isinstance(configured, list):
+        raise ValueError(f"{SOURCE_KEY}.{BOARDS_SETTING} must be a list of board names")
+    names = tuple(name for name in configured if isinstance(name, str))
+    if len(names) != len(configured):
+        raise ValueError(f"{SOURCE_KEY}.{BOARDS_SETTING} must be a list of board names")
+    # Blank names are left for GreenhouseConfig to refuse, so what a board name
+    # may be is decided in one place.
+    return names or DEFAULT_BOARDS
+
+
+def default_config(settings: Settings | None = None) -> GreenhouseConfig:
+    """The configuration a run uses when the caller supplies none."""
+    resolved = settings if settings is not None else get_settings()
+    return GreenhouseConfig(boards=configured_boards(resolved), base_url=DEFAULT_BASE_URL)
 
 
 def with_board_failures(summary: IngestionSummary, client: GreenhouseClient) -> IngestionSummary:
@@ -90,7 +119,7 @@ async def ingest_greenhouse(
     """Run one complete Greenhouse ingestion against the configured database."""
     app_settings = settings if settings is not None else get_settings()
     database = Database(app_settings.database_url)
-    resolved = config if config is not None else default_config()
+    resolved = config if config is not None else default_config(app_settings)
     started_at = datetime.now(UTC)
     try:
         async with recorded_run(database, SOURCE_KEY) as run_id:

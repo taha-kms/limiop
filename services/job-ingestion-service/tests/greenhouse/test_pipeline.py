@@ -6,7 +6,7 @@ from typing import Any
 import httpx2
 import pytest
 from platform_db.models import Job, JobSource
-from pydantic import PostgresDsn
+from pydantic import JsonValue, PostgresDsn
 from sqlalchemy import select
 
 from job_ingestion.config import Environment, Settings
@@ -14,8 +14,11 @@ from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFail
 from job_ingestion.database import Database
 from job_ingestion.greenhouse.client import GreenhouseClient, GreenhouseConfig
 from job_ingestion.greenhouse.pipeline import (
+    DEFAULT_BOARDS,
     PRECEDENCE,
     build_run,
+    configured_boards,
+    default_config,
     ingest_greenhouse,
     with_board_failures,
 )
@@ -156,12 +159,48 @@ def test_the_entry_point_runs_against_the_configured_database(
     run_database_test(database_url, exercise)
 
 
+def configured(boards: JsonValue) -> Settings:
+    return Settings(environment=Environment.TEST, source_config={"greenhouse": {"boards": boards}})
+
+
 def test_the_default_configuration_names_the_boards_it_reads() -> None:
     """Listed rather than discovered, so adding one stays a deliberate act."""
-    from job_ingestion.greenhouse.pipeline import DEFAULT_BOARDS, default_config
-
-    config = default_config()
+    config = default_config(Settings(environment=Environment.TEST))
 
     assert config.boards == DEFAULT_BOARDS
     assert config.boards
     assert config.base_url.startswith("https://")
+
+
+def test_a_confirmed_board_is_read_without_a_code_change() -> None:
+    """Discovery confirms boards; configuration is how one starts being polled."""
+    assert configured_boards(configured(["stripe", "hudl"])) == ("stripe", "hudl")
+    assert default_config(configured(["stripe"])).boards == ("stripe",)
+
+
+def test_configuring_no_boards_reads_the_shipped_ones() -> None:
+    """A run that reads nothing is indistinguishable from every board going away."""
+    assert configured_boards(configured([])) == DEFAULT_BOARDS
+    assert configured_boards(Settings(environment=Environment.TEST)) == DEFAULT_BOARDS
+    assert (
+        configured_boards(Settings(environment=Environment.TEST, source_config={"greenhouse": {}}))
+        == DEFAULT_BOARDS
+    )
+
+
+@pytest.mark.parametrize(
+    "boards",
+    [
+        pytest.param("hudl", id="one name rather than a list"),
+        pytest.param([1], id="a list of something other than names"),
+    ],
+)
+def test_a_board_list_that_is_not_one_is_refused(boards: JsonValue) -> None:
+    """Falling back would ingest the shipped list while the operator reads their own."""
+    with pytest.raises(ValueError, match="list of board names"):
+        configured_boards(configured(boards))
+
+
+def test_a_blank_board_name_is_refused_where_every_other_one_is() -> None:
+    with pytest.raises(ValueError, match="must not be blank"):
+        default_config(configured(["  "]))
