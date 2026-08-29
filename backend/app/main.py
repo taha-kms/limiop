@@ -10,6 +10,8 @@ from app.api.router import api_router
 from app.core.config import Settings, get_settings
 from app.db.session import Database
 from app.modules.cvs.storage import CVStorage, FilesystemCVStorage
+from app.observability.logging import configure_logging
+from app.observability.middleware import CorrelationMiddleware
 
 
 def create_app(
@@ -38,6 +40,9 @@ def create_app(
     )
     application.state.settings = app_settings
     application.state.cv_storage = selected_cv_storage
+    # Outermost, so an identifier exists before anything else can log and the
+    # response header is set after everything else has run.
+    application.add_middleware(CorrelationMiddleware)
 
     @application.exception_handler(RequestValidationError)
     async def scrub_validation_errors(
@@ -62,4 +67,5 @@ def create_app(
     return application
 
 
+configure_logging()
 app = create_app()
