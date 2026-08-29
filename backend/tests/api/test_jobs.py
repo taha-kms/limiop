@@ -334,7 +334,11 @@ def test_a_source_filter_composes_and_pages_inside_itself(
             "sources": [board("greenhouse")],
         },
     )
-    narrowed = {"source": "greenhouse", "workplace_type": "remote", "limit": 1}
+    narrowed: dict[str, str | int] = {
+        "source": "greenhouse",
+        "workplace_type": "remote",
+        "limit": 1,
+    }
 
     first = catalog_client.get("/jobs", params=narrowed).json()
     second = catalog_client.get(
