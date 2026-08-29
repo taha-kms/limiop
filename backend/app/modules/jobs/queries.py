@@ -16,8 +16,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
-from platform_db.models import Job, JobProvenance
-from sqlalchemy import ColumnElement, Select, and_, literal, or_, select, tuple_
+from platform_db.models import Job, JobProvenance, JobSource
+from sqlalchemy import ColumnElement, Select, and_, exists, literal, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import InstrumentedAttribute, selectinload
 
@@ -38,6 +38,14 @@ class InvalidCursorError(ValueError):
     """A cursor could not be read as a position in the catalog."""
 
 
+class UnknownSourceError(LookupError):
+    """A source key names no board this catalog ingests."""
+
+    def __init__(self, key: str) -> None:
+        super().__init__(key)
+        self.key = key
+
+
 @dataclass(frozen=True, slots=True)
 class JobFilters:
     """Every filter the listing supports, all optional and freely combined.
@@ -53,6 +61,7 @@ class JobFilters:
     workplace_types: frozenset[WorkplaceType] = field(default_factory=frozenset)
     employment_types: frozenset[EmploymentType] = field(default_factory=frozenset)
     title_query: str | None = None
+    source_key: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +171,18 @@ def apply_filters(statement: Select[tuple[Job]], filters: JobFilters) -> Select[
         statement = statement.where(Job.employment_type.in_(filters.employment_types))
     if filters.title_query is not None:
         statement = statement.where(contains(Job.title, filters.title_query))
+    if filters.source_key is not None:
+        # A job may carry provenance from several sources, so this asks whether
+        # this source lists it — not whether it is the only one that does. A
+        # posting two boards carry appears under both, which is what the
+        # deduplication that produced one row from two sightings implies.
+        statement = statement.where(
+            Job.id.in_(
+                select(JobProvenance.job_id)
+                .join(JobSource, JobSource.id == JobProvenance.source_id)
+                .where(JobSource.key == filters.source_key)
+            )
+        )
     return statement
 
 
@@ -182,6 +203,16 @@ def after(cursor: JobCursor) -> ColumnElement[bool]:
     )
 
 
+async def list_sources(session: AsyncSession) -> tuple[JobSource, ...]:
+    """Every board the catalog ingests, named as a reader would see them."""
+    statement = select(JobSource).order_by(JobSource.display_name)
+    return tuple((await session.scalars(statement)).all())
+
+
+async def source_exists(session: AsyncSession, key: str) -> bool:
+    return bool(await session.scalar(select(exists().where(JobSource.key == key))))
+
+
 async def list_jobs(
     session: AsyncSession,
     *,
@@ -198,11 +229,14 @@ async def list_jobs(
     if page_size < 1:
         raise ValueError("page_size must be at least 1")
 
+    applied = filters if filters is not None else JobFilters()
+    if applied.source_key is not None and not await source_exists(session, applied.source_key):
+        # Matching nothing would read as "this board has no jobs right now",
+        # which is a claim about the catalog rather than about the request.
+        raise UnknownSourceError(applied.source_key)
+
     size = min(page_size, MAX_PAGE_SIZE)
-    statement = apply_filters(
-        select(Job).options(selectinload(Job.company)),
-        filters if filters is not None else JobFilters(),
-    )
+    statement = apply_filters(select(Job).options(selectinload(Job.company)), applied)
     if cursor is not None:
         statement = statement.where(after(decode_cursor(cursor)))
 

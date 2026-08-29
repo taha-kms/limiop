@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { JobFilters } from "./job-filters";
 
+const SOURCES = [
+  { key: "arbeitnow", display_name: "Arbeitnow" },
+  { key: "greenhouse", display_name: "Greenhouse" },
+];
+
 const push = vi.fn();
 let currentParams = new URLSearchParams();
 
@@ -85,6 +90,40 @@ describe("JobFilters", () => {
     expect(screen.getByLabelText("Location")).toHaveValue("Berlin");
     expect(screen.getByRole("checkbox", { name: "Hybrid" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Remote" })).not.toBeChecked();
+  });
+
+  it("offers the boards the catalogue ingests", async () => {
+    render(<JobFilters sources={SOURCES} />);
+
+    await userEvent.selectOptions(screen.getByLabelText("Source"), "greenhouse");
+    await userEvent.click(screen.getByRole("button", { name: /Apply filters/ }));
+
+    const url = new URL(push.mock.calls[0][0] as string, "https://skillsync.test");
+    expect(url.searchParams.get("source")).toBe("greenhouse");
+  });
+
+  it("treats any source as no filter rather than as an empty one", async () => {
+    currentParams = new URLSearchParams("source=greenhouse");
+    render(<JobFilters sources={SOURCES} />);
+
+    await userEvent.selectOptions(screen.getByLabelText("Source"), "");
+    await userEvent.click(screen.getByRole("button", { name: /Apply filters/ }));
+
+    expect(push).toHaveBeenCalledWith("/jobs");
+  });
+
+  it("shows the source already in the URL", () => {
+    currentParams = new URLSearchParams("source=arbeitnow");
+    render(<JobFilters sources={SOURCES} />);
+
+    expect(screen.getByLabelText("Source")).toHaveValue("arbeitnow");
+  });
+
+  it("offers no source filter when the boards could not be read", () => {
+    // A dropdown holding only "any source" would be a filter that does nothing.
+    render(<JobFilters />);
+
+    expect(screen.queryByLabelText("Source")).toBeNull();
   });
 
   it("works without JavaScript, by submitting to the same route", () => {

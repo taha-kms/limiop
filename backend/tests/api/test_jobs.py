@@ -260,6 +260,146 @@ def test_paging_a_filtered_listing_stays_inside_the_filter(
     assert titles(first) + titles(second) == ["Engineer 2", "Engineer 1", "Engineer 0"]
 
 
+def board(key: str, *, name: str | None = None) -> dict[str, Any]:
+    """One provenance record, as the seeder wants it."""
+    return {
+        "key": key,
+        "display_name": name or key.title(),
+        "source_url": f"https://{key}.example.com/jobs/{uuid4().hex}",
+    }
+
+
+def test_the_source_filter_narrows_to_one_board(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    seed_catalog(
+        {"title": "From Greenhouse", "published_at": at(2), "sources": [board("greenhouse")]},
+        {"title": "From Arbeitnow", "published_at": at(1), "sources": [board("arbeitnow")]},
+    )
+
+    payload = catalog_client.get("/jobs", params={"source": "greenhouse"}).json()
+
+    assert titles(payload) == ["From Greenhouse"]
+
+
+def test_a_job_both_boards_carry_appears_under_each_and_once_unfiltered(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    """Filtering by a source asks whether it lists the job, not whether it alone does."""
+    seed_catalog(
+        {
+            "title": "Carried twice",
+            "published_at": at(2),
+            "sources": [board("greenhouse"), board("arbeitnow")],
+        },
+        {"title": "Carried once", "published_at": at(1), "sources": [board("arbeitnow")]},
+    )
+
+    assert titles(catalog_client.get("/jobs", params={"source": "greenhouse"}).json()) == [
+        "Carried twice"
+    ]
+    assert titles(catalog_client.get("/jobs", params={"source": "arbeitnow"}).json()) == [
+        "Carried twice",
+        "Carried once",
+    ]
+    assert titles(catalog_client.get("/jobs").json()) == ["Carried twice", "Carried once"]
+
+
+def test_a_source_filter_composes_and_pages_inside_itself(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    seed_catalog(
+        *(
+            {
+                "title": f"Remote {index}",
+                "workplace_type": WorkplaceType.REMOTE,
+                "published_at": at(index),
+                "sources": [board("greenhouse")],
+            }
+            for index in range(2)
+        ),
+        {
+            "title": "Remote elsewhere",
+            "workplace_type": WorkplaceType.REMOTE,
+            "published_at": at(5),
+            "sources": [board("arbeitnow")],
+        },
+        {
+            "title": "Onsite here",
+            "workplace_type": WorkplaceType.ONSITE,
+            "published_at": at(6),
+            "sources": [board("greenhouse")],
+        },
+    )
+    narrowed = {"source": "greenhouse", "workplace_type": "remote", "limit": 1}
+
+    first = catalog_client.get("/jobs", params=narrowed).json()
+    second = catalog_client.get(
+        "/jobs",
+        params={**narrowed, "cursor": first["next_cursor"]},
+    ).json()
+
+    assert titles(first) + titles(second) == ["Remote 1", "Remote 0"]
+    assert second["next_cursor"] is None
+
+
+def test_a_source_nothing_ingests_is_refused_rather_than_matching_nothing(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    """An empty page would read as a claim about the board rather than the request."""
+    seed_catalog({"title": "Listable", "published_at": at(1), "sources": [board("greenhouse")]})
+
+    response = catalog_client.get("/jobs", params={"source": "greenhous"})
+
+    assert response.status_code == 422
+    assert "greenhous" in response.json()["detail"]
+
+
+def test_the_boards_a_reader_can_filter_by_are_listable(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    seed_catalog(
+        {
+            "title": "Anywhere",
+            "published_at": at(1),
+            "sources": [
+                board("greenhouse", name="Greenhouse"),
+                board("arbeitnow", name="Arbeitnow"),
+            ],
+        }
+    )
+
+    payload = catalog_client.get("/jobs/sources").json()
+
+    assert payload == {
+        "sources": [
+            {"key": "arbeitnow", "display_name": "Arbeitnow"},
+            {"key": "greenhouse", "display_name": "Greenhouse"},
+        ]
+    }
+
+
+def test_a_source_listing_carries_no_ingestion_address(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    """Where ingestion reads from is not somewhere a reader would go."""
+    seed_catalog({"title": "Anywhere", "published_at": at(1), "sources": [board("greenhouse")]})
+
+    listed = catalog_client.get("/jobs/sources").json()["sources"][0]
+
+    assert set(listed) == {"key", "display_name"}
+
+
+def test_an_empty_catalog_ingests_no_boards(catalog_client: TestClient) -> None:
+    assert catalog_client.get("/jobs/sources").json() == {"sources": []}
+
+
 def test_an_unreadable_cursor_is_a_client_error(catalog_client: TestClient) -> None:
     response = catalog_client.get("/jobs", params={"cursor": "not-a-cursor!"})
 
@@ -279,6 +419,8 @@ def test_an_unreadable_cursor_is_a_client_error(catalog_client: TestClient) -> N
         pytest.param({"q": ""}, id="empty search term"),
         pytest.param({"location": ""}, id="empty location"),
         pytest.param({"q": "x" * 500}, id="search term beyond the bound"),
+        pytest.param({"source": ""}, id="empty source"),
+        pytest.param({"source": "notaboard"}, id="source no board answers to"),
     ],
 )
 def test_an_invalid_request_is_refused(
@@ -316,6 +458,7 @@ def test_the_listing_is_documented(catalog_client: TestClient) -> None:
         "workplace_type",
         "employment_type",
         "q",
+        "source",
     }
 
 

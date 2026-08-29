@@ -16,6 +16,19 @@ import {
   type WorkplaceType,
 } from "@/lib/api/types";
 
+export interface ParseOptions {
+  /**
+   * The source keys the catalogue ingests.
+   *
+   * Sources are rows rather than a fixed vocabulary, so the caller supplies
+   * what it knows. Anything else is dropped like any other unrecognised value:
+   * the listing refuses a source nothing ingests, and a hand-edited URL should
+   * narrow oddly at worst rather than become a rejected request. Left out, no
+   * source filter is read.
+   */
+  sources?: readonly string[];
+}
+
 /** What Next hands a page for `?a=1&a=2`. */
 export type RawSearchParams = Record<string, string | string[] | undefined>;
 
@@ -37,12 +50,17 @@ function within<T extends string>(allowed: readonly T[], candidates: string[]): 
   return [...new Set(candidates.filter((value): value is T => known.has(value)))];
 }
 
-export function parseFilters(raw: RawSearchParams): JobFilters {
+export function parseFilters(
+  raw: RawSearchParams,
+  { sources = [] }: ParseOptions = {},
+): JobFilters {
   const workplaceTypes: WorkplaceType[] = within(WORKPLACE_TYPES, values(raw, "workplace_type"));
   const employmentTypes: EmploymentType[] = within(
     EMPLOYMENT_TYPES,
     values(raw, "employment_type"),
   );
+
+  const [source] = within(sources, values(raw, "source"));
 
   return {
     companyId: single(raw, "company_id"),
@@ -50,6 +68,7 @@ export function parseFilters(raw: RawSearchParams): JobFilters {
     query: single(raw, "q"),
     workplaceTypes,
     employmentTypes,
+    source,
   };
 }
 
@@ -59,6 +78,7 @@ export function toQueryString(filters: JobFilters): string {
   if (filters.query) params.set("q", filters.query);
   if (filters.location) params.set("location", filters.location);
   if (filters.companyId) params.set("company_id", filters.companyId);
+  if (filters.source) params.set("source", filters.source);
   for (const value of filters.workplaceTypes ?? []) params.append("workplace_type", value);
   for (const value of filters.employmentTypes ?? []) params.append("employment_type", value);
   return params.toString();

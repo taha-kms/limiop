@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as client from "@/lib/api/client";
 import type { JobPage, JobSummary } from "@/lib/api/types";
@@ -39,6 +39,12 @@ afterEach(() => {
 });
 
 describe("JobsPage", () => {
+  beforeEach(() => {
+    vi.spyOn(client, "listSources").mockResolvedValue([
+      { key: "greenhouse", display_name: "Greenhouse" },
+    ]);
+  });
+
   it("renders the first batch on the server, so the page arrives with results", async () => {
     const page: JobPage = { items: [job("1"), job("2")], next_cursor: null };
     vi.spyOn(client, "listJobs").mockResolvedValue(page);
@@ -76,6 +82,38 @@ describe("JobsPage", () => {
     await renderPage({ workplace_type: "underwater" });
 
     expect(listJobs.mock.calls[0][0]?.filters?.workplaceTypes).toEqual([]);
+  });
+
+  it("narrows to a board the catalogue ingests", async () => {
+    const listJobs = vi
+      .spyOn(client, "listJobs")
+      .mockResolvedValue({ items: [], next_cursor: null });
+
+    await renderPage({ source: "greenhouse" });
+
+    expect(listJobs.mock.calls[0][0]?.filters?.source).toBe("greenhouse");
+    expect(screen.getByLabelText("Source")).toBeInTheDocument();
+  });
+
+  it("drops a board nothing ingests rather than asking for a rejected listing", async () => {
+    const listJobs = vi
+      .spyOn(client, "listJobs")
+      .mockResolvedValue({ items: [], next_cursor: null });
+
+    await renderPage({ source: "notaboard" });
+
+    expect(listJobs.mock.calls[0][0]?.filters?.source).toBeUndefined();
+  });
+
+  it("still lists the catalogue when the boards could not be read", async () => {
+    // The boards are a filter option. Losing them costs a dropdown, not a page.
+    vi.spyOn(client, "listSources").mockRejectedValue(new Error("unreachable"));
+    vi.spyOn(client, "listJobs").mockResolvedValue({ items: [job("1")], next_cursor: null });
+
+    await renderPage();
+
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    expect(screen.queryByLabelText("Source")).toBeNull();
   });
 
   it("says so when the catalogue has nothing to show", async () => {

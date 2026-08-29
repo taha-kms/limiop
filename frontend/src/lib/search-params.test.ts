@@ -72,6 +72,36 @@ describe("parseFilters", () => {
   });
 });
 
+describe("the source filter", () => {
+  const catalogue = { sources: ["greenhouse", "arbeitnow"] };
+
+  it("reads a board the catalogue ingests", () => {
+    expect(parseFilters({ source: "greenhouse" }, catalogue).source).toBe("greenhouse");
+  });
+
+  it("drops a board nothing ingests, rather than sending a rejected request", () => {
+    expect(parseFilters({ source: "greenhous" }, catalogue).source).toBeUndefined();
+    expect(parseFilters({ source: "" }, catalogue).source).toBeUndefined();
+  });
+
+  it("reads no source when the caller names no boards", () => {
+    // Sources are catalogue rows, so a caller that has not read them has no
+    // way to tell a real board from a typo.
+    expect(parseFilters({ source: "greenhouse" }).source).toBeUndefined();
+  });
+
+  it("survives being shared as a URL", () => {
+    const filters = parseFilters({ source: "greenhouse", q: "engineer" }, catalogue);
+
+    expect(parseFilters(asPageParams(toQueryString(filters)), catalogue)).toEqual(filters);
+  });
+
+  it("counts as a filter, so the listing remounts when only it changes", () => {
+    expect(toQueryString({ source: "greenhouse" })).toBe("source=greenhouse");
+    expect(hasAnyFilter({ source: "greenhouse" })).toBe(true);
+  });
+});
+
 describe("toQueryString", () => {
   it("round-trips a filter set, so a link reproduces the view", () => {
     const filters = parseFilters({
