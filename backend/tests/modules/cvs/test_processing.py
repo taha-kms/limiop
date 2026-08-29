@@ -1,7 +1,7 @@
 """Turning a stored CV into skills on its owner's profile."""
 
 import asyncio
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from uuid import UUID, uuid4
 
 import pytest
@@ -13,7 +13,7 @@ from app.db.session import Database
 from app.modules.accounts.models import User
 from app.modules.cvs.models import CV, CVProcessingState
 from app.modules.cvs.parsing import PDFParserLimits, PDFParsingFailure, PDFParsingFailureReason
-from app.modules.cvs.processing import process_cv
+from app.modules.cvs.processing import ProcessingOutcome, process_cv
 from app.modules.cvs.storage import StoredCVObject
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill, SkillSource
 from app.modules.skills.resolution import AliasTableDocument, KnownSkillResolver
@@ -121,8 +121,19 @@ def cv_owner(database_url: PostgresDsn) -> Iterator[tuple[UUID, UUID, UUID]]:
         engine.dispose()
 
 
-def run(database_url: PostgresDsn, cv_id: UUID, text: str | None) -> object:
-    """Process one CV, with the parser stubbed to return `text` or fail."""
+def run(
+    database_url: PostgresDsn,
+    cv_id: UUID,
+    text: str | None,
+    *,
+    while_reading: Callable[[], None] | None = None,
+) -> object:
+    """Process one CV, with the parser stubbed to return `text` or fail.
+
+    `while_reading` runs where the real parser would: after the CV was read and
+    before its skills are written, which is the only window a delete can land
+    in unnoticed.
+    """
 
     async def go() -> object:
         database = Database(database_url)
@@ -130,6 +141,8 @@ def run(database_url: PostgresDsn, cv_id: UUID, text: str | None) -> object:
             from app.modules.cvs import processing
 
             async def extract(*_: object, **__: object) -> object:
+                if while_reading is not None:
+                    while_reading()
                 if text is None:
                     raise PDFParsingFailure(PDFParsingFailureReason.SOURCE_UNAVAILABLE)
 
@@ -260,3 +273,53 @@ def test_a_cv_that_no_longer_exists_is_not_an_error(database_url: PostgresDsn) -
     outcome = run(database_url, uuid4(), "Python.")
 
     assert getattr(outcome, "state", None) is CVProcessingState.PROCESSED
+
+
+def delete_cv_row(database_url: PostgresDsn, cv_id: UUID, profile_id: UUID) -> None:
+    """What the delete endpoint does, in the same order."""
+    engine = create_engine(str(database_url))
+    with engine.begin() as connection:
+        connection.execute(
+            delete(CandidateProfileSkill).where(
+                CandidateProfileSkill.profile_id == profile_id,
+                CandidateProfileSkill.source == SkillSource.CV,
+            )
+        )
+        connection.execute(delete(CV).where(CV.id == cv_id))
+    engine.dispose()
+
+
+def test_a_cv_deleted_while_it_is_being_read_leaves_no_skills_behind(
+    database_url: PostgresDsn, cv_owner: tuple[UUID, UUID, UUID]
+) -> None:
+    """Deleting a CV takes the skills it inferred, including the ones in flight.
+
+    Processing is queued on upload and runs after the response, so a delete can
+    land between the read and the write. Writing then would leave a profile
+    holding skills from a document that no longer exists.
+    """
+    _, profile_id, cv_id = cv_owner
+
+    outcome = run(
+        database_url,
+        cv_id,
+        "Five years of Python and SQL.",
+        while_reading=lambda: delete_cv_row(database_url, cv_id, profile_id),
+    )
+
+    assert skills_of(database_url, profile_id) == {}
+    assert isinstance(outcome, ProcessingOutcome)
+    assert outcome.skills_added == 0
+
+
+def test_a_cv_deleted_after_it_was_read_keeps_nothing_either(
+    database_url: PostgresDsn, cv_owner: tuple[UUID, UUID, UUID]
+) -> None:
+    """The ordinary case, for contrast: the delete removes what processing wrote."""
+    _, profile_id, cv_id = cv_owner
+    run(database_url, cv_id, "Five years of Python and SQL.")
+    assert skills_of(database_url, profile_id) != {}
+
+    delete_cv_row(database_url, cv_id, profile_id)
+
+    assert skills_of(database_url, profile_id) == {}

@@ -54,6 +54,10 @@ async def process_cv(
     A failure to read leaves the profile alone. A CV that cannot be parsed says
     nothing about the skills a candidate already has, and clearing them because
     a PDF was malformed would lose work they did by hand.
+
+    A CV deleted while this runs writes nothing. Deleting one removes the skills
+    it inferred, so a write landing afterwards would leave a profile holding
+    skills from a document that no longer exists.
     """
     async with database.session() as session:
         cv = (await session.execute(select(CV).where(CV.id == cv_id))).scalars().first()
@@ -79,6 +83,14 @@ async def process_cv(
         return await _finish(database, cv_id, CVProcessingState.FAILED)
 
     async with database.session() as session:
+        # Locked rather than merely read. A delete arriving between this and the
+        # write below would otherwise remove the CV's skills before they were
+        # written, and the profile would keep them. Holding the row makes the
+        # delete wait, and it then removes what this wrote.
+        if await _locked(session, cv_id) is None:
+            logger.info("a CV was deleted while it was being read", extra={"cv_id": str(cv_id)})
+            return ProcessingOutcome(state=CVProcessingState.PROCESSED)
+
         profile = await find_profile(session, owner_id)
         if profile is None:
             # A CV uploaded before a profile exists is read and contributes
@@ -90,6 +102,12 @@ async def process_cv(
         result = await store_cv_skills(session, profile_id=profile.id, text=extracted.text)
         await _transition(session, cv_id, CVProcessingState.PROCESSED)
         return ProcessingOutcome(state=CVProcessingState.PROCESSED, skills_added=len(result.added))
+
+
+async def _locked(session: AsyncSession, cv_id: UUID) -> CV | None:
+    """The CV row, held until this transaction ends, or nothing if it is gone."""
+    found = await session.scalars(select(CV).where(CV.id == cv_id).with_for_update())
+    return found.one_or_none()
 
 
 async def _finish(database: Database, cv_id: UUID, state: CVProcessingState) -> ProcessingOutcome:
