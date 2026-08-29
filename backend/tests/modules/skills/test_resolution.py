@@ -34,7 +34,7 @@ def test_alias_table_has_an_explicit_version(resolver: KnownSkillResolver) -> No
 def test_newest_alias_table_is_the_default() -> None:
     resolver = load_default_resolver()
 
-    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.29.1"
+    assert resolver.vocabulary_version == DEFAULT_VOCABULARY_VERSION == "2026.08.29.2"
     assert resolver.resolve("machine learning").concepts[0].preferred_label == "Machine learning"
 
 
@@ -45,6 +45,7 @@ def test_newest_alias_table_is_the_default() -> None:
         ("2026.08.25.1", "deep learning", "Machine learning"),
         ("2026.08.28.1", "deep learning", "Machine learning"),
         ("2026.08.29.1", "deep learning", "Machine learning"),
+        ("2026.08.29.2", "deep learning", "Machine learning"),
     ],
 )
 def test_every_published_alias_table_loads_and_resolves(
@@ -59,6 +60,7 @@ def test_every_published_alias_table_loads_and_resolves(
         "2026.08.25.1",
         "2026.08.28.1",
         "2026.08.29.1",
+        "2026.08.29.2",
     }
 
 
@@ -415,3 +417,50 @@ def test_own_no_longer_resolves_but_ownership_still_does() -> None:
 
     assert resolver.resolve("own").status is not ResolutionStatus.RESOLVED
     assert resolver.resolve("ownership").concepts[0].preferred_label == "Ownership"
+
+
+def test_v5_adds_the_compound_disciplines_and_no_bare_head() -> None:
+    """Each modifier names a different skill, which is why the head could not.
+
+    Every added form is multi-word on purpose. The audit removed `management`
+    and `operations` for reading as ordinary English, and admitting either back
+    under a new name would undo that.
+    """
+    v4_forms = _surface_forms("2026.08.29.1")
+    added = _surface_forms("2026.08.29.2") - v4_forms
+
+    assert added == {
+        "product management",
+        "risk management",
+        "change management",
+        "identity and access management",
+        "access management",
+        "people management",
+    }
+    assert all(" " in form for form in added)
+    assert not v4_forms - _surface_forms("2026.08.29.2"), "adding a version removes nothing"
+
+
+def test_the_new_disciplines_resolve_to_concepts_of_their_own() -> None:
+    """`risk management` is risk, not management, and not project management."""
+    resolver = load_resolver("2026.08.29.2")
+
+    labels = {
+        term: resolver.resolve(term).concepts[0].preferred_label
+        for term in (
+            "risk management",
+            "change management",
+            "product management",
+            "access management",
+        )
+    }
+
+    assert labels == {
+        "risk management": "Risk management",
+        "change management": "Change management",
+        "product management": "Product management",
+        "access management": "Identity and access management",
+    }
+    assert resolver.resolve("project management").concepts[0].preferred_label == (
+        "Project management"
+    )
