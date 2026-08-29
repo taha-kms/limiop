@@ -2,18 +2,21 @@
 
 import asyncio
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
 from platform_db.models import SkillConcept
 from pydantic import PostgresDsn
-from sqlalchemy import create_engine, delete, insert, select
+from sqlalchemy import create_engine, delete, insert, select, update
 
 from app.db.session import Database
 from app.modules.accounts.models import User
 from app.modules.cvs.models import CV, CVProcessingState
 from app.modules.cvs.parsing import PDFParserLimits, PDFParsingFailure, PDFParsingFailureReason
 from app.modules.cvs.processing import ProcessingOutcome, process_cv
+from app.modules.cvs.service import delete_cv
+from app.modules.cvs.skills import store_cv_skills
 from app.modules.cvs.storage import StoredCVObject
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill, SkillSource
 from app.modules.skills.resolution import AliasTableDocument, KnownSkillResolver
@@ -23,6 +26,7 @@ pytestmark = pytest.mark.integration
 PYTHON = UUID("ffffffff-0000-4000-8000-000000000001")
 SQL = UUID("ffffffff-0000-4000-8000-000000000002")
 CONCEPTS = {PYTHON: "Python", SQL: "SQL"}
+EARLIER = datetime(2026, 1, 1, tzinfo=UTC)
 LIMITS = PDFParserLimits(
     max_file_bytes=1_000_000, max_pages=10, max_text_characters=10_000, timeout_seconds=5.0
 )
@@ -323,3 +327,91 @@ def test_a_cv_deleted_after_it_was_read_keeps_nothing_either(
     delete_cv_row(database_url, cv_id, profile_id)
 
     assert skills_of(database_url, profile_id) == {}
+
+
+async def _remove(database: Database, cv_id: UUID, owner_id: UUID) -> None:
+    async with database.session() as session:
+        await delete_cv(session, FakeStorage(), cv_id=cv_id, owner_id=owner_id)
+
+
+def test_a_delete_that_overlaps_the_write_still_takes_the_skills(
+    database_url: PostgresDsn, cv_owner: tuple[UUID, UUID, UUID]
+) -> None:
+    """The other ordering, with the two transactions genuinely overlapping.
+
+    Processing holds the CV row and writes; the delete arrives while it holds
+    it. Without both taking the same row first, the delete would remove the
+    skills that existed before the write, wait for the row, and leave the newly
+    written ones behind on a profile whose CV is gone.
+    """
+    user_id, profile_id, cv_id = cv_owner
+
+    async def exercise() -> None:
+        database = Database(database_url)
+        try:
+            async with database.session() as writer:
+                await writer.scalars(select(CV).where(CV.id == cv_id).with_for_update())
+                await store_cv_skills(
+                    writer,
+                    profile_id=profile_id,
+                    text="Five years of Python and SQL.",
+                    resolver=vocabulary(),
+                )
+
+                deleting = asyncio.create_task(_remove(database, cv_id, user_id))
+                # Long enough for the delete to reach the row it must wait for.
+                await asyncio.sleep(0.2)
+                assert not deleting.done(), "the delete did not wait for the row"
+
+                await writer.commit()
+            await deleting
+        finally:
+            await database.dispose()
+
+    asyncio.run(exercise())
+
+    assert skills_of(database_url, profile_id) == {}
+
+
+def test_deleting_an_older_cv_leaves_the_current_ones_skills(
+    database_url: PostgresDsn, cv_owner: tuple[UUID, UUID, UUID]
+) -> None:
+    """Skills belong to the CV that wrote them, which is the most recent one."""
+    user_id, profile_id, older_id = cv_owner
+    newer_id = uuid4()
+    engine = create_engine(str(database_url))
+    with engine.begin() as connection:
+        # The fixture's CV is dated back rather than the second one dated
+        # forward, so both timestamps stay in the past and the ordering is the
+        # only thing under test.
+        connection.execute(
+            update(CV).where(CV.id == older_id).values(created_at=EARLIER, updated_at=EARLIER)
+        )
+        connection.execute(
+            insert(CV),
+            [
+                {
+                    "id": newer_id,
+                    "owner_id": user_id,
+                    "storage_key": f"cvs/{newer_id}.pdf",
+                    "checksum_sha256": "b" * 64,
+                    "media_type": "application/pdf",
+                    "size_bytes": 2048,
+                    "processing_state": CVProcessingState.PENDING,
+                }
+            ],
+        )
+    engine.dispose()
+    run(database_url, newer_id, "Five years of Python and SQL.")
+    assert skills_of(database_url, profile_id) != {}
+
+    async def remove_older() -> None:
+        database = Database(database_url)
+        try:
+            await _remove(database, older_id, user_id)
+        finally:
+            await database.dispose()
+
+    asyncio.run(remove_older())
+
+    assert skills_of(database_url, profile_id) != {}
