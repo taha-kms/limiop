@@ -2,8 +2,9 @@
 
 Both endpoints are unauthenticated and both cost an argon2id hash, which is
 expensive on purpose. These tests are about the ceiling existing, about it being
-spent only on what should spend it, and about it never becoming the memory leak
-it was added to prevent.
+spent only on what should spend it, about it belonging to one account rather
+than to everybody, and about it never becoming the memory leak it was added to
+prevent.
 """
 
 from collections.abc import Iterator
@@ -13,7 +14,7 @@ from fastapi.testclient import TestClient
 from pydantic import PostgresDsn
 from sqlalchemy import create_engine, text
 
-from app.api.throttle import AttemptLimit, AttemptThrottle
+from app.api.throttle import AttemptLimit, AttemptThrottle, account_key
 from app.core.config import Environment, Settings
 from app.main import create_app
 from app.modules.accounts.passwords import verify_password_in_thread
@@ -137,6 +138,13 @@ def throttled_client(database_url: PostgresDsn) -> Iterator[TestClient]:
 pytestmark = pytest.mark.integration
 
 
+def test_the_key_is_the_account_rather_than_the_caller() -> None:
+    """Every browser attempt arrives from the frontend, so an address is not a
+    caller: keying on one made the limit a single budget for everybody."""
+    assert account_key("sessions", "Ada@Example.com ") == account_key("sessions", "ada@example.com")
+    assert account_key("sessions", "ada@example.com") != account_key("accounts", "ada@example.com")
+
+
 def test_repeated_failed_sign_ins_are_refused(throttled_client: TestClient) -> None:
     assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 201
 
@@ -190,16 +198,6 @@ def test_signing_in_successfully_does_not_spend_the_budget(
         assert throttled_client.post("/api/v1/sessions", json=CREDENTIALS).status_code == 204
 
 
-def test_registration_is_bounded_too(throttled_client: TestClient) -> None:
-    """Every attempt counts: creating accounts in a loop is the abuse here."""
-    assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 201
-    second = {"email": "grace@example.com", "password": "another correct horse"}
-    assert throttled_client.post("/api/v1/accounts", json=second).status_code == 201
-
-    third = {"email": "alan@example.com", "password": "a third correct horse"}
-    assert throttled_client.post("/api/v1/accounts", json=third).status_code == 429
-
-
 def test_spending_the_sign_in_budget_does_not_refuse_registration(
     throttled_client: TestClient,
 ) -> None:
@@ -207,3 +205,39 @@ def test_spending_the_sign_in_budget_does_not_refuse_registration(
         throttled_client.post("/api/v1/sessions", json=WRONG)
 
     assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 201
+
+
+def test_one_account_being_attacked_does_not_lock_out_another(
+    throttled_client: TestClient,
+) -> None:
+    """The defect this keying exists to avoid.
+
+    Every browser attempt reaches the API from the frontend, so an address
+    identifies the hop rather than the caller. Keyed on it, ten failed sign-ins
+    from anybody refused sign-in for everybody.
+    """
+    other = {"email": "grace@example.com", "password": "another correct horse"}
+    assert throttled_client.post("/api/v1/accounts", json=other).status_code == 201
+
+    for _ in range(3):
+        throttled_client.post("/api/v1/sessions", json=WRONG)
+
+    assert throttled_client.post("/api/v1/sessions", json=other).status_code == 204
+
+
+def test_registering_one_address_does_not_refuse_another(throttled_client: TestClient) -> None:
+    for index in range(3):
+        throttled_client.post(
+            "/api/v1/accounts",
+            json={"email": f"taken{index}@example.com", "password": "correct horse battery"},
+        )
+
+    assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 201
+
+
+def test_one_address_cannot_be_registered_over_and_over(throttled_client: TestClient) -> None:
+    """Each attempt costs a password hash, whether or not it succeeds."""
+    assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 201
+    assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 409
+
+    assert throttled_client.post("/api/v1/accounts", json=CREDENTIALS).status_code == 429

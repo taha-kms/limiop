@@ -10,11 +10,11 @@ from app.api.dependencies import (
     SESSION_COOKIE,
     CurrentUser,
     get_application_settings,
+    get_attempt_throttle,
     get_database_session,
-    guard_registration_attempts,
-    guard_sign_in_attempts,
+    refuse_exhausted_attempts,
 )
-from app.api.throttle import AttemptRecorder
+from app.api.throttle import AttemptThrottle, account_key
 from app.core.config import Settings
 from app.modules.accounts.schemas import AccountRead, LoginRequest, RegistrationRequest
 from app.modules.accounts.service import (
@@ -39,11 +39,14 @@ sessions_router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 async def create_account(
     request: RegistrationRequest,
     session: Annotated[AsyncSession, Depends(get_database_session)],
-    attempts: Annotated[AttemptRecorder, Depends(guard_registration_attempts)],
+    throttle: Annotated[AttemptThrottle, Depends(get_attempt_throttle)],
 ) -> AccountRead:
-    # Every attempt counts, not only the refused ones: creating accounts in a
-    # loop is the abuse here, and each one costs a password hash.
-    attempts.record()
+    # Counted per address being registered, and every attempt counts rather
+    # than only the refused ones: what this bounds is one address being tried
+    # over and over, each try costing a password hash.
+    key = account_key("accounts", request.email)
+    refuse_exhausted_attempts(throttle, key)
+    throttle.record(key)
     try:
         user = await register(session, request)
     except EmailAlreadyRegistered:
@@ -67,13 +70,15 @@ async def log_in(
     response: Response,
     session: Annotated[AsyncSession, Depends(get_database_session)],
     settings: Annotated[Settings, Depends(get_application_settings)],
-    attempts: Annotated[AttemptRecorder, Depends(guard_sign_in_attempts)],
+    throttle: Annotated[AttemptThrottle, Depends(get_attempt_throttle)],
 ) -> None:
+    key = account_key("sessions", request.email)
+    refuse_exhausted_attempts(throttle, key)
     user = await authenticate(session, request.email, request.password)
     if user is None:
         # Only failures count, so somebody signing in successfully every day
         # never runs out, and an attacker gets no more tries by guessing right.
-        attempts.record()
+        throttle.record(key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="those credentials were not accepted"
         )
