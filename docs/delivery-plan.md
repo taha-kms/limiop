@@ -321,27 +321,54 @@ postings.
 
 ### Open
 
-Ordered by how expensive each is to reverse.
+The table is empty. Every decision it carried has been made, and what each one
+turned on is below — including the two that were made by writing down what the
+evidence already said (#274), which is the only honest way to close a decision
+nobody is deciding.
 
-| Decision | Reversibility | Decide in |
-| --- | --- | --- |
-| Server-side caching | Premature: needs measured read patterns | When there is a measured read pattern |
-| Whether v1 serves German now that the encoder is multilingual | Cheap to decide, expensive to retrofit later | Still open |
+**What makes a profile complete** is three canonical skills, decided in #215
+against the matching evaluation rather than against a guess: the corpus
+candidate holding one generic concept scored 0.0 while being served a
+confident-looking match.
 
-Two rows left this table by being decided. **What makes a profile complete** is
-three canonical skills, decided in #215 against the matching evaluation rather
-than against a guess — the corpus candidate holding one generic concept scored
-0.0 while being served a confident-looking match. **The CV storage backend** is
-the local filesystem behind `CVStorage`, one interface with one implementation:
-moving it to object storage is a new implementation and no other change, which
-is what the interface was for.
+**The CV storage backend** is the local filesystem behind `CVStorage`, one
+interface with one implementation. Moving it to object storage is a second
+implementation and no other change, which is what the interface was for.
 
-Server-side caching is still open and still on the same terms: nothing about the
-read path has been measured, and #217 priced precomputed match scores as a
-correctness problem bought with a table, since three unattended writers
-invalidate one. German is open in the sense that nothing has decided it; what is
-known is narrower than the row suggests, because the embeddings evaluation that
-would have made the encoder relevant was rejected on its own numbers.
+**No server-side cache in v1.** Nothing about the read path has been measured,
+and the read path is a keyset-paginated listing and four aggregates over a
+catalogue of about 1,400 postings on indexed columns. #217 already priced the
+expensive half and refused it: a precomputed match score is invalidated by three
+unattended writers — the candidate editing their profile, hourly ingestion
+re-extracting a posting's skills, and a published alias table re-extracting the
+catalogue — which is a correctness problem bought with a table. The client-side
+cache behind infinite scroll is not this decision; it is part of building the
+listing page.
+
+  What reopens it: the request log already carries `duration_ms` on every
+  request, so the measurement needs traffic rather than instrumentation. A
+  sustained p95 on `/jobs` or the analytics endpoints that a reader would
+  notice, or a database that becomes the bottleneck under real load, reopens
+  it — and then the first cache is the cheapest one, not the most complete.
+
+**v1 serves German postings and is written in English.** German-looking
+postings are 410 of the 1,422 stored, and the published vocabulary holds no
+German surface form at all — not one. That sounds like it should be fatal and
+is not: 39.0% of German postings carry extracted skills against 43.9% of the
+rest, because the terms that matter in them are borrowed. `Python` is `Python`
+in a German posting. What the extractor needed for German was not a translation
+but a way to stop reading grammar as naming, which #205 measured and fixed with
+a capitalisation threshold.
+
+  So the answer is: no translated interface, no German alias table, and German
+  postings ranked by the same English concepts as everything else. The
+  multilingual encoder that made this question look urgent is not in the
+  matcher — the embeddings evaluation rejected it on its own numbers.
+
+  What reopens it: a measured gap that costs something. If German postings'
+  resolution falls well below the rest, or a hand-read sample shows real skills
+  lost to German-only phrasing, the answer is German surface forms in the alias
+  table — which is a publication, not a rewrite.
 
 The skill model was the hinge and is now decided. It went to a hybrid because
 each single option failed differently and the failures were measured: free text
@@ -671,9 +698,18 @@ closed in the second-source phase, and the rules that replaced them are in
 
 ## Open questions
 
-- **What a stalled ingestion should trigger.** #250 made the last run of every
-  source readable, deliberately without thresholds: what counts as too old
-  depends on a schedule nobody has committed to. Alerting is the open half.
+- **What a stalled ingestion should trigger.** The rule, decided in #274: a
+  source is stale when its last completed run finished more than six hours ago,
+  and failed when its most recent run failed. Both DAGs run hourly, so six hours
+  is six missed runs — long enough that a single failure or a slow provider is
+  not an alert, short enough that a day's postings are not lost before anyone
+  looks. `GET /health/ingestion` serves exactly what the rule needs: the state
+  and `finished_at` of the last run per source.
+
+  What is still open is the channel, not the rule. Nothing here can page
+  anybody, and wiring an uptime check to that endpoint is a deployment task
+  rather than a code one. A source that has never run is absent from the report
+  and cannot be stale; a pipeline that was never deployed is not an incident.
 - **Whether the throttle needs to be shared.** #254 bounds registration and
   sign-in per process, which is right for the single replica that is deployed
   and gives an account one budget per replica when there is more than one.
