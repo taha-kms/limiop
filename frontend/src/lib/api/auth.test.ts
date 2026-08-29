@@ -50,6 +50,14 @@ describe("signIn", () => {
     );
   });
 
+  it("reports anything else as the service failing, not the credentials", async () => {
+    fetchMock.mockResolvedValue(answered(500));
+
+    await expect(signIn({ email: "a@b.example", password: "x" })).rejects.toBeInstanceOf(
+      AuthUnavailableError,
+    );
+  });
+
   it("treats an unreachable service as its own failure", async () => {
     fetchMock.mockRejectedValue(new TypeError("network"));
 
@@ -76,6 +84,14 @@ describe("register", () => {
     );
   });
 
+  it("reports an unreachable service rather than blaming the address", async () => {
+    fetchMock.mockResolvedValue(answered(500));
+
+    await expect(
+      register({ email: "a@b.example", password: "x".repeat(12) }),
+    ).rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+
   it("explains a rejected password without echoing it", async () => {
     fetchMock.mockResolvedValue(answered(422));
 
@@ -96,6 +112,12 @@ describe("signOut", () => {
 
     expect(fetchMock.mock.calls[0][1].method).toBe("DELETE");
     expect(fetchMock.mock.calls[0][0]).toBe("/api/auth/session");
+  });
+
+  it("reports an unreachable service on sign-out too", async () => {
+    fetchMock.mockRejectedValue(new TypeError("network"));
+
+    await expect(signOut()).rejects.toBeInstanceOf(AuthUnavailableError);
   });
 
   it("fails loudly rather than pretending the session ended", async () => {
