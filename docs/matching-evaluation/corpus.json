@@ -1,0 +1,215 @@
+{
+  "version": "1",
+  "vocabulary_version": "2026.08.29.1",
+  "note": "Synthetic and hand-graded. Six candidates and twelve postings built from concepts the shipped alias table publishes, so a reader can check every grade by reading the two skill lists. Grades are 2 for the role the candidate is for, 1 for a role they could plausibly take, and 0 for the rest, which are omitted rather than listed.",
+  "concepts": {
+    "Adoption": "42a91f73-3215-4226-9f5d-88152084a311",
+    "Artificial intelligence": "6fbd91ff-8f39-474b-9453-20990f6f280a",
+    "Cloud computing": "d1122860-5e34-480a-b291-b1a1d2c8cf4b",
+    "Collaboration": "e0fe95fe-927b-467f-bdb7-adc528a50a44",
+    "Communication skills": "12c7e3ce-653a-4fad-8b60-e41c1247a2c0",
+    "Compliance": "db8b7b2b-9087-4597-9284-c58d8a29456b",
+    "Compute": "37783e07-e407-4782-91bf-db5b7092e4ef",
+    "Data analysis": "6edaae4a-204b-431a-a6c0-00b61159442c",
+    "Enterprise software": "fd359f3b-3a29-4ec3-af6f-d88975221996",
+    "Finance": "0089df2f-9dae-483b-bfa3-23ebe86754ce",
+    "Infrastructure": "d9680a9e-4fa3-4393-a2db-0f4160b39c9d",
+    "Leadership": "e583469a-3de1-4ab9-93cc-993465974bdf",
+    "Machine learning": "44f820c3-6deb-4f76-9de9-881ad07e9119",
+    "Marketing": "5428d08e-d8ea-48c8-a6be-c02b05b7b314",
+    "Observability": "7faa4c9b-131f-43f7-8a91-200dfa39bbba",
+    "Product design": "b29a9f54-b3a2-4f53-b394-f93747263d94",
+    "Project management": "38220341-e104-4595-baf5-b8f806112b0e",
+    "Quality assurance": "79133cc6-4c24-4334-aa28-42d080646ea8",
+    "Recruiting": "d2f47ca1-5b3b-4357-84e8-01219f309b22",
+    "Reporting": "1920c89d-a1fa-487c-9fd4-046e740d7d81",
+    "Research": "bc89a88e-11f0-45c4-9f76-5a03aef13751",
+    "Sales": "8a166308-1675-4623-b0f8-d24eb55dd02c",
+    "Security": "4747f736-55c3-42b6-ae00-c2a9efa7a0f1",
+    "Software engineering": "71827422-37b7-4486-9f5a-2710cdea522b",
+    "Systems administration": "a2df77e6-f7a8-4204-b236-33863a81ae74",
+    "Workflows": "f1910b14-5ddf-44ea-9d72-17aae33b4958"
+  },
+  "jobs": [
+    {
+      "key": "backend-engineer",
+      "skills": [
+        "71827422-37b7-4486-9f5a-2710cdea522b",
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b",
+        "d9680a9e-4fa3-4393-a2db-0f4160b39c9d",
+        "a2df77e6-f7a8-4204-b236-33863a81ae74"
+      ]
+    },
+    {
+      "key": "ml-engineer",
+      "skills": [
+        "44f820c3-6deb-4f76-9de9-881ad07e9119",
+        "6fbd91ff-8f39-474b-9453-20990f6f280a",
+        "37783e07-e407-4782-91bf-db5b7092e4ef",
+        "71827422-37b7-4486-9f5a-2710cdea522b"
+      ]
+    },
+    {
+      "key": "data-analyst",
+      "skills": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c",
+        "1920c89d-a1fa-487c-9fd4-046e740d7d81",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    },
+    {
+      "key": "platform-sre",
+      "skills": [
+        "d9680a9e-4fa3-4393-a2db-0f4160b39c9d",
+        "7faa4c9b-131f-43f7-8a91-200dfa39bbba",
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b",
+        "a2df77e6-f7a8-4204-b236-33863a81ae74"
+      ]
+    },
+    {
+      "key": "security-engineer",
+      "skills": [
+        "4747f736-55c3-42b6-ae00-c2a9efa7a0f1",
+        "d9680a9e-4fa3-4393-a2db-0f4160b39c9d",
+        "db8b7b2b-9087-4597-9284-c58d8a29456b"
+      ]
+    },
+    {
+      "key": "product-designer",
+      "skills": [
+        "b29a9f54-b3a2-4f53-b394-f93747263d94",
+        "bc89a88e-11f0-45c4-9f76-5a03aef13751",
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44"
+      ]
+    },
+    {
+      "key": "account-executive",
+      "skills": [
+        "8a166308-1675-4623-b0f8-d24eb55dd02c",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0",
+        "fd359f3b-3a29-4ec3-af6f-d88975221996"
+      ]
+    },
+    {
+      "key": "growth-marketer",
+      "skills": [
+        "5428d08e-d8ea-48c8-a6be-c02b05b7b314",
+        "6edaae4a-204b-431a-a6c0-00b61159442c",
+        "42a91f73-3215-4226-9f5d-88152084a311"
+      ]
+    },
+    {
+      "key": "technical-recruiter",
+      "skills": [
+        "d2f47ca1-5b3b-4357-84e8-01219f309b22",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0",
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44"
+      ]
+    },
+    {
+      "key": "finance-analyst",
+      "skills": [
+        "0089df2f-9dae-483b-bfa3-23ebe86754ce",
+        "6edaae4a-204b-431a-a6c0-00b61159442c",
+        "1920c89d-a1fa-487c-9fd4-046e740d7d81"
+      ]
+    },
+    {
+      "key": "qa-engineer",
+      "skills": [
+        "79133cc6-4c24-4334-aa28-42d080646ea8",
+        "71827422-37b7-4486-9f5a-2710cdea522b",
+        "f1910b14-5ddf-44ea-9d72-17aae33b4958"
+      ]
+    },
+    {
+      "key": "engineering-manager",
+      "skills": [
+        "e583469a-3de1-4ab9-93cc-993465974bdf",
+        "71827422-37b7-4486-9f5a-2710cdea522b",
+        "38220341-e104-4595-baf5-b8f806112b0e",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ]
+    }
+  ],
+  "candidates": [
+    {
+      "key": "backend-generalist",
+      "skills": [
+        "71827422-37b7-4486-9f5a-2710cdea522b",
+        "d1122860-5e34-480a-b291-b1a1d2c8cf4b",
+        "d9680a9e-4fa3-4393-a2db-0f4160b39c9d",
+        "a2df77e6-f7a8-4204-b236-33863a81ae74"
+      ],
+      "relevance": {
+        "backend-engineer": 2,
+        "platform-sre": 2,
+        "qa-engineer": 1,
+        "security-engineer": 1,
+        "ml-engineer": 1
+      }
+    },
+    {
+      "key": "ml-practitioner",
+      "skills": [
+        "44f820c3-6deb-4f76-9de9-881ad07e9119",
+        "6fbd91ff-8f39-474b-9453-20990f6f280a",
+        "71827422-37b7-4486-9f5a-2710cdea522b",
+        "37783e07-e407-4782-91bf-db5b7092e4ef"
+      ],
+      "relevance": {
+        "ml-engineer": 2,
+        "backend-engineer": 1,
+        "qa-engineer": 1
+      }
+    },
+    {
+      "key": "analyst",
+      "skills": [
+        "6edaae4a-204b-431a-a6c0-00b61159442c",
+        "1920c89d-a1fa-487c-9fd4-046e740d7d81",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0",
+        "0089df2f-9dae-483b-bfa3-23ebe86754ce"
+      ],
+      "relevance": {
+        "data-analyst": 2,
+        "finance-analyst": 2,
+        "growth-marketer": 1
+      }
+    },
+    {
+      "key": "designer",
+      "skills": [
+        "b29a9f54-b3a2-4f53-b394-f93747263d94",
+        "bc89a88e-11f0-45c4-9f76-5a03aef13751",
+        "e0fe95fe-927b-467f-bdb7-adc528a50a44",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ],
+      "relevance": {
+        "product-designer": 2,
+        "technical-recruiter": 1
+      }
+    },
+    {
+      "key": "seller",
+      "skills": [
+        "8a166308-1675-4623-b0f8-d24eb55dd02c",
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0",
+        "fd359f3b-3a29-4ec3-af6f-d88975221996",
+        "5428d08e-d8ea-48c8-a6be-c02b05b7b314"
+      ],
+      "relevance": {
+        "account-executive": 2,
+        "growth-marketer": 1,
+        "technical-recruiter": 1
+      }
+    },
+    {
+      "key": "newcomer",
+      "skills": [
+        "12c7e3ce-653a-4fad-8b60-e41c1247a2c0"
+      ],
+      "relevance": {}
+    }
+  ]
+}
