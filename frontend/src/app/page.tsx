@@ -20,6 +20,9 @@ export default function HomePage() {
           Build your profile
         </Link>
       </div>
+      <p className="text-sm text-slate-600 dark:text-slate-400">
+        The catalogue is public. An account is only needed for a profile.
+      </p>
     </main>
   );
 }
