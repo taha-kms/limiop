@@ -50,17 +50,27 @@ for _ in $(seq 1 60); do
   sleep 1
 done
 
+# Each response is captured before it is matched. Piping curl into `grep -q`
+# closes the pipe on the first match, and under `pipefail` curl's SIGPIPE then
+# fails the step that just succeeded.
 echo "checking liveness"
-curl -sf http://127.0.0.1:18000/health | grep -q '"status":"ok"'
+alive=$(curl -sf http://127.0.0.1:18000/health)
+echo "${alive}"
+grep -q '"status":"ok"' <<<"${alive}"
 
 # The one that matters. Liveness only proves the process started; readiness
 # proves it reached the database and can write where CVs go.
 echo "checking readiness"
 ready=$(curl -sf http://127.0.0.1:18000/health/ready)
 echo "${ready}"
-echo "${ready}" | grep -q '"status":"ready"'
+grep -q '"status":"ready"' <<<"${ready}"
 
+# `items`, which is what the listing actually returns. An empty catalogue is
+# the expected answer here: the check is that the route serves, not that
+# anything has been ingested.
 echo "checking the public catalogue answers"
-curl -sf 'http://127.0.0.1:18000/jobs?limit=1' | grep -q '"jobs"'
+listing=$(curl -sf 'http://127.0.0.1:18000/jobs?limit=1')
+echo "${listing}"
+grep -q '"items"' <<<"${listing}"
 
 echo "smoke test passed"
