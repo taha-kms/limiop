@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from app.api.router import api_router
+from app.api.throttle import AttemptLimit, AttemptThrottle
 from app.core.config import Settings, get_settings
 from app.db.session import Database
 from app.modules.cvs.storage import CVStorage, FilesystemCVStorage
@@ -40,6 +41,14 @@ def create_app(
     )
     application.state.settings = app_settings
     application.state.cv_storage = selected_cv_storage
+    # One per process, holding the attempts made against registration and
+    # sign-in. Both endpoints are unauthenticated and both cost a password hash.
+    application.state.attempt_throttle = AttemptThrottle(
+        AttemptLimit(
+            attempts=app_settings.auth_attempts,
+            window_seconds=app_settings.auth_attempt_window_seconds,
+        )
+    )
     # Outermost, so an identifier exists before anything else can log and the
     # response header is set after everything else has run.
     application.add_middleware(CorrelationMiddleware)

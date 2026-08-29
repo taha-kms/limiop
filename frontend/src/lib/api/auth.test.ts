@@ -4,6 +4,7 @@ import {
   AuthUnavailableError,
   CredentialsRejectedError,
   RegistrationRefusedError,
+  TooManyAttemptsError,
   register,
   signIn,
   signOut,
@@ -17,8 +18,8 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-function answered(status: number): Response {
-  return new Response(null, { status });
+function answered(status: number, headers?: HeadersInit): Response {
+  return new Response(null, { status, headers });
 }
 
 describe("signIn", () => {
@@ -124,5 +125,32 @@ describe("signOut", () => {
     fetchMock.mockResolvedValue(answered(500));
 
     await expect(signOut()).rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+});
+
+describe("being throttled", () => {
+  it("says how long to wait when the API said", async () => {
+    fetchMock.mockResolvedValue(answered(429, { "retry-after": "90" }));
+
+    await expect(signIn({ email: "a@b.example", password: "x" })).rejects.toMatchObject({
+      name: "TooManyAttemptsError",
+      message: expect.stringContaining("2 minute"),
+    });
+  });
+
+  it("still says something useful when it did not", async () => {
+    fetchMock.mockResolvedValue(answered(429));
+
+    await expect(register({ email: "a@b.example", password: "x" })).rejects.toBeInstanceOf(
+      TooManyAttemptsError,
+    );
+  });
+
+  it("is not reported as rejected credentials, which would blame the reader", async () => {
+    fetchMock.mockResolvedValue(answered(429, { "retry-after": "30" }));
+
+    await expect(signIn({ email: "a@b.example", password: "x" })).rejects.not.toBeInstanceOf(
+      CredentialsRejectedError,
+    );
   });
 });

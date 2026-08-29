@@ -46,6 +46,12 @@ export async function forwardAuth(
     headers.append("set-cookie", value);
   }
 
+  // Carried back so the browser can say how long to wait rather than "later".
+  const retryAfter = upstream.headers.get("retry-after");
+  if (retryAfter) {
+    headers.set("retry-after", retryAfter);
+  }
+
   // Signing in and out answer 204, and the Response constructor refuses a body
   // with a status that forbids one — even an empty buffer. Passing the bytes
   // through unconditionally threw, which surfaced as a 500 on every sign-in.

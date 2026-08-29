@@ -11,7 +11,10 @@ from app.api.dependencies import (
     CurrentUser,
     get_application_settings,
     get_database_session,
+    guard_registration_attempts,
+    guard_sign_in_attempts,
 )
+from app.api.throttle import AttemptRecorder
 from app.core.config import Settings
 from app.modules.accounts.schemas import AccountRead, LoginRequest, RegistrationRequest
 from app.modules.accounts.service import (
@@ -26,11 +29,21 @@ router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
 sessions_router = APIRouter(prefix="/api/v1/sessions", tags=["sessions"])
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        status.HTTP_429_TOO_MANY_REQUESTS: {"description": "Too many attempts from this client"}
+    },
+)
 async def create_account(
     request: RegistrationRequest,
     session: Annotated[AsyncSession, Depends(get_database_session)],
+    attempts: Annotated[AttemptRecorder, Depends(guard_registration_attempts)],
 ) -> AccountRead:
+    # Every attempt counts, not only the refused ones: creating accounts in a
+    # loop is the abuse here, and each one costs a password hash.
+    attempts.record()
     try:
         user = await register(session, request)
     except EmailAlreadyRegistered:
@@ -42,15 +55,25 @@ async def create_account(
     return AccountRead.model_validate(user)
 
 
-@sessions_router.post("", status_code=status.HTTP_204_NO_CONTENT)
+@sessions_router.post(
+    "",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        status.HTTP_429_TOO_MANY_REQUESTS: {"description": "Too many attempts from this client"}
+    },
+)
 async def log_in(
     request: LoginRequest,
     response: Response,
     session: Annotated[AsyncSession, Depends(get_database_session)],
     settings: Annotated[Settings, Depends(get_application_settings)],
+    attempts: Annotated[AttemptRecorder, Depends(guard_sign_in_attempts)],
 ) -> None:
     user = await authenticate(session, request.email, request.password)
     if user is None:
+        # Only failures count, so somebody signing in successfully every day
+        # never runs out, and an attacker gets no more tries by guessing right.
+        attempts.record()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="those credentials were not accepted"
         )
