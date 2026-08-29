@@ -136,7 +136,10 @@ export async function listSources(signal?: AbortSignal): Promise<JobSource[]> {
   if (!response.ok) {
     throw new UnexpectedResponseError(response.status);
   }
-  return (await readJson<{ sources: JobSource[] }>(response)).sources;
+  const body = await readJson<{ sources?: JobSource[] }>(response);
+  // A body carrying no list is a list of no sources: callers offer the filter
+  // or do not, and neither should be a crash on a page about something else.
+  return Array.isArray(body.sources) ? body.sources : [];
 }
 
 /** Read one job by identifier. */

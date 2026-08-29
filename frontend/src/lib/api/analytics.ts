@@ -43,6 +43,14 @@ export class InsightsUnavailableError extends Error {
   }
 }
 
+export interface InsightsRequest {
+  limit?: number;
+  /** ISO timestamp. Postings published before it are left out. */
+  since?: string;
+  /** A source key. A job two sources carry counts under each of them. */
+  sourceKey?: string;
+}
+
 async function read<T>(path: string): Promise<T> {
   let response: Response;
   try {
@@ -57,13 +65,25 @@ async function read<T>(path: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function getMarketInsights(limit = 10): Promise<MarketInsights> {
+export async function getMarketInsights({
+  limit = 10,
+  since,
+  sourceKey,
+}: InsightsRequest = {}): Promise<MarketInsights> {
+  // Shared by all three, so the three answers describe one window and one
+  // source rather than three different questions.
+  const narrowing = new URLSearchParams();
+  if (since) narrowing.set("since", since);
+  if (sourceKey) narrowing.set("source_key", sourceKey);
+  const shared = narrowing.toString();
+  const and = shared ? `&${shared}` : "";
+
   const [skills, locations, trends] = await Promise.all([
-    read<{ skills: SkillDemand[] }>(`/skills?limit=${limit}`),
+    read<{ skills: SkillDemand[] }>(`/skills?limit=${limit}${and}`),
     read<{ locations: LocationCount[]; workplace_types: WorkplaceCount[] }>(
-      `/locations?limit=${limit}`,
+      `/locations?limit=${limit}${and}`,
     ),
-    read<{ bucket: string; points: TrendPoint[] }>("/trends?bucket=month"),
+    read<{ bucket: string; points: TrendPoint[] }>(`/trends?bucket=month${and}`),
   ]);
 
   return {
