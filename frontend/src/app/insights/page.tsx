@@ -1,6 +1,11 @@
+import { Suspense } from "react";
+
 import { CountBars } from "@/components/count-bars";
+import { MarketFilters } from "@/components/market-filters";
 import { getMarketInsights, InsightsUnavailableError } from "@/lib/api/analytics";
+import { listSources } from "@/lib/api/client";
 import { workplaceLabel } from "@/lib/format";
+import { parseInsightsFilters, WINDOW_LABELS, windowStart } from "@/lib/insights-params";
 
 export const metadata = {
   title: "Job market · SkillSync",
@@ -12,6 +17,18 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 const MONTH = new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" });
+
+/** What the numbers on this page are counting, in the page's own words. */
+function describe(
+  window: Parameters<typeof windowStart>[0],
+  source: string | undefined,
+  sources: readonly { key: string; display_name: string }[],
+): string {
+  const period =
+    window === "all" ? "over the whole catalogue" : WINDOW_LABELS[window].toLowerCase();
+  const board = sources.find((candidate) => candidate.key === source);
+  return board ? `${period}, as listed by ${board.display_name}` : period;
+}
 
 function Section({
   title,
@@ -33,10 +50,18 @@ function Section({
   );
 }
 
-export default async function InsightsPage() {
+export default async function InsightsPage(props: PageProps<"/insights">) {
+  // The sources are a filter option, not the figures: failing to read them
+  // costs a dropdown, and taking the page down with it would be worse.
+  const [raw, sources] = await Promise.all([props.searchParams, listSources().catch(() => [])]);
+  const filters = parseInsightsFilters(raw, { sources: sources.map((source) => source.key) });
+
   let insights;
   try {
-    insights = await getMarketInsights();
+    insights = await getMarketInsights({
+      since: windowStart(filters.window, new Date()),
+      sourceKey: filters.source,
+    });
   } catch (cause: unknown) {
     if (!(cause instanceof InsightsUnavailableError)) throw cause;
     return (
@@ -62,9 +87,15 @@ export default async function InsightsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Job market</h1>
         <p className="text-slate-600 dark:text-slate-400">
           Counted from the jobs SkillSync has collected. Every figure covers postings that are still
-          open.
+          open, {describe(filters.window, filters.source, sources)}.
         </p>
       </header>
+
+      {/* useSearchParams suspends, and the boundary keeps that from holding up
+          the figures while the controls resolve. */}
+      <Suspense fallback={null}>
+        <MarketFilters sources={sources} />
+      </Suspense>
 
       <Section
         title="Most asked-for skills"
