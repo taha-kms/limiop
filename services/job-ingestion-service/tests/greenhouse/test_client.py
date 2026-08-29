@@ -219,3 +219,53 @@ def test_the_client_closes_what_it_created() -> None:
         return fetcher._http_client
 
     assert asyncio.run(run()).is_closed is True
+
+
+def rate_limited(retry_after: str | None = None) -> httpx2.Response:
+    headers = {"retry-after": retry_after} if retry_after is not None else {}
+    return httpx2.Response(429, headers=headers)
+
+
+def recording_client(
+    *replies: httpx2.Response | Exception, **overrides: Any
+) -> tuple[GreenhouseClient, list[float]]:
+    slept: list[float] = []
+
+    async def sleeper(seconds: float) -> None:
+        slept.append(seconds)
+
+    settings: dict[str, Any] = {"boards": ("hudl",), "retry_backoff_seconds": 0.25}
+    settings.update(overrides)
+    return (
+        GreenhouseClient(
+            GreenhouseConfig(**settings),
+            http_client=responding(*replies),
+            sleeper=sleeper,
+        ),
+        slept,
+    )
+
+
+def test_a_rate_limited_board_is_retried_rather_than_lost() -> None:
+    """A board that is skipped is a whole company missing from the catalogue."""
+    fetcher, slept = recording_client(rate_limited(), ok(board_body()))
+
+    page = fetch(fetcher)
+
+    assert page.records
+    assert slept == [0.25]
+
+
+def test_a_board_that_stays_rate_limited_still_fails() -> None:
+    fetcher, _ = recording_client(*[rate_limited()] * 3)
+
+    with pytest.raises(SourceUnavailableError, match="rate limited"):
+        fetch(fetcher)
+
+
+def test_retry_after_is_waited_on_a_board_too() -> None:
+    fetcher, slept = recording_client(rate_limited("2"), ok(board_body()))
+
+    fetch(fetcher)
+
+    assert slept == [2.0]
