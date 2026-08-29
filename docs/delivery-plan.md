@@ -26,7 +26,7 @@ This file only covers sequence and open decisions.
 | Identity and sessions | #38, #39, #40 | Done |
 | Service extraction | #160–#168, #171 | Done |
 | Skills at ingestion | #187–#194, #199, #202–#205 | Done |
-| CV processing and matching | #15 | In progress |
+| CV processing and matching | #15 | Done |
 | Analytics and production | #16 | Not started |
 
 Built so far: a source-independent job catalog in PostgreSQL, two ingestion
@@ -486,15 +486,36 @@ is a link on a public page. Identity is met in both halves now — the API since
 #38–#40, the browser since #210 — so a visitor can register, sign in, reach
 their profile, and sign out. The CV route into a profile remains.
 
-### Phase D — Matching
+### Phase D — Matching — done
 
-Issues #48 through #53.
+Issues #213 through #218, refining #47 through #53.
 
-Skill extraction on both sides, the overlap baseline, its evaluation, the
-authenticated endpoint, the matching page, and the TF-IDF comparison.
+Both sides of the join already existed when the phase opened: `job_skills` since
+#189 and `candidate_profile_skills` since the onboarding picker, keyed on the
+same concepts under the same alias version. The baseline was a set intersection
+rather than a subsystem, and most of the phase was deciding what the number
+means and proving it.
 
-**Exit:** a user sees ranked jobs with matched and missing skills, and the
-ranking has been evaluated rather than assumed.
+Three findings the phase turned on:
+
+- **A candidate with one generic skill gets a confident ranking worth nothing.**
+  Measured, not suspected: the corpus candidate holding only Communication
+  skills scored 0.0 on every ranking metric while being served a 0.33 match, and
+  that single case is the whole gap between the baseline's 0.8055 and the 0.9666
+  the rest average. It is why a profile with fewer than three skills is refused
+  rather than ranked.
+- **TF-IDF wins on the metrics and loses on the product.** It gains 0.0101
+  NDCG@5 and breaks the agreement between the score and the explanation: a
+  candidate holding every skill a posting asks for sees "3 of 3 skills" beside
+  0.84.
+- **A CV and the picker write the same table.** Two skill tables would have made
+  the settled decision that both routes produce the same profile false at the
+  schema level, so the row records which route wrote it instead, and a
+  hand-picked skill outranks an inferred one.
+
+**Exit:** met. A signed-in candidate sees ranked jobs with matched and missing
+skills, and the ranking was evaluated against a committed corpus before it was
+served rather than after.
 
 ### Phase E — Analytics and production
 
