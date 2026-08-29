@@ -184,6 +184,31 @@ postings.
   reconciliation withdrawing a posting over a problem that says nothing about
   whether the posting is gone.
 
+- **A profile with fewer than three skills is not ranked.** Not clamped, not
+  ordered arbitrarily: nothing is returned.
+
+  The evaluation measured why. A corpus candidate holding one concept —
+  Communication skills — scored 0.0 on every ranking metric while still being
+  served a confident-looking 0.33 match, and that single case is the entire gap
+  between the baseline's reported 0.8055 and the 0.9666 the other five average.
+  A wrong answer that looks considered is worse than an empty one.
+
+  The evidence establishes that one skill is too few, not where the line sits.
+  Three is a judgment inside that bound: it also refuses a two-concept profile,
+  which fails the same way less obviously, and every real candidate in the
+  corpus holds four. It replaces `PROVISIONAL_MINIMUM_USABLE_SKILLS`, which the
+  design spec called a formality rather than a threshold and which had no
+  production caller.
+
+- **Matches are not cursor-paginated.** The listing is, and matching is not,
+  because the two orders are different kinds of thing. A listing position comes
+  from stored columns under a total order; a match position comes from a score
+  computed per request against a profile the candidate can edit and a catalogue
+  re-extracted hourly. A cursor into an order that moves underneath it is a
+  cursor that lies, and the listing's own rule already limits a cursor to the
+  filter set that produced it. Matches return a bounded page and say how many
+  were ranked.
+
 - **Match scores are computed per request.** The baseline is a set
   intersection over the handful of canonical concepts a posting carries, so
   computing one costs less than reading a stored one would.
