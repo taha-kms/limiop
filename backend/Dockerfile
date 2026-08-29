@@ -8,10 +8,13 @@ RUN python -m venv /opt/venv
 
 COPY platform/db/pyproject.toml ./platform/db/pyproject.toml
 COPY platform/db/platform_db ./platform/db/platform_db
+COPY platform/skills/pyproject.toml ./platform/skills/pyproject.toml
+COPY platform/skills/platform_skills ./platform/skills/platform_skills
 COPY backend/pyproject.toml backend/README.md ./backend/
 COPY backend/app ./backend/app
 
 RUN python -m pip install --no-cache-dir ./platform/db \
+    && python -m pip install --no-cache-dir ./platform/skills \
     && python -m pip install --no-cache-dir ./backend
 
 FROM python:3.13.15-slim-bookworm@sha256:00faa2debb87529f9f0764e9491d8ba400a3678976616c3bd7cb193745ac20d1 AS runtime

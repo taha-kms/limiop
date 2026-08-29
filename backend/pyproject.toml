@@ -23,6 +23,7 @@ dependencies = [
   "pypdf>=6.16.2,<7.0.0",
   "python-multipart>=0.0.32,<1.0.0",
   "skillsync-platform-db==0.1.0",
+  "skillsync-platform-skills==0.1.0",
   "sqlalchemy[asyncio]>=2.0.52,<3.0.0",
   "uvicorn[standard]>=0.52.3,<1.0.0",
 ]
@@ -87,7 +88,7 @@ known-first-party = ["app", "tests"]
 python_version = "3.12"
 strict = true
 files = ["app", "scripts", "tests"]
-mypy_path = "../platform/db"
+mypy_path = "../platform/db:../platform/skills"
 
 [[tool.mypy.overrides]]
 # py3langid ships no type information. It is used only by the measurement

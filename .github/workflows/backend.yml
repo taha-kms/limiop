@@ -5,6 +5,7 @@ on:
     paths:
       - 'backend/**'
       - 'platform/db/**'
+      - 'platform/skills/**'
       - 'docker-compose.yml'
       - '.env.example'
       - '.github/workflows/backend.yml'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'backend/**'
       - 'platform/db/**'
+      - 'platform/skills/**'
       - 'docker-compose.yml'
       - '.env.example'
       - '.github/workflows/backend.yml'
@@ -61,12 +63,14 @@ jobs:
           cache-dependency-path: |
             backend/pyproject.toml
             platform/db/pyproject.toml
+            platform/skills/pyproject.toml
 
       - name: Install backend dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ../platform/db
+          python -m pip install -e ../platform/skills
           python -m pip install -e '.[dev]'
 
       - name: Check formatting

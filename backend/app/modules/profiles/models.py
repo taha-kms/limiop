@@ -1,6 +1,7 @@
 """Persistence for the canonical candidate profile."""
 
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID, uuid4
 
 from platform_db.base import Base
@@ -125,14 +126,31 @@ class CandidateProfile(Base):
     )
 
 
+class SkillSource(StrEnum):
+    """How a skill reached the profile.
+
+    The distinction exists so re-reading a CV can replace what the last read
+    wrote without touching what the candidate chose by hand. A concept that
+    arrives both ways stays `MANUAL`: a deliberate choice outranks an inference
+    from a document, and a later upload must not quietly unpick it.
+    """
+
+    MANUAL = "manual"
+    CV = "cv"
+
+
 class CandidateProfileSkill(Base):
-    """A canonical skill selected for one candidate profile."""
+    """A canonical skill on one candidate profile, and where it came from."""
 
     __tablename__ = "candidate_profile_skills"
     __table_args__ = (
         CheckConstraint(
             "length(btrim(vocabulary_version)) > 0",
             name="ck_candidate_profile_skills_vocabulary_version_not_blank",
+        ),
+        CheckConstraint(
+            "source IN ('manual', 'cv')",
+            name="ck_candidate_profile_skills_source",
         ),
         PrimaryKeyConstraint(
             "profile_id",
@@ -160,6 +178,19 @@ class CandidateProfileSkill(Base):
     )
     vocabulary_version: Mapped[str] = mapped_column(
         String(VOCABULARY_VERSION_LENGTH), nullable=False
+    )
+    source: Mapped[SkillSource] = mapped_column(
+        Enum(
+            SkillSource,
+            name="candidate_profile_skill_source",
+            native_enum=False,
+            create_constraint=False,
+            validate_strings=True,
+            values_callable=lambda members: [member.value for member in members],
+        ),
+        nullable=False,
+        default=SkillSource.MANUAL,
+        server_default=SkillSource.MANUAL.value,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
