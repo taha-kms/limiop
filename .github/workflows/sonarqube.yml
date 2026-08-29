@@ -65,6 +65,7 @@ jobs:
           python -m venv .sonar-venv
           .sonar-venv/bin/python -m pip install --upgrade pip
           .sonar-venv/bin/python -m pip install -e ../platform/db
+          .sonar-venv/bin/python -m pip install -e ../platform/skills
           .sonar-venv/bin/python -m pip install -e '.[dev]'
           .sonar-venv/bin/python -m pytest
 
