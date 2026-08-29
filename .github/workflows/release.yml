@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  # Buildable from a pull request, publishable from none. A fork's pull request
+  # runs with a read-only token by design; this makes that explicit rather than
+  # relying on it.
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'platform/db/**'
+      - 'platform/skills/**'
+      - '.github/workflows/release.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/backend
+
+jobs:
+  image:
+    name: Build and smoke-test the API image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Only ever granted on a push. A pull request keeps the read-only default
+      # above, so an untrusted contributor cannot publish under this name.
+      packages: ${{ github.event_name == 'push' && 'write' || 'read' }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Derive the tags
+        id: tags
+        run: |
+          # Every tag names an immutable revision. The commit SHA is the one
+          # that always does; a branch or version tag is a moving alias for it.
+          revision="${GITHUB_SHA}"
+          tags="${IMAGE}:sha-${revision}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            tags="${tags},${IMAGE}:${GITHUB_REF_NAME},${IMAGE}:latest"
+          elif [ "${GITHUB_REF_NAME}" = "main" ]; then
+            tags="${tags},${IMAGE}:main"
+          fi
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+          echo "revision=${revision}" >> "$GITHUB_OUTPUT"
+          echo "primary=${IMAGE}:sha-${revision}" >> "$GITHUB_OUTPUT"
+
+      - name: Build the image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: backend/Dockerfile
+          load: true
+          tags: ${{ steps.tags.outputs.primary }}
+          # Labels, so an image found in a registry can be traced back to the
+          # revision that produced it without asking anybody.
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.tags.outputs.revision }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke-test the built image
+        env:
+          IMAGE_REF: ${{ steps.tags.outputs.primary }}
+        run: backend/scripts/smoke_test_image.sh
+
+      - name: Sign in to the registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@184bdaa0721073962dff0199f1fb9940f07167d1 # v3.5.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.tags.outputs.revision }}
+          cache-from: type=gha
