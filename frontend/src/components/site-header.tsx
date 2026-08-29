@@ -29,6 +29,9 @@ export async function SiteHeader() {
           </Link>
           {account ? (
             <>
+              <Link href="/matches" className="underline underline-offset-2">
+                Matches
+              </Link>
               <Link href="/onboarding" className="underline underline-offset-2">
                 Your profile
               </Link>

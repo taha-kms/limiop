@@ -106,3 +106,32 @@ test("a rejected sign-in says so without saying which half was wrong", async ({ 
   await expect(page.getByText("Those credentials were not accepted.")).toBeVisible();
   await expect(page).toHaveURL(/\/sign-in$/);
 });
+
+test("a signed-in candidate reaches matches and is told what to do when empty", async ({
+  page,
+}) => {
+  const email = newAddress();
+
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText(email)).toBeVisible();
+
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Matches" })
+    .click();
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your matches");
+  // A fresh account has no skills, so the page has to say what to do rather
+  // than showing an empty list and leaving the reader to guess.
+  await expect(page.getByRole("heading", { name: "No matches yet" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Add some to your profile/ })).toBeVisible();
+});
+
+test("matches are not reachable without a session", async ({ page }) => {
+  await page.goto("/matches");
+
+  await expect(page).toHaveURL(/\/sign-in\?next=%2Fmatches$/);
+});
