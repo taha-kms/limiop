@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import UUID
 
+from platform_db.models.catalog import normalize_company_name
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.boilerplate import BoilerplatePolicy, strip_employer_boilerplate
@@ -34,7 +35,7 @@ from job_ingestion.contracts import (
 )
 from job_ingestion.database import Database
 from job_ingestion.errors import IngestionError, RecordValidationError
-from job_ingestion.persistence import SourceRegistration, persist_job
+from job_ingestion.persistence import SourceRegistration, persist_job, stored_posting_counts
 from job_ingestion.schemas import NormalizedJob
 from job_ingestion.skills import (
     ExtractionCounts,
@@ -169,7 +170,7 @@ class IngestionRun[ProviderRecordT]:
             except IngestionError as error:
                 failures.append(RecordFailure(stage=IngestionStage.FETCH, reason=error.message))
 
-            for normalized in self.deboilerplate(prepared):
+            for normalized in await self.deboilerplate(session, prepared):
                 await self.store(
                     session, normalized, tally, failures, clock(), vocabulary=vocabulary
                 )
@@ -178,9 +179,25 @@ class IngestionRun[ProviderRecordT]:
             tally, failures, stopped_at_budget=stopped_at_budget, vocabulary=vocabulary
         )
 
-    def deboilerplate(self, prepared: list[NormalizedJob]) -> list[NormalizedJob]:
-        """Drop each employer's self-description, and say how much that was."""
-        stripped, removal = strip_employer_boilerplate(prepared, self.boilerplate)
+    async def deboilerplate(
+        self,
+        session: AsyncSession,
+        prepared: list[NormalizedJob],
+    ) -> list[NormalizedJob]:
+        """Drop each employer's self-description, and say how much that was.
+
+        The catalogue is asked how many postings it already holds for each
+        employer in the run. A source that delivers one employer a few postings
+        at a time has no pattern inside a single run and an obvious one across
+        the catalogue, and that is the difference between stripping their
+        boilerplate and never seeing it.
+        """
+        stored = await stored_posting_counts(
+            session, {normalize_company_name(job.company.display_name) for job in prepared}
+        )
+        stripped, removal = strip_employer_boilerplate(
+            prepared, self.boilerplate, stored_postings=stored
+        )
         if removal.blocks:
             logger.info(
                 "removed %d repeated employer blocks (%d characters) from %d postings",

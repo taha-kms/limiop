@@ -21,12 +21,19 @@ the ones repeated verbatim across all 536 postings of the largest employer.
 
 Both halves are derived from the postings themselves. A per-employer list of
 paragraphs would rot the moment the employer edited their template.
+
+The two thresholds ask different questions of different populations, which is
+what lets one run recognise a template it only sees three postings of. Whether
+an employer has a pattern at all is asked of everything known about them,
+stored postings included. Whether this block is part of it is asked only of the
+postings in hand, because a stored posting that was already stripped no longer
+carries the block and would count as evidence against a template it is proof of.
 """
 
 import logging
 import re
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from platform_db.models.catalog import normalize_company_name
@@ -147,14 +154,22 @@ def self_describing_blocks(
     employer: str,
     descriptions: Sequence[str],
     policy: BoilerplatePolicy,
+    *,
+    known_postings: int | None = None,
 ) -> frozenset[str]:
     """The folded blocks this employer repeats about itself.
 
-    A block is removable when it appears in most of the employer's postings and
-    names the employer. The second condition is what separates a blurb from a
+    A block is removable when it appears in most of the given postings and names
+    the employer. The second condition is what separates a blurb from a
     requirement every posting happens to share.
+
+    `known_postings` is how many postings this employer has anywhere, which is
+    what decides whether there is a pattern to find. It defaults to the ones
+    given, so a caller with no catalogue behind it gets the plain rule.
     """
-    if len(descriptions) < policy.minimum_postings:
+    if (known_postings if known_postings is not None else len(descriptions)) < (
+        policy.minimum_postings
+    ):
         return frozenset()
 
     marker = employer_marker(employer)
@@ -188,22 +203,36 @@ def without_blocks(description: str, removable: frozenset[str]) -> str:
 def strip_employer_boilerplate(
     jobs: Sequence[NormalizedJob],
     policy: BoilerplatePolicy | None = None,
+    *,
+    stored_postings: Mapping[str, int] | None = None,
 ) -> tuple[list[NormalizedJob], Removal]:
     """Drop each employer's self-description from its own postings.
 
     Employers are grouped across everything the run fetched, because a block
-    repeats across an employer's postings and one posting cannot show that. An
-    employer with few postings in the run is left alone, which is the honest
-    reading of having too little to establish a pattern.
+    repeats across an employer's postings and one posting cannot show that.
+
+    `stored_postings` says how many postings the catalogue already holds for
+    each employer, keyed by normalized name. It is what lets a source that
+    delivers an employer a few postings at a time be stripped at all: those
+    three postings are not a pattern, and three of a hundred are. Without it an
+    employer is judged on the run alone, which is the honest reading of having
+    too little to establish a pattern.
     """
     applied = policy if policy is not None else BoilerplatePolicy()
+    known = stored_postings if stored_postings is not None else {}
     grouped: dict[str, list[NormalizedJob]] = defaultdict(list)
     for job in jobs:
         grouped[normalize_company_name(job.company.display_name)].append(job)
 
     removable = {
         employer: self_describing_blocks(
-            employer, [job.description for job in employer_jobs], applied
+            employer,
+            [job.description for job in employer_jobs],
+            applied,
+            # The catalogue's count already includes any of these postings it
+            # has seen before, so the larger of the two is the honest total
+            # rather than their sum.
+            known_postings=max(len(employer_jobs), known.get(employer, 0)),
         )
         for employer, employer_jobs in grouped.items()
     }

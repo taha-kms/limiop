@@ -107,11 +107,13 @@ one employer's blurb, not a word from the language.
   the next run reports 661 postings as updated rather than skipped, because the
   description is one of the fields a merge compares, and re-extracts their
   skills. That spike is the change arriving, not a reconciliation problem.
-- **Employers are grouped per run.** An employer whose postings arrive a few at
-  a time — most Arbeitnow employers — stays below the five-posting minimum and
-  is left alone. That is the honest reading of having too little to establish a
-  pattern, and it means the measured reduction above is an upper bound for
-  sources that do not deliver an employer's board in one go.
+- **Employers are grouped per run, and the catalogue supplies the pattern.**
+  Whether an employer has a template at all is asked of every posting stored
+  under them (#272); whether a block is part of it is asked only of the postings
+  in the run. That split matters: a stored posting that was already stripped no
+  longer carries the block, and counting it as one that lacks the block would
+  make it evidence against the template it is proof of. An employer with fewer
+  than five postings anywhere is still left alone.
 - **A heading that names the employer goes with the blurb.** `WHAT YOU'LL BRING
   TO FLOCK:` is dropped while the requirements under it stay. The description
   loses a signpost and keeps its content.

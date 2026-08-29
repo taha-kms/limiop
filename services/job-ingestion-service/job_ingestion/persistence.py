@@ -8,6 +8,7 @@ The service writes; it does not decide. Whether a job is new, changed, or
 already known comes from `deduplication.decide`.
 """
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
@@ -106,6 +107,28 @@ class PersistenceResult:
     outcome: RecordOutcome
     job_id: UUID | None = None
     failure: RecordFailure | None = None
+
+
+async def stored_posting_counts(
+    session: AsyncSession,
+    employers: Collection[str],
+) -> dict[str, int]:
+    """How many postings the catalogue already holds for each named employer.
+
+    Keyed by normalized name, which is how employers are identified everywhere
+    else. Counts rather than descriptions: what this answers is whether an
+    employer has enough postings to have a template, and a count is the whole
+    answer at a fraction of the reading.
+    """
+    if not employers:
+        return {}
+    rows = await session.execute(
+        select(Company.normalized_name, func.count(Job.id))
+        .join(Job, Job.company_id == Company.id)
+        .where(Company.normalized_name.in_(set(employers)))
+        .group_by(Company.normalized_name)
+    )
+    return {name: count for name, count in rows}
 
 
 async def ensure_source(session: AsyncSession, source: SourceRegistration) -> JobSource:

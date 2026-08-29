@@ -468,3 +468,26 @@ def test_too_few_postings_to_establish_a_pattern_keep_the_blurb(
         assert all(BLURB in description for description in await stored_descriptions(database))
 
     run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_small_run_is_stripped_when_the_catalogue_knows_the_employer(
+    database_url: PostgresDsn,
+) -> None:
+    """Three postings are not a template; three of eight are.
+
+    Arbeitnow delivers one employer a few postings at a time, so within a run
+    they never reach the minimum. What establishes the pattern is the catalogue.
+    """
+
+    async def exercise(database: Database) -> None:
+        await ingest(database, responding(page([posting(index) for index in range(5)])))
+
+        await ingest(database, responding(page([posting(index) for index in range(5, 8)])))
+
+        stored = await stored_descriptions(database)
+        assert len(stored) == 8
+        assert all(BLURB not in description for description in stored)
+        assert all("including SQL" in description for description in stored)
+
+    run_database_test(database_url, exercise)
