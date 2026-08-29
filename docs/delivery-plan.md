@@ -676,10 +676,27 @@ closed in the second-source phase, and the rules that replaced them are in
   depends on a schedule nobody has committed to. Alerting is the open half.
 - **Whether the throttle needs to be shared.** #254 bounds registration and
   sign-in per process, which is right for the single replica that is deployed
-  and gives an account one budget per replica when there is more than one. It
-  counts per account rather than per caller because every browser attempt
-  reaches the API from the frontend (#264): what is bounded is guessing one
-  account's password, and volume abuse belongs at the edge.
+  and gives an account one budget per replica when there is more than one.
+
+  It counts per account rather than per caller, and that is a trade rather than
+  a detail. Every browser attempt reaches the API from the frontend, which
+  re-issues it server-side, so an address identifies the hop: keyed on one, ten
+  failed sign-ins from anybody refused sign-in for everybody (#264). Keyed on
+  the account, somebody who knows an address can keep that one account refused
+  for the window, renewably. Targeted beats global, and both are worse than a
+  caller identity that survives the hop.
+
+  The usual mitigation — let a correct password through even while throttled —
+  is not available here. It means hashing before refusing, which contradicts the
+  cost the limit exists to protect and the test that pins it. With a per-account
+  key those two properties are mutually exclusive, so anything claiming both is
+  wrong about one of them.
+
+  What would move it: an ingress in front of the frontend that sets a forwarded
+  address the API is configured to trust, so per-caller and per-account can both
+  exist and the per-account one can be loosened. Not worth building before the
+  deployment has an edge (#268). Volume abuse — many accounts under many
+  addresses — is unbounded here by construction and belongs at that edge too.
 
 ## Issues that were rewritten before they were picked up
 
