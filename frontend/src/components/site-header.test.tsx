@@ -42,6 +42,7 @@ describe("SiteHeader", () => {
 
     expect(screen.getByText("candidate@example.com")).toBeVisible();
     expect(screen.getByRole("link", { name: "Matches" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Your CV" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Your profile" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();

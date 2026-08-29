@@ -35,6 +35,9 @@ export async function SiteHeader() {
               <Link href="/matches" className="underline underline-offset-2">
                 Matches
               </Link>
+              <Link href="/cv" className="underline underline-offset-2">
+                Your CV
+              </Link>
               <Link href="/onboarding" className="underline underline-offset-2">
                 Your profile
               </Link>
