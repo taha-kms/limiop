@@ -21,6 +21,14 @@ export class CredentialsRejectedError extends Error {
   }
 }
 
+/** The password offered to authorise something destructive did not match. */
+export class PasswordNotConfirmedError extends Error {
+  constructor() {
+    super("That password was not accepted.");
+    this.name = "PasswordNotConfirmedError";
+  }
+}
+
 /** Too many attempts from here. Says how long only if the API said. */
 export class TooManyAttemptsError extends Error {
   constructor(retryAfterSeconds?: number) {
@@ -89,6 +97,30 @@ export async function signIn(credentials: Credentials): Promise<void> {
   if (response.status === 429) throw tooManyAttempts(response);
   if (response.status === 401) throw new CredentialsRejectedError();
   if (response.status === 422) throw new CredentialsRejectedError();
+  throw new AuthUnavailableError();
+}
+
+/**
+ * Delete the account and everything it owns. Irreversible.
+ *
+ * The password travels again because a cookie is enough to read and to write
+ * and not enough to destroy — the API asks for it, and this is the one call
+ * that sends it after signing in.
+ */
+export async function deleteAccount(password: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("/api/auth/account", {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+  } catch {
+    throw new AuthUnavailableError();
+  }
+  if (response.status === 204) return;
+  if (response.status === 403) throw new PasswordNotConfirmedError();
   throw new AuthUnavailableError();
 }
 

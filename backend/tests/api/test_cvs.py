@@ -464,3 +464,72 @@ def test_a_storage_failure_keeps_the_row_so_the_delete_can_be_retried(
 
     cv_client.storage.fail_delete = False
     assert cv_client.client.delete(f"/api/v1/cvs/{cv_id}").status_code == 204
+
+
+def test_deleting_an_account_takes_its_cvs_and_their_files(cv_client: CVClient) -> None:
+    """The upload policy's third promise: retained until the account is deleted."""
+    owner_id = sign_in(cv_client)
+    upload(cv_client)
+    profile_with_skills(cv_client, owner_id)
+    key = cv_client.storage.writes[0][1]
+
+    response = cv_client.client.request(
+        "DELETE", "/api/v1/me", json={"password": CREDENTIALS["password"]}
+    )
+
+    assert response.status_code == 204
+    assert cv_client.storage.deleted == [key]
+    assert cv_rows(cv_client.database_url) == []
+    assert stored_concepts(cv_client) == set()
+
+
+def test_deleting_an_account_ends_the_session(cv_client: CVClient) -> None:
+    sign_in(cv_client)
+
+    cv_client.client.request("DELETE", "/api/v1/me", json={"password": CREDENTIALS["password"]})
+
+    assert cv_client.client.get("/api/v1/me").status_code == 401
+
+
+def test_a_cookie_alone_cannot_delete_an_account(cv_client: CVClient) -> None:
+    """Reading and writing need a session. Destroying needs the password too."""
+    sign_in(cv_client)
+    upload(cv_client)
+
+    refused = cv_client.client.request("DELETE", "/api/v1/me", json={"password": "not it"})
+
+    assert refused.status_code == 403
+    assert len(cv_rows(cv_client.database_url)) == 1
+    assert cv_client.storage.deleted == []
+    assert cv_client.client.get("/api/v1/me").status_code == 200
+
+
+def test_an_unauthenticated_caller_cannot_delete_an_account(cv_client: CVClient) -> None:
+    response = cv_client.client.request("DELETE", "/api/v1/me", json={"password": "anything"})
+
+    assert response.status_code == 401
+
+
+def test_a_storage_failure_leaves_an_account_that_can_be_deleted_again(
+    cv_client: CVClient,
+) -> None:
+    """Rows pointing at files that are gone would be worse than trying twice."""
+    sign_in(cv_client)
+    upload(cv_client)
+    cv_client.storage.fail_delete = True
+
+    refused = cv_client.client.request(
+        "DELETE", "/api/v1/me", json={"password": CREDENTIALS["password"]}
+    )
+
+    assert refused.status_code == 503
+    assert len(cv_rows(cv_client.database_url)) == 1
+
+    cv_client.storage.fail_delete = False
+    assert (
+        cv_client.client.request(
+            "DELETE", "/api/v1/me", json={"password": CREDENTIALS["password"]}
+        ).status_code
+        == 204
+    )
+    assert cv_rows(cv_client.database_url) == []

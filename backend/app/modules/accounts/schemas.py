@@ -41,3 +41,15 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
+
+
+class AccountDeletionRequest(BaseModel):
+    """The password, re-stated to authorise deleting the account.
+
+    A cookie is enough to read and to write; it is not enough to destroy. Asked
+    for here rather than by the route so the rule travels with the shape.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    password: str
