@@ -23,11 +23,7 @@ from platform_db.models import Company, Job
 from platform_skills.candidates import propose
 from sqlalchemy import select
 
-from job_ingestion.boilerplate import (
-    BoilerplatePolicy,
-    self_describing_blocks,
-    without_blocks,
-)
+from job_ingestion.boilerplate import BoilerplatePolicy, blocks_to_remove, without_blocks
 from job_ingestion.database import Database
 
 # The terms #245 named, from twenty observations read by hand.
@@ -63,10 +59,7 @@ def stripped(postings: Sequence[Posting], policy: BoilerplatePolicy) -> list[Pos
     for employer, description in postings:
         by_employer[employer].append(description)
 
-    removable = {
-        employer: self_describing_blocks(employer, descriptions, policy)
-        for employer, descriptions in by_employer.items()
-    }
+    removable = blocks_to_remove(by_employer, policy)
     return [
         (employer, without_blocks(description, removable[employer]))
         for employer, description in postings

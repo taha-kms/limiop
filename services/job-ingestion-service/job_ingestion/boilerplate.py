@@ -188,6 +188,23 @@ def self_describing_blocks(
     )
 
 
+def blocks_to_remove(
+    descriptions_by_employer: Mapping[str, Sequence[str]],
+    policy: BoilerplatePolicy | None = None,
+) -> dict[str, frozenset[str]]:
+    """The removable blocks of every employer in a catalogue.
+
+    For a caller holding all of an employer's postings at once — a measurement
+    or a backfill — rather than the handful a run fetched. There is no separate
+    corpus to consult, because this is the corpus.
+    """
+    applied = policy if policy is not None else BoilerplatePolicy()
+    return {
+        employer: self_describing_blocks(employer, descriptions, applied)
+        for employer, descriptions in descriptions_by_employer.items()
+    }
+
+
 def without_blocks(description: str, removable: frozenset[str]) -> str:
     """The description with the named blocks gone.
 
