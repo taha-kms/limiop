@@ -24,6 +24,7 @@ target_metadata = Base.metadata
 PLATFORM_TABLES = frozenset(
     {
         "companies",
+        "ingestion_runs",
         "job_provenance",
         "job_skill_mentions",
         "job_skills",

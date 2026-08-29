@@ -22,6 +22,7 @@ from job_ingestion.database import Database
 from job_ingestion.persistence import SourceRegistration
 from job_ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
 from job_ingestion.reconciliation import ReconciliationResult, reconcile
+from job_ingestion.runs import complete_run, recorded_run
 
 DISPLAY_NAME = "Arbeitnow"
 
@@ -87,13 +88,15 @@ async def ingest_arbeitnow(
     resolved = config if config is not None else ArbeitnowConfig()
     started_at = datetime.now(UTC)
     try:
-        async with ArbeitnowClient(resolved, http_client=http_client) as client:
-            summary = await build_run(
-                client,
-                max_records,
-                skill_alias_version=app_settings.skill_alias_version,
-            ).execute(database)
-        await reconcile_after(database, summary, run_started_at=started_at)
+        async with recorded_run(database, SOURCE_KEY) as run_id:
+            async with ArbeitnowClient(resolved, http_client=http_client) as client:
+                summary = await build_run(
+                    client,
+                    max_records,
+                    skill_alias_version=app_settings.skill_alias_version,
+                ).execute(database)
+            await reconcile_after(database, summary, run_started_at=started_at)
+        await complete_run(database, run_id, summary)
         return summary
     finally:
         await database.dispose()
