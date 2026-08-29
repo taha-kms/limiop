@@ -23,6 +23,7 @@ from platform_db.models.catalog import Job
 from platform_db.models.job_skills import JobSkill, JobSkillMention
 from platform_db.models.skills import SkillAliasVersion, SkillSurfaceForm
 from platform_skills import EXTRACTOR_VERSION, Vocabulary, extract_mentions
+from platform_skills.candidates import unknown_terms
 from sqlalchemy import delete, func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -34,6 +35,16 @@ class SkillVocabulary:
 
     version: str
     terms: Vocabulary
+
+    @property
+    def known_forms(self) -> frozenset[str]:
+        """Every spelling the vocabulary already contains, normalized.
+
+        A candidate matching one of these is not unknown: the extractor
+        recorded it as a skill, and proposing it again would put the same term
+        in both tables.
+        """
+        return frozenset(" ".join(form.split()).casefold() for form in self.terms)
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +170,15 @@ def plan_skills(text: str, vocabulary: SkillVocabulary) -> SkillPlan:
             continue
         normalized_by_form.setdefault(surface_form, mention.normalized_form)
         spans_by_form.setdefault(surface_form, []).append(mention.span)
+
+    # Terms the vocabulary has never heard of. The extractor above can only
+    # match what it was given, so without this the observation inbox stays
+    # empty and the closed admission gate can never be re-decided against
+    # anything. Nothing generated here reaches `job_skills`.
+    for candidate in unknown_terms(text, vocabulary.known_forms):
+        surface_form = collapse_whitespace(candidate.surface_form)
+        normalized_by_form.setdefault(surface_form, surface_form.casefold())
+        spans_by_form.setdefault(surface_form, []).append(candidate.span)
 
     observations = {
         surface_form: Observation(

@@ -89,10 +89,9 @@ def test_occurrences_groups_by_the_spelling_the_unique_key_uses() -> None:
     """
     plan = plan_skills("Data Analysis and data analysis and data analysis", VOCABULARY)
 
-    assert {form: it.occurrences for form, it in plan.observations.items()} == {
-        "Data Analysis": 1,
-        "data analysis": 2,
-    }
+    counts = {form: it.occurrences for form, it in plan.observations.items()}
+    assert counts["Data Analysis"] == 1
+    assert counts["data analysis"] == 2
 
 
 def test_a_phrase_matched_across_flattened_markup_is_stored_as_one_line() -> None:
@@ -116,17 +115,34 @@ def test_a_posting_naming_nothing_plans_nothing() -> None:
     assert plan.counts.unknown == 0
 
 
-def test_a_term_outside_the_vocabulary_is_invisible_to_the_extractor() -> None:
-    """The extractor matches a vocabulary; it does not discover unknown skills.
+def test_a_term_outside_the_vocabulary_is_observed_rather_than_lost() -> None:
+    """The extractor matches a vocabulary; the candidate generator does not.
 
-    This is why `job_skill_mentions` stays empty against a vocabulary with no
-    ambiguous forms, and why the observation inbox cannot yet answer the
-    unknown-skill question the gate evaluation deferred to it.
+    Until #205 this asserted the opposite, and it was the reason
+    `job_skill_mentions` stayed structurally empty and the closed admission gate
+    could never be re-decided against anything.
     """
     plan = plan_skills("Deep experience with Kubernetes and Rust.", VOCABULARY)
 
     assert plan.concepts == {}
-    assert plan.observations == {}
+    assert "Kubernetes" in plan.observations
+    assert "Rust" in plan.observations
+
+
+def test_a_generated_candidate_never_becomes_a_skill() -> None:
+    """The gate decided in #190 is unchanged: observed is not admitted."""
+    plan = plan_skills("Deep experience with Kubernetes and Rust.", VOCABULARY)
+
+    assert plan.concepts == {}
+    assert plan.counts.resolved == 0
+
+
+def test_a_term_the_vocabulary_already_holds_is_not_also_observed() -> None:
+    """Otherwise the same term would sit in both tables."""
+    plan = plan_skills("We use Python here every day for the work.", VOCABULARY)
+
+    assert PYTHON in plan.concepts
+    assert "Python" not in plan.observations
 
 
 SOURCE = SourceRegistration(
