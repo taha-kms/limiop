@@ -238,6 +238,7 @@ def test_nothing_is_dropped_from_an_employer_that_never_names_itself() -> None:
     ("field", "value"),
     [
         pytest.param("minimum_postings", 1, id="a pattern of one posting"),
+        pytest.param("minimum_postings_in_hand", 1, id="a repetition of one posting"),
         pytest.param("minimum_share", 0.0, id="a share of nothing"),
         pytest.param("minimum_share", 1.5, id="a share above everything"),
     ],
