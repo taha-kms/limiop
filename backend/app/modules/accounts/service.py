@@ -76,6 +76,33 @@ async def end_all_sessions(session: AsyncSession, user: User) -> None:
     await session.commit()
 
 
+async def change_password(
+    session: AsyncSession,
+    *,
+    user: User,
+    current_password: str,
+    new_password: str,
+) -> int:
+    """Replace an account's password and end every session it had.
+
+    The current password is re-stated because a cookie is enough to read and to
+    write, and not enough to replace the credential that issues cookies.
+
+    Returns the token version the caller's own device must be re-issued under.
+    Read before the commit rather than after it, so the number handed back is
+    the one that was stored and never a re-read that could have moved on.
+    """
+    if not await verify_password_in_thread(current_password, user.password_hash):
+        raise PasswordNotConfirmed
+
+    user.password_hash = await hash_password_in_thread(new_password)
+    user.token_version += 1
+    version = user.token_version
+    session.add(user)
+    await session.commit()
+    return version
+
+
 async def delete_account(
     session: AsyncSession,
     storage: CVStorage,

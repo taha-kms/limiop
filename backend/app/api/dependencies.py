@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, cast
 
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,24 @@ from app.modules.cvs.storage import CVStorage
 # Declared here because both the route that sets it and the dependency that
 # reads it need the same name, and two copies is one rename away from a bug.
 SESSION_COOKIE = "session"
+
+
+def set_session_cookie(response: Response, token: str, settings: Settings) -> None:
+    """Attach a session token to the response.
+
+    One writer, because a browser only replaces a cookie with one carrying the
+    same name, path and flags. Two hand-written copies are one edit away from
+    leaving a device holding the token that was meant to be replaced.
+    """
+    response.set_cookie(
+        SESSION_COOKIE,
+        token,
+        httponly=True,
+        secure=settings.session_cookie_secure,
+        samesite="lax",
+        max_age=settings.session_lifetime_minutes * 60,
+        path="/",
+    )
 
 
 def get_database(request: Request) -> Database:

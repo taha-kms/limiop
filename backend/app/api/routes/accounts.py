@@ -13,6 +13,7 @@ from app.api.dependencies import (
     get_attempt_throttle,
     get_database_session,
     refuse_exhausted_attempts,
+    set_session_cookie,
 )
 from app.api.throttle import AttemptThrottle, account_key
 from app.core.config import Settings
@@ -90,15 +91,7 @@ async def log_in(
     )
     # The token goes only into the cookie. Putting it in the body as well would
     # hand it to any script on the page, which is what HttpOnly is preventing.
-    response.set_cookie(
-        SESSION_COOKIE,
-        token,
-        httponly=True,
-        secure=settings.session_cookie_secure,
-        samesite="lax",
-        max_age=settings.session_lifetime_minutes * 60,
-        path="/",
-    )
+    set_session_cookie(response, token, settings)
 
 
 @sessions_router.delete("", status_code=status.HTTP_204_NO_CONTENT)
