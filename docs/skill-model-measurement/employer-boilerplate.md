@@ -70,9 +70,14 @@ quantity, which is what makes them comparable.
 
 | | Before | After | Change |
 | --- | ---: | ---: | ---: |
-| Observations proposed | 104,352 | 77,906 | **−25.3%** |
-| Distinct terms | 16,541 | 16,490 | −0.3% |
-| Description characters | 8,460,046 | 7,188,700 | −15.0% |
+| Observations proposed | 104,352 | 77,877 | **−25.4%** |
+| Distinct terms | 16,541 | 16,484 | −0.3% |
+| Description characters | 8,460,046 | 7,188,415 | −15.0% |
+
+Recomputed after #280, #283 and #286 changed the rule. The first numbers
+published here were 77,906 / 16,490 / 7,188,700 over 661 postings; it is 671
+postings now, and a quoted measurement that no longer reproduces is worse than
+no measurement.
 
 The two rows say different things and both are worth reading. A quarter of
 everything the generator proposes came from text no employer wrote about a role.

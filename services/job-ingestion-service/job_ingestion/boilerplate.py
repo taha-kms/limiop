@@ -269,6 +269,9 @@ def _stored_blocks(
     naming = {block: seen for block, seen in counts.items() if f" {marker} " in block}
     carrying = max(naming.values(), default=0)
     stated = policy.minimum_share * len(descriptions)
+    # Two carriers is the same bar a run applies, and for the same reason: with
+    # one, every block it holds is carried by all of them. On this catalogue the
+    # only block admitted at exactly two is an `About ...` heading.
     nearly_all = NEARLY_ALL * carrying if carrying >= policy.minimum_postings_in_hand else None
 
     return frozenset(
