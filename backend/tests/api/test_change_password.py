@@ -136,7 +136,12 @@ def test_a_successful_change_does_not_spend_an_attempt(throttled_client: TestCli
 
     for _ in range(3):
         assert change(throttled_client, current=CREDENTIALS["password"]).status_code == 204
+        # Between changes rather than only at the end: each one bumps the
+        # version, so a client reusing a cookie from before the bump would go on
+        # passing here for the wrong reason.
+        assert throttled_client.get("/api/v1/me").status_code == 200
         assert (
             change(throttled_client, current=REPLACEMENT, new=CREDENTIALS["password"]).status_code
             == 204
         )
+        assert throttled_client.get("/api/v1/me").status_code == 200
