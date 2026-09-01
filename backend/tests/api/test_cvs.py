@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import PostgresDsn
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -664,3 +664,44 @@ def test_a_deletion_confirmation_cannot_be_guessed_indefinitely(cv_client: CVCli
 
     assert refused.status_code == 429
     assert cv_client.client.get("/api/v1/me").status_code == 200
+
+
+def test_superseding_a_cv_that_is_already_gone_does_nothing(cv_client: CVClient) -> None:
+    """Two uploads can both reach this; the one whose CV lost has nothing to do."""
+    owner_id = sign_in(cv_client)
+    upload(cv_client)
+
+    asyncio.run(_supersede(cv_client, owner_id, keeping=uuid4()))
+
+    assert len(cv_rows(cv_client.database_url)) == 1
+    assert cv_client.storage.deleted == []
+
+
+def test_deleting_an_account_that_is_already_gone_does_nothing(cv_client: CVClient) -> None:
+    """The account went while this was confirming the password. Nothing to delete."""
+    sign_in(cv_client)
+    upload(cv_client)
+
+    asyncio.run(_delete_a_vanished_account(cv_client))
+
+    assert cv_client.storage.deleted == []
+
+
+async def _delete_a_vanished_account(context: CVClient) -> None:
+    from app.db.session import Database
+    from app.modules.accounts.models import User
+    from app.modules.accounts.service import delete_account
+
+    database = Database(context.database_url)
+    try:
+        async with database.session() as session:
+            stale = (await session.scalars(select(User))).one()
+            engine = create_engine(str(context.database_url))
+            with engine.begin() as connection:
+                connection.execute(text("DELETE FROM users WHERE id = :id"), {"id": stale.id})
+            engine.dispose()
+            await delete_account(
+                session, context.storage, user=stale, password=CREDENTIALS["password"]
+            )
+    finally:
+        await database.dispose()
