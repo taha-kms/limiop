@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { POST as CHANGE_PASSWORD } from "../password/route";
 import { POST as REGISTER } from "../register/route";
+import { DELETE as END_EVERY_SESSION } from "./all/route";
 import { DELETE, POST } from "./route";
 
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
@@ -106,6 +108,65 @@ describe("account proxy", () => {
 
     expect(response.status).toBe(201);
     expect(fetch.mock.calls[0][0]).toBe("http://api:8000/api/v1/accounts");
+  });
+
+  it("ends every session through the endpoint that bumps the version", async () => {
+    // Not the sibling route: that one clears a cookie and leaves other devices
+    // holding tokens that still work.
+    const cleared = "session=; Max-Age=0; Path=/";
+    const fetch = vi.fn().mockResolvedValue(signedInUpstream(204, [cleared]));
+    vi.mocked(cookies).mockResolvedValue({ toString: () => "session=token" } as never);
+    vi.stubGlobal("fetch", fetch);
+
+    const response = await END_EVERY_SESSION();
+
+    expect(response.status).toBe(204);
+    expect(response.headers.getSetCookie()).toEqual([cleared]);
+    expect(fetch.mock.calls[0][0]).toBe("http://api:8000/api/v1/sessions/all");
+  });
+
+  it("carries the re-issued cookie back when a password changes", async () => {
+    // The point of proxying this one: the API answers a password change with a
+    // session for this device under the new token version, and without that
+    // header the change would sign the caller out of the page they made it on.
+    const reissued = "session=fresh; HttpOnly; Path=/; SameSite=lax";
+    const fetch = vi.fn().mockResolvedValue(signedInUpstream(204, [reissued]));
+    vi.stubGlobal("fetch", fetch);
+
+    const response = await CHANGE_PASSWORD(
+      new Request("http://frontend/api/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: "old", new_password: "a new long one" }),
+      }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(response.headers.getSetCookie()).toEqual([reissued]);
+    expect(fetch.mock.calls[0][0]).toBe("http://api:8000/api/v1/me/password");
+  });
+
+  it("passes the ceiling's Retry-After through on a password change", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json(
+            { detail: "too many attempts" },
+            { status: 429, headers: { "retry-after": "42" } },
+          ),
+        ),
+    );
+
+    const response = await CHANGE_PASSWORD(
+      new Request("http://frontend/api/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: "old", new_password: "a new long one" }),
+      }),
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("42");
   });
 
   it("turns an unreachable API into a gateway response rather than a crash", async () => {

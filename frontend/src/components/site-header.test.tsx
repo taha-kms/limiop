@@ -19,6 +19,7 @@ describe("SiteHeader", () => {
     expect(screen.getByRole("link", { name: "Sign in" })).toBeVisible();
     expect(screen.getByRole("link", { name: "Create an account" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Your profile" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Account" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Matches" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
   });
@@ -46,5 +47,13 @@ describe("SiteHeader", () => {
     expect(screen.getByRole("link", { name: "Your profile" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
     expect(screen.queryByRole("link", { name: "Sign in" })).toBeNull();
+  });
+
+  it("reaches the account page, which is the only way in to what it holds", async () => {
+    currentAccount.mockResolvedValue({ id: "u1", email: "candidate@example.com" });
+
+    render(await SiteHeader());
+
+    expect(screen.getByRole("link", { name: "Account" })).toHaveAttribute("href", "/account");
   });
 });

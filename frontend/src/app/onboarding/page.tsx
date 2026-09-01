@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { DeleteAccountForm } from "@/components/delete-account-form";
 import { OnboardingForm } from "@/components/onboarding-form";
 import { currentAccount } from "@/lib/api/session";
 
@@ -27,7 +26,6 @@ export default async function OnboardingPage() {
         </p>
       </header>
       <OnboardingForm />
-      <DeleteAccountForm />
     </main>
   );
 }
