@@ -53,3 +53,19 @@ class AccountDeletionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     password: str
+
+
+class PasswordChangeRequest(BaseModel):
+    """The password being replaced, and the one replacing it.
+
+    The new password is held to the same floor registration applies. The
+    current one is not, for the reason `LoginRequest` gives: the rules that
+    apply when choosing a password must not leak into checking one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    current_password: str
+    new_password: Annotated[
+        str, Field(min_length=MINIMUM_PASSWORD_LENGTH, max_length=MAXIMUM_PASSWORD_LENGTH)
+    ]
