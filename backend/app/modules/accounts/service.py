@@ -93,13 +93,25 @@ async def delete_account(
     cannot reach a filesystem, so they are removed here, and before the row —
     an account that still exists can be deleted again, while files nothing
     points at are what the upload policy promises not to keep.
+
+    The account is taken before anything hanging off it is read. Without that,
+    an upload committing while the files are being deleted is never covered: its
+    key was not in the list, and the cascade reaps its row, leaving a file
+    nothing names and nothing can ever name again. Holding the row makes that
+    insert wait — every CV row takes a lock on its owner to exist — and then
+    fail against an account that is gone, which the upload path already cleans
+    up after.
     """
     if not await verify_password_in_thread(password, user.password_hash):
         raise PasswordNotConfirmed
+
+    held = await session.scalar(select(User).where(User.id == user.id).with_for_update())
+    if held is None:
+        return
 
     keys = (await session.scalars(select(CV.storage_key).where(CV.owner_id == user.id))).all()
     for key in keys:
         await storage.delete(key)
 
-    await session.delete(user)
+    await session.delete(held)
     await session.commit()
