@@ -221,6 +221,22 @@ describe("changePassword", () => {
       TooManyAttemptsError,
     );
   });
+
+  it("reports an unreachable service rather than letting the fetch error escape", async () => {
+    fetchMock.mockRejectedValue(new Error("offline"));
+
+    await expect(changePassword("old one here", "a new one here")).rejects.toBeInstanceOf(
+      AuthUnavailableError,
+    );
+  });
+
+  it("reports an answer it does not recognise as the service being unavailable", async () => {
+    fetchMock.mockResolvedValue(answered(500));
+
+    await expect(changePassword("old one here", "a new one here")).rejects.toBeInstanceOf(
+      AuthUnavailableError,
+    );
+  });
 });
 
 describe("signOutEverywhere", () => {
@@ -236,6 +252,12 @@ describe("signOutEverywhere", () => {
 
   it("reports anything but a 204 as the service being unavailable", async () => {
     fetchMock.mockResolvedValue(answered(500));
+
+    await expect(signOutEverywhere()).rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+
+  it("reports an unreachable service rather than letting the fetch error escape", async () => {
+    fetchMock.mockRejectedValue(new Error("offline"));
 
     await expect(signOutEverywhere()).rejects.toBeInstanceOf(AuthUnavailableError);
   });

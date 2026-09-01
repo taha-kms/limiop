@@ -110,9 +110,12 @@ test("a candidate can change their password and stay signed in", async ({ page }
   await page.getByRole("button", { name: "Change password" }).click();
 
   await expect(page.getByRole("status")).toContainText("Password changed");
+  // Scoped to the header, which is where being signed in is stated. The page
+  // itself also names the account, and an unscoped match resolves to both.
+  const header = page.getByRole("navigation", { name: "Main" });
   // Still here, and still signed in: the response carried a cookie under the
   // new token version, which is the half of this that a stale read breaks.
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(header.getByText(email)).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.goto("/sign-in");
@@ -120,7 +123,7 @@ test("a candidate can change their password and stay signed in", async ({ page }
   await page.getByLabel("Password").fill(replacement);
   await page.getByRole("button", { name: "Sign in" }).click();
 
-  await expect(page.getByText(email)).toBeVisible();
+  await expect(header.getByText(email)).toBeVisible();
 });
 
 test("the catalogue stays public, and applying needs no account", async ({ page }) => {
