@@ -8,7 +8,7 @@ from typing import IO, Protocol
 from uuid import UUID
 
 from anyio import to_thread
-from sqlalchemy import delete, select
+from sqlalchemy import delete, literal, select, tuple_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -133,9 +133,27 @@ async def _remove_superseded(
     old file would not go would trade the thing the candidate asked for against
     the thing they no longer care about. A file that cannot be removed keeps its
     row, because an orphan row is still deletable and an orphan file is not.
+
+    Only what precedes this upload is removed. Two uploads racing each other
+    would otherwise each delete the other and leave the owner with nothing,
+    though both were answered 201; ordered by when they were created, the later
+    one always survives. The rows are taken before they are removed, so a
+    replacement cannot interleave with the processing of the CV it replaces —
+    that read holds the same row while it writes the skills.
     """
+    kept = await session.scalar(select(CV).where(CV.id == keeping))
+    if kept is None:
+        return
     superseded = (
-        await session.scalars(select(CV).where(CV.owner_id == owner_id, CV.id != keeping))
+        await session.scalars(
+            select(CV)
+            .where(
+                CV.owner_id == owner_id,
+                CV.id != keeping,
+                tuple_(CV.created_at, CV.id) < tuple_(literal(kept.created_at), literal(kept.id)),
+            )
+            .with_for_update()
+        )
     ).all()
     for cv in superseded:
         try:

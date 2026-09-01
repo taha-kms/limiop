@@ -2,6 +2,7 @@ import asyncio
 import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from datetime import timedelta
 from tempfile import SpooledTemporaryFile
 from typing import IO, Any
 from uuid import UUID, uuid4
@@ -573,3 +574,93 @@ def test_the_current_cv_is_the_one_that_was_uploaded_last(cv_client: CVClient) -
     second = upload(cv_client, b"%PDF-1.7\nnewer").json()["id"]
 
     assert cv_client.client.get("/api/v1/cvs").json()["id"] == second
+
+
+def test_two_overlapping_uploads_leave_the_later_one(cv_client: CVClient) -> None:
+    """Each upload removes what precedes it, so neither can remove the other.
+
+    Ordered rather than "everything but mine": with that rule two uploads racing
+    each other each delete the other, and the owner is left with nothing though
+    both were answered 201.
+    """
+    sign_in(cv_client)
+    first = upload(cv_client).json()["id"]
+
+    second = upload(cv_client, b"%PDF-1.7\nnewer").json()["id"]
+
+    rows = cv_rows(cv_client.database_url)
+    assert [str(row["id"]) for row in rows] == [second]
+    assert str(rows[0]["id"]) != first
+
+
+def test_an_upload_removes_nothing_newer_than_itself(cv_client: CVClient) -> None:
+    """What a race looks like from the loser's side, made deterministic.
+
+    Two uploads that overlap both run this cleanup. If it removed everything but
+    its own CV, each would remove the other and the owner would be left with
+    nothing, though both were answered 201. The earlier one's cleanup has to
+    leave the later one alone.
+    """
+    owner_id = sign_in(cv_client)
+    mine = UUID(upload(cv_client).json()["id"])
+    later = insert_cv(cv_client, owner_id, after=mine)
+
+    asyncio.run(_supersede(cv_client, owner_id, keeping=mine))
+
+    assert {str(row["id"]) for row in cv_rows(cv_client.database_url)} == {
+        str(mine),
+        str(later),
+    }
+    assert cv_client.storage.deleted == []
+
+
+async def _supersede(context: CVClient, owner_id: UUID, *, keeping: UUID) -> None:
+    """Re-run one upload's cleanup, as if it had been slow to get there."""
+    from app.db.session import Database
+
+    database = Database(context.database_url)
+    try:
+        async with database.session() as session:
+            await service._remove_superseded(
+                session, context.storage, owner_id=owner_id, keeping=keeping
+            )
+    finally:
+        await database.dispose()
+
+
+def insert_cv(context: CVClient, owner_id: UUID, *, after: UUID) -> UUID:
+    """A CV row created after another, as a concurrent upload's would be."""
+    cv_id = uuid4()
+    engine = create_engine(str(context.database_url))
+    with engine.begin() as connection:
+        created_at = connection.execute(
+            text("SELECT created_at FROM cvs WHERE id = :id"), {"id": after}
+        ).scalar_one()
+        connection.execute(
+            text(
+                "INSERT INTO cvs (id, owner_id, storage_key, checksum_sha256, media_type,"
+                " size_bytes, processing_state, created_at, updated_at) VALUES"
+                " (:id, :owner, :key, :checksum, 'application/pdf', 10, 'pending', :at, :at)"
+            ),
+            {
+                "id": cv_id,
+                "owner": owner_id,
+                "key": f"{owner_id.hex}/{cv_id.hex}.pdf",
+                "checksum": "c" * 64,
+                "at": created_at + timedelta(seconds=1),
+            },
+        )
+    engine.dispose()
+    return cv_id
+
+
+def test_a_deletion_confirmation_cannot_be_guessed_indefinitely(cv_client: CVClient) -> None:
+    """The gate that guards something irreversible is bounded like the others."""
+    sign_in(cv_client)
+
+    for _ in range(10):
+        cv_client.client.request("DELETE", "/api/v1/me", json={"password": "not it"})
+    refused = cv_client.client.request("DELETE", "/api/v1/me", json={"password": "not it"})
+
+    assert refused.status_code == 429
+    assert cv_client.client.get("/api/v1/me").status_code == 200
