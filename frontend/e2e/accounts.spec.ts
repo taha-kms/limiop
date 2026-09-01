@@ -89,6 +89,40 @@ test("an anonymous visitor asking for the profile is sent to sign in and back ag
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Build your candidate profile");
 });
 
+test("a candidate can change their password and stay signed in", async ({ page }) => {
+  const email = newAddress();
+  const replacement = "an-even-longer-replacement-password";
+
+  await page.goto("/register");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill(PASSWORD);
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect(page.getByText(email)).toBeVisible();
+
+  await page
+    .getByRole("navigation", { name: "Main" })
+    .getByRole("link", { name: "Account" })
+    .click();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your account");
+
+  await page.getByLabel("Current password").fill(PASSWORD);
+  await page.getByLabel("New password").fill(replacement);
+  await page.getByRole("button", { name: "Change password" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Password changed");
+  // Still here, and still signed in: the response carried a cookie under the
+  // new token version, which is the half of this that a stale read breaks.
+  await expect(page.getByText(email)).toBeVisible();
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.goto("/sign-in");
+  await page.getByLabel("Email address").fill(email);
+  await page.getByLabel("Password").fill(replacement);
+  await page.getByRole("button", { name: "Sign in" }).click();
+
+  await expect(page.getByText(email)).toBeVisible();
+});
+
 test("the catalogue stays public, and applying needs no account", async ({ page }) => {
   await page.goto("/jobs");
 

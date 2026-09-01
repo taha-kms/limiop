@@ -41,6 +41,14 @@ export class TooManyAttemptsError extends Error {
   }
 }
 
+/** The chosen password does not meet the floor the API applies. */
+export class WeakPasswordError extends Error {
+  constructor() {
+    super("Choose a password of at least 12 characters.");
+    this.name = "WeakPasswordError";
+  }
+}
+
 /** The account could not be created. The API refuses to say why, so nor do we. */
 export class RegistrationRefusedError extends Error {
   constructor(message: string) {
@@ -121,7 +129,59 @@ export async function deleteAccount(password: string): Promise<void> {
   }
   if (response.status === 204) return;
   if (response.status === 403) throw new PasswordNotConfirmedError();
+  // The API bounds this the same way it bounds signing in, so a caller who has
+  // spent the account's attempts is told to wait rather than that the service
+  // is broken.
+  if (response.status === 429) throw tooManyAttempts(response);
   throw new AuthUnavailableError();
+}
+
+/**
+ * Replace the password, ending every other session.
+ *
+ * The current password travels for the same reason deleting does: a cookie is
+ * enough to read and to write, and not enough to replace the credential that
+ * issues cookies. The response carries a fresh cookie for this device, which is
+ * why it goes through the auth proxy.
+ */
+export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("/api/auth/password", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { accept: "application/json", "content-type": "application/json" },
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  } catch {
+    throw new AuthUnavailableError();
+  }
+  if (response.status === 204) return;
+  if (response.status === 403) throw new PasswordNotConfirmedError();
+  if (response.status === 429) throw tooManyAttempts(response);
+  if (response.status === 422) throw new WeakPasswordError();
+  throw new AuthUnavailableError();
+}
+
+/**
+ * End every session this account has, including this one.
+ *
+ * Distinct from `signOut`, which clears one cookie and leaves other devices
+ * alone. This invalidates the tokens themselves, so a device that still holds
+ * one is refused rather than merely asked to sign in again.
+ */
+export async function signOutEverywhere(): Promise<void> {
+  let response: Response;
+  try {
+    response = await fetch("/api/auth/session/all", {
+      method: "DELETE",
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+    });
+  } catch {
+    throw new AuthUnavailableError();
+  }
+  if (response.status !== 204) throw new AuthUnavailableError();
 }
 
 export async function signOut(): Promise<void> {

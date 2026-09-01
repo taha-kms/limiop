@@ -41,6 +41,9 @@ export async function SiteHeader() {
               <Link href="/onboarding" className="underline underline-offset-2">
                 Your profile
               </Link>
+              <Link href="/account" className="underline underline-offset-2">
+                Account
+              </Link>
               <span className="text-slate-600 dark:text-slate-400">{account.email}</span>
               <SignOutButton />
             </>

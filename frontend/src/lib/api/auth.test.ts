@@ -6,10 +6,13 @@ import {
   PasswordNotConfirmedError,
   RegistrationRefusedError,
   TooManyAttemptsError,
+  WeakPasswordError,
+  changePassword,
   deleteAccount,
   register,
   signIn,
   signOut,
+  signOutEverywhere,
 } from "./auth";
 
 const fetchMock = vi.fn();
@@ -179,5 +182,69 @@ describe("deleteAccount", () => {
     fetchMock.mockResolvedValue(answered(503));
 
     await expect(deleteAccount("correct horse")).rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+});
+
+describe("changePassword", () => {
+  it("sends both passwords under the names the API reads", async () => {
+    fetchMock.mockResolvedValue(answered(204));
+
+    await expect(changePassword("old one here", "a new one here")).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/auth/password");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({
+      current_password: "old one here",
+      new_password: "a new one here",
+    });
+  });
+
+  it("reports a refused current password as its own failure", async () => {
+    fetchMock.mockResolvedValue(answered(403));
+
+    await expect(changePassword("wrong", "a new one here")).rejects.toBeInstanceOf(
+      PasswordNotConfirmedError,
+    );
+  });
+
+  it("tells the reader the new password is too short rather than that this broke", async () => {
+    fetchMock.mockResolvedValue(answered(422));
+
+    await expect(changePassword("old one here", "short")).rejects.toBeInstanceOf(WeakPasswordError);
+  });
+
+  it("passes the ceiling through, since this route is bounded like signing in", async () => {
+    fetchMock.mockResolvedValue(answered(429, { "retry-after": "45" }));
+
+    await expect(changePassword("old one here", "a new one here")).rejects.toBeInstanceOf(
+      TooManyAttemptsError,
+    );
+  });
+});
+
+describe("signOutEverywhere", () => {
+  it("calls the route that ends every session, not the one that clears a cookie", async () => {
+    fetchMock.mockResolvedValue(answered(204));
+
+    await expect(signOutEverywhere()).resolves.toBeUndefined();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/auth/session/all");
+    expect(init.method).toBe("DELETE");
+  });
+
+  it("reports anything but a 204 as the service being unavailable", async () => {
+    fetchMock.mockResolvedValue(answered(500));
+
+    await expect(signOutEverywhere()).rejects.toBeInstanceOf(AuthUnavailableError);
+  });
+});
+
+describe("deleteAccount, when the account has spent its attempts", () => {
+  it("says to wait rather than that the service is broken", async () => {
+    fetchMock.mockResolvedValue(answered(429, { "retry-after": "30" }));
+
+    await expect(deleteAccount("correct horse")).rejects.toBeInstanceOf(TooManyAttemptsError);
   });
 });
