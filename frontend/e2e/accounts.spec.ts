@@ -117,7 +117,14 @@ test("a candidate can change their password and stay signed in", async ({ page }
   // new token version, which is the half of this that a stale read breaks.
   await expect(header.getByText(email)).toBeVisible();
 
-  await page.getByRole("button", { name: "Sign out" }).click();
+  // Also scoped: this page offers "Sign out everywhere", which an unscoped
+  // name match reaches as well -- and it is the button that would make the
+  // rest of this test prove nothing.
+  await header.getByRole("button", { name: "Sign out" }).click();
+  // Waited for rather than navigated over: signing out is a document
+  // replacement, and a goto issued while it is in flight is aborted.
+  await expect(header.getByRole("link", { name: "Sign in" })).toBeVisible();
+
   await page.goto("/sign-in");
   await page.getByLabel("Email address").fill(email);
   await page.getByLabel("Password").fill(replacement);
