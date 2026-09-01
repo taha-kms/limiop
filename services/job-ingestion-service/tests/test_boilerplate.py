@@ -272,6 +272,40 @@ def test_a_whole_catalogue_is_judged_employer_by_employer() -> None:
     assert removable["tiny ltd"] == frozenset()
 
 
+def test_a_part_cleaned_employer_is_still_cleaned() -> None:
+    """Ingestion strips as it writes, so a catalogue is part cleaned when read.
+
+    A stripped posting carries none of the template. Counting it as one that
+    lacks a block would make it evidence against what it is proof of, and the
+    blurb would sit in the remaining postings forever — nothing rewrites an
+    unchanged posting.
+    """
+    cleaned = [REQUIREMENT] * 6
+    carrying = [f"{BLURB}\n{REQUIREMENT}"] * 4
+
+    removable = blocks_to_remove({"acme gmbh": [*cleaned, *carrying]})
+
+    assert removable["acme gmbh"] == frozenset({folded(BLURB)})
+
+
+def test_a_block_a_minority_of_the_carriers_share_is_kept() -> None:
+    """The stricter bar on that population: a role bullet naming the employer
+    is carried by some postings written from the template, not by all of them."""
+    duty = "Ensure Acme operates within the regulator's requirements."
+    postings = [f"{BLURB}\n{duty}"] * 2 + [BLURB] * 4
+
+    removable = blocks_to_remove({"acme gmbh": postings})
+
+    assert folded(BLURB) in removable["acme gmbh"]
+    assert folded(duty) not in removable["acme gmbh"]
+
+
+def test_one_posting_carrying_the_template_is_not_a_template() -> None:
+    postings = [f"{BLURB}\n{REQUIREMENT}", *[REQUIREMENT] * 5]
+
+    assert blocks_to_remove({"acme gmbh": postings})["acme gmbh"] == frozenset()
+
+
 def test_a_catalogue_takes_the_same_policy_as_a_run() -> None:
     strict = BoilerplatePolicy(minimum_postings=6)
 

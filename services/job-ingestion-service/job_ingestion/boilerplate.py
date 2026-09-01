@@ -56,6 +56,13 @@ MINIMUM_SHARE = 0.6
 # where the error collapses: 87.
 MINIMUM_POSTINGS_IN_HAND = 2
 
+# What a block needs among the postings that still carry the employer's
+# template, as opposed to among all of them. Higher, because that population is
+# already narrowed to postings written from the template: what the template is,
+# is what nearly all of them share. At 0.6 it also admits role bullets that
+# happen to name the employer — measured, two of them on this catalogue.
+NEARLY_ALL = 0.9
+
 # Short enough to be ambiguous. `Init` is a name, `init` is a prefix of
 # ordinary words, and the word boundary below is what keeps them apart; a
 # two-letter marker has no such protection.
@@ -220,9 +227,55 @@ def blocks_to_remove(
     """
     applied = policy if policy is not None else BoilerplatePolicy()
     return {
-        employer: self_describing_blocks(employer, descriptions, applied)
+        employer: _stored_blocks(employer, descriptions, applied)
         for employer, descriptions in descriptions_by_employer.items()
     }
+
+
+def _stored_blocks(
+    employer: str,
+    descriptions: Sequence[str],
+    policy: BoilerplatePolicy,
+) -> frozenset[str]:
+    """The removable blocks of one employer's stored postings.
+
+    Two ways in, because the population is not what it looks like. Ingestion
+    strips as it writes, so by the time anyone reads a catalogue it is part
+    cleaned, and a stripped posting carries none of the template: counting it as
+    one that lacks a block makes it evidence against what it is proof of. On a
+    catalogue six-tenths cleaned the plain share finds nothing at all and leaves
+    the rest carrying the blurb forever, since an unchanged posting is never
+    rewritten again.
+
+    So a block is template either because most of the employer's postings carry
+    it — the same rule a run applies, which keeps a clean catalogue's answer
+    exactly as it was — or because nearly every posting that still carries any
+    of the template carries it too. The second population is already narrowed to
+    postings written from the template, which is why the bar there is
+    near-unanimity: at the ordinary share it also admits role bullets that
+    happen to name the employer, and this catalogue has two.
+    """
+    if len(descriptions) < policy.minimum_postings:
+        return frozenset()
+
+    marker = employer_marker(employer)
+    if not marker:
+        return frozenset()
+
+    counts: Counter[str] = Counter()
+    for description in descriptions:
+        counts.update({folded(block) for block in blocks(description)})
+
+    naming = {block: seen for block, seen in counts.items() if f" {marker} " in block}
+    carrying = max(naming.values(), default=0)
+    stated = policy.minimum_share * len(descriptions)
+    nearly_all = NEARLY_ALL * carrying if carrying >= policy.minimum_postings_in_hand else None
+
+    return frozenset(
+        block
+        for block, seen in naming.items()
+        if seen >= stated or (nearly_all is not None and seen >= nearly_all)
+    )
 
 
 def without_blocks(description: str, removable: frozenset[str]) -> str:
