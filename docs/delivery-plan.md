@@ -352,13 +352,14 @@ listing page.
   it — and then the first cache is the cheapest one, not the most complete.
 
 **v1 serves German postings and is written in English.** German-looking
-postings are 410 of the 1,422 stored, and the published vocabulary holds no
-German surface form at all — not one. That sounds like it should be fatal and
-is not: 39.0% of German postings carry extracted skills against 43.9% of the
-rest, because the terms that matter in them are borrowed. `Python` is `Python`
-in a German posting. What the extractor needed for German was not a translation
-but a way to stop reading grammar as naming, which #205 measured and fixed with
-a capitalisation threshold.
+postings are 410 of the 1,422 stored, and the published vocabulary
+(`2026.08.29.2`) holds one German surface form in 138: `deutsch`, which resolves
+to the concept `German` — the language as a skill, not a skill named in German.
+That sounds like it should be fatal and is not: 39.0% of German postings carry
+extracted skills against 43.9% of the rest, because the terms that matter in
+them are borrowed. `Python` is `Python` in a German posting. What the extractor
+needed for German was not a translation but a way to stop reading grammar as
+naming, which #205 measured and fixed with a capitalisation threshold.
 
   So the answer is: no translated interface, no German alias table, and German
   postings ranked by the same English concepts as everything else. The
