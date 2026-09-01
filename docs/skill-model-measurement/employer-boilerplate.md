@@ -104,10 +104,21 @@ one employer's blurb, not a word from the language.
 - **Nothing already stored changes by itself.** The rule runs before a
   description is stored, so the 536 postings above keep their boilerplate until
   they are ingested again — or until the backfill is run. `scripts/strip_stored_boilerplate.py`
-  applies the same rule to what is in the database, reports before it writes and
-  writes only when told to. Against this catalogue it reports 661 of 1,422
-  postings, 3,537 blocks and 1,271,346 characters, which is the same 661
-  postings the measurement above predicts. It does not re-extract skills:
+  applies the rule to what is in the database, reports before it writes and
+  writes only when told to. Against this catalogue it reports 671 of 1,422
+  postings, 3,547 blocks and 1,271,631 characters.
+
+  Reading a catalogue is not reading a run, because ingestion strips as it
+  writes and a part-cleaned employer's stripped postings carry none of the
+  template. Counting them as postings that lack a block would make them evidence
+  against what they are proof of, and the blurb would sit in the rest forever —
+  nothing rewrites an unchanged posting. So a stored block is template either
+  because most of the employer's postings carry it, which is what a run asks and
+  keeps a clean catalogue's answer as it was, or because nearly all of the
+  postings that still carry any of the template carry it too. Near-unanimity on
+  that second population rather than the ordinary share: it is already narrowed
+  to postings written from the template, and at 0.6 it also admits role bullets
+  that name the employer — two of them here (#286). It does not re-extract skills:
   ingestion does that on its next pass over each posting, inside the transaction
   that stores it.
 - **Re-ingestion updates those rows rather than duplicating them.** The match
