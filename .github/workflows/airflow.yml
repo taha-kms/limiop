@@ -7,6 +7,9 @@ on:
       - 'services/job-ingestion-service/**'
       - 'platform/db/**'
       - 'platform/skills/**'
+      # test_compose.py reads this file, so a change to it has to be able to
+      # reach the suite that asserts against it.
+      - 'docker-compose.yml'
       - '.github/workflows/airflow.yml'
   push:
     branches: [main]
@@ -15,6 +18,9 @@ on:
       - 'services/job-ingestion-service/**'
       - 'platform/db/**'
       - 'platform/skills/**'
+      # test_compose.py reads this file, so a change to it has to be able to
+      # reach the suite that asserts against it.
+      - 'docker-compose.yml'
       - '.github/workflows/airflow.yml'
 
 permissions:
