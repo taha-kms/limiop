@@ -14,7 +14,13 @@ def test_default_compose_service_set_is_unchanged() -> None:
         name for name, service in COMPOSE["services"].items() if "profiles" not in service
     }
 
-    assert default_services == {"database", "migrate-platform", "migrate-backend", "api"}
+    assert default_services == {
+        "database",
+        "migrate-platform",
+        "migrate-backend",
+        "api",
+        "frontend",
+    }
 
 
 def test_airflow_services_use_the_pipeline_profile_and_private_database() -> None:
