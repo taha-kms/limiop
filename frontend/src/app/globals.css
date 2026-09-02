@@ -16,7 +16,9 @@
   --mist: #f1f5f9;
   --line: #dde5ee;
   --match: #994f0c;
-  --match-soft: #fdf4e6;
+  --match-soft: #fef3c7;
+  /* The glow carries no text, so it can be the yellow the label cannot be. */
+  --match-glow: #f7c948;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -29,7 +31,8 @@
     --mist: #101a2c;
     --line: #22314a;
     --match: #f0a93b;
-    --match-soft: #1d1708;
+    --match-soft: #2a2008;
+    --match-glow: #f7c948;
   }
 }
 
@@ -42,6 +45,7 @@
   --color-line: var(--line);
   --color-match: var(--match);
   --color-match-soft: var(--match-soft);
+  --color-match-glow: var(--match-glow);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-bricolage);
@@ -74,5 +78,119 @@ body {
 
   .rail > * {
     @apply snap-start;
+  }
+}
+
+/*
+ * The hero's cycling fit card.
+ *
+ * Keyframes rather than a script: the catalogue is tested to render with
+ * scripting turned off, and an illustration of the product should not be the
+ * one thing on the page that needs it. Every card sits in the same grid cell
+ * and takes its turn on a shared cycle, offset by its index.
+ */
+@keyframes fit-cycle {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96) rotate(-1.2deg);
+  }
+  /* Overshoots on the way in, which is what makes it read as bouncy rather
+     than as a cross-fade. */
+  3% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.02) rotate(0.4deg);
+  }
+  6% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  21% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97) rotate(1deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96) rotate(-1.2deg);
+  }
+}
+
+/* The fit filling in, on the same clock as the card carrying it. */
+@keyframes fit-fill {
+  0%,
+  4% {
+    transform: scaleX(0);
+  }
+  14%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+/* Held skills breathe. Nothing else on the page does, which is the point. */
+@keyframes fit-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--match-glow) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 10px 1px color-mix(in srgb, var(--match-glow) 85%, transparent);
+  }
+}
+
+@layer components {
+  .fit-stack {
+    display: grid;
+  }
+
+  .fit-stack > * {
+    grid-area: 1 / 1;
+  }
+
+  .fit-slide {
+    opacity: 0;
+    animation: fit-cycle calc(var(--count) * 3.4s) cubic-bezier(0.34, 1.4, 0.64, 1) infinite;
+    animation-delay: calc(var(--index) * 3.4s);
+  }
+
+  .fit-fill {
+    transform-origin: left;
+    animation: fit-fill calc(var(--count) * 3.4s) ease-out infinite;
+    animation-delay: calc(var(--index) * 3.4s);
+  }
+
+  .fit-held {
+    animation: fit-glow 2.4s ease-in-out infinite;
+  }
+
+  /* A pause anyone can reach without a script: hovering, or tabbing to
+     anything inside the card. */
+  .fit-stack:hover *,
+  .fit-stack:focus-within * {
+    animation-play-state: paused;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Freeze on the first card rather than cycling it silently. */
+  .fit-slide,
+  .fit-fill,
+  .fit-held {
+    animation: none;
+  }
+
+  .fit-slide {
+    opacity: 0;
+  }
+
+  .fit-slide:first-child {
+    opacity: 1;
+  }
+
+  .fit-fill {
+    transform: scaleX(1);
   }
 }

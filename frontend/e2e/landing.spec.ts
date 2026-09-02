@@ -52,3 +52,28 @@ test("the header marks the section you are on", async ({ page }) => {
     "page",
   );
 });
+
+test.describe("the fit card cycles", () => {
+  // Pure keyframes, so the roles are all in the document from the first byte
+  // and only which one is painted changes.
+  test("carries every role without scripting", async ({ page }) => {
+    await page.goto("/");
+
+    const examples = page.getByRole("list", { name: "Example matches" });
+    await expect(examples.locator("> li")).toHaveCount(4);
+    await expect(examples).toContainText("Data Engineer");
+    await expect(examples).toContainText("Platform Engineer");
+  });
+
+  test("holds still for a reader who asked it to", async ({ browser }) => {
+    const context = await browser.newContext({ reducedMotion: "reduce" });
+    const page = await context.newPage();
+    await page.goto("/");
+
+    // Frozen on the first card: the rest are painted out rather than cycling.
+    const first = page.getByRole("list", { name: "Example matches" }).locator("> li").first();
+    await expect(first).toHaveCSS("animation-name", "none");
+    await expect(first).toHaveCSS("opacity", "1");
+    await context.close();
+  });
+});
