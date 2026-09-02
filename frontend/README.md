@@ -70,6 +70,28 @@ The seeded catalogue is four fixed postings rather than live data, so the
 assertions are about behaviour and not about whatever the job board published
 this morning.
 
+## The container image
+
+```bash
+docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
+  -t skillsync-frontend .
+docker run -p 3000:3000 -e SKILLSYNC_API_URL=http://api:8000 skillsync-frontend
+```
+
+The build refuses an empty `NEXT_PUBLIC_API_URL` rather than falling back to
+the localhost default, because that fallback is inlined into the client bundle
+and would fail in every visitor's browser instead of here.
+
+`next.config.ts` sets `output: "standalone"`, so the runtime stage carries the
+traced dependency set rather than a full install. That is what keeps the image
+around 230 MB. Its entry point is `node server.js`, not `next start`, and it
+binds `HOSTNAME` -- which the image sets to `0.0.0.0`, since the default binds
+localhost and a container that does so publishes a port nothing answers on.
+
+`frontend/scripts/smoke_test_image.sh` starts a built image and checks both:
+that it answers from outside the container, and that the address it was built
+with really reached the client bundle.
+
 ## No route-level loading file
 
 `/jobs` deliberately has no `loading.tsx`. A route-level loading file makes the
