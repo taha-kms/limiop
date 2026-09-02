@@ -1,0 +1,98 @@
+name: Merge gate
+
+# No paths filter, deliberately. This is the one job that must report on every
+# pull request, because it is the one the ruleset requires: a required check
+# that declines to run leaves the pull request pending forever.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Ready to merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Wait for every check this pull request started
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          # This job's own check, which would otherwise wait on itself.
+          SELF: Ready to merge
+        run: |
+          set -euo pipefail
+
+          # Long enough for a queued workflow to register its check run. Polling
+          # immediately would find nothing pending and pass before the suites
+          # had started.
+          readonly SETTLE=60
+          readonly INTERVAL=15
+          readonly DEADLINE=$(( SECONDS + 1800 ))
+
+          # A conclusion that is none of these is a pass. `skipped` and
+          # `neutral` are included there on purpose: a path-filtered workflow
+          # that declined to run has not failed.
+          fails() {
+            jq -r --arg self "$SELF" '
+              [ .check_runs[]
+                | select(.name != $self)
+                | select(.conclusion == "failure" or .conclusion == "cancelled"
+                      or .conclusion == "timed_out" or .conclusion == "action_required")
+                | .name ] | .[]' "$1"
+          }
+
+          pending() {
+            jq -r --arg self "$SELF" '
+              [ .check_runs[]
+                | select(.name != $self)
+                | select(.status != "completed")
+                | .name ] | .[]' "$1"
+          }
+
+          sleep "$SETTLE"
+
+          confirmations=0
+          while :; do
+            gh api "/repos/${REPO}/commits/${SHA}/check-runs?per_page=100" > checks.json
+
+            failed=$(fails checks.json)
+            if [ -n "$failed" ]; then
+              echo "::error::these checks failed:"
+              echo "$failed" | sed 's/^/  /'
+              exit 1
+            fi
+
+            waiting=$(pending checks.json)
+            if [ -n "$waiting" ]; then
+              confirmations=0
+              echo "waiting on:"
+              echo "$waiting" | sed 's/^/  /'
+            else
+              # Confirmed twice before passing, so a workflow that registers
+              # late is not missed by a single lucky poll.
+              confirmations=$(( confirmations + 1 ))
+              echo "nothing pending (confirmation ${confirmations}/2)"
+              if [ "$confirmations" -ge 2 ]; then
+                echo "every check that ran, passed:"
+                jq -r --arg self "$SELF" \
+                  '.check_runs[] | select(.name != $self) | "  \(.conclusion)\t\(.name)"' \
+                  checks.json | sort -u
+                exit 0
+              fi
+            fi
+
+            if [ "$SECONDS" -ge "$DEADLINE" ]; then
+              echo "::error::timed out waiting for checks to finish"
+              exit 1
+            fi
+            sleep "$INTERVAL"
+          done
