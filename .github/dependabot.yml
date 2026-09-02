@@ -1,12 +1,19 @@
 version: 2
 
+# Every ecosystem groups its minor and patch updates, so a week arrives as one
+# pull request per manifest rather than one per package. Majors stay separate,
+# because those are the ones whose release notes have to be read.
+#
+# Each is capped at two open pull requests. Eleven manifests at the default of
+# five would be fifty-five, which is not a queue anybody works through; a cap
+# means Dependabot waits for the current ones to land rather than opening more,
+# and nothing is lost because it reopens what it held back.
 updates:
-  # Add pip entries for airflow/ and ml/ and an npm entry for frontend/ as
-  # those services introduce their manifests.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
     groups:
       github-actions:
         patterns:
@@ -21,6 +28,7 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
     groups:
       backend-dependencies:
         patterns:
@@ -35,6 +43,7 @@ updates:
     directory: /backend
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
     ignore:
       - dependency-name: python
         versions:
@@ -46,9 +55,117 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 2
     ignore:
       - dependency-name: postgres
         versions:
           - '>= 18'
     commit-message:
       prefix: ci
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      frontend-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: docker
+    directory: /frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      frontend-image:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: pip
+    directory: /services/job-ingestion-service
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      ingestion-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: pip
+    directory: /platform/db
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      platform-db-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: pip
+    directory: /platform/skills
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      platform-skills-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  # requirements.txt here carries an editable install of a sibling directory
+  # alongside Airflow. Dependabot resolves the pinned release and leaves the
+  # local path alone; if it ever reports a parse failure, that line is why.
+  - package-ecosystem: pip
+    directory: /airflow
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      airflow-dependencies:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: ci
+
+  - package-ecosystem: docker
+    directory: /airflow
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    # The same floor the backend image keeps, for the same base image.
+    ignore:
+      - dependency-name: python
+        versions:
+          - '>= 3.14'
+    commit-message:
+      prefix: ci
+
