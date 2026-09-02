@@ -15,58 +15,46 @@
 interface Role {
   title: string;
   company: string;
-  skills: { name: string; held: boolean }[];
+  /** Named as the split rather than as a flag per skill, because the split is
+      the thing the card exists to show. */
+  held: string[];
+  missing: string[];
 }
 
 const ROLES: Role[] = [
   {
     title: "Data Engineer",
     company: "Meridian Software",
-    skills: [
-      { name: "Python", held: true },
-      { name: "SQL", held: true },
-      { name: "Airflow", held: true },
-      { name: "dbt", held: false },
-      { name: "Kubernetes", held: false },
-    ],
+    held: ["Python", "SQL", "Airflow"],
+    missing: ["dbt", "Kubernetes"],
   },
   {
     title: "Frontend Developer",
     company: "Halcyon Analytics",
-    skills: [
-      { name: "TypeScript", held: true },
-      { name: "React", held: true },
-      { name: "CSS", held: true },
-      { name: "Figma", held: false },
-    ],
+    held: ["TypeScript", "React", "CSS"],
+    missing: ["Figma"],
   },
   {
     title: "Data Analyst",
     company: "Northwind Logistics",
-    skills: [
-      { name: "SQL", held: true },
-      { name: "Excel", held: true },
-      { name: "Tableau", held: true },
-      { name: "R", held: false },
-      { name: "Python", held: false },
-    ],
+    held: ["SQL", "Excel", "Tableau"],
+    missing: ["R", "Python"],
   },
   {
     title: "Platform Engineer",
     company: "Meridian Software",
-    skills: [
-      { name: "Docker", held: true },
-      { name: "Linux", held: true },
-      { name: "Terraform", held: true },
-      { name: "Go", held: false },
-      { name: "AWS", held: false },
-    ],
+    held: ["Docker", "Linux", "Terraform"],
+    missing: ["Go", "AWS"],
   },
 ];
 
 function RoleCard({ role, index }: { role: Role; index: number }) {
-  const held = role.skills.filter((skill) => skill.held).length;
-  const total = role.skills.length;
+  const skills = [
+    ...role.held.map((name) => ({ name, held: true })),
+    ...role.missing.map((name) => ({ name, held: false })),
+  ];
+  const held = role.held.length;
+  const total = skills.length;
 
   return (
     <li
@@ -77,7 +65,7 @@ function RoleCard({ role, index }: { role: Role; index: number }) {
       <p className="text-sm text-ink-soft">{role.company}</p>
 
       <ul className="mt-5 flex flex-wrap gap-2" aria-label={`Skills ${role.title} asks for`}>
-        {role.skills.map((skill) => (
+        {skills.map((skill) => (
           <li
             key={skill.name}
             className={
