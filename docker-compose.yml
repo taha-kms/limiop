@@ -107,6 +107,9 @@ services:
         # Inlined into the client bundle at build time, so this must be the
         # address a browser can reach -- the published port, not the compose
         # network name the server uses. The build refuses an empty value.
+        #
+        # Changing it needs `docker compose build frontend`. `up` alone reuses
+        # the image already built and serves the address baked into it.
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     image: skillsync-frontend:local
     environment:

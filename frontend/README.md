@@ -82,6 +82,11 @@ The build refuses an empty `NEXT_PUBLIC_API_URL` rather than falling back to
 the localhost default, because that fallback is inlined into the client bundle
 and would fail in every visitor's browser instead of here.
 
+Changing that address afterwards needs `docker compose build frontend`, not
+`docker compose up` alone. Compose reuses an image it has already built, and
+the address it was built with is baked into what ships to the browser -- so the
+page keeps loading and keeps calling the old host, without reporting anything.
+
 `next.config.ts` sets `output: "standalone"`, so the runtime stage carries the
 traced dependency set rather than a full install. That is what keeps the image
 around 230 MB. Its entry point is `node server.js`, not `next start`, and it
