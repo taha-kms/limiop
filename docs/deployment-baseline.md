@@ -58,11 +58,12 @@ number and neither is decided.
 | Cores | **2** | 1, though 2 is better |
 | Disk | **40 GB** | **20 GB** |
 
-Steady state is about 970 MiB with Airflow and about 240 MiB without it. The
-rest is headroom for the hashing ceiling, the operating system, and the page
-cache PostgreSQL reads through — its reported memory climbs with traffic
-because that cache is attributed to it, so the floor is `shared_buffers` plus
-`work_mem` per connection rather than the number a running host reports.
+Steady state, summing the idle column, is about 970 MiB with Airflow and about
+190 MiB without it. The rest is headroom for the hashing ceiling, the operating
+system, and the page cache PostgreSQL reads through. Its reported memory climbs
+with traffic because that cache is attributed to it, so the floor is
+`shared_buffers` plus `work_mem` per connection rather than whatever a running
+host reports.
 
 Two cores rather than one even at the smaller size, because argon2id runs with
 `parallelism=4`: on a single core a sign-in serialises into roughly four times
