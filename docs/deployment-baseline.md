@@ -23,6 +23,65 @@ and adding one needs a demonstrated need rather than a preference.
 imports, which is why the API image does not contain it and the Airflow image
 does not contain FastAPI.
 
+## Sizing
+
+Measured on a built stack, one container per unit, idle and then under traffic.
+Resident memory, because that is what a host runs out of first.
+
+| Unit | Idle | Peak measured | CPU idle |
+| --- | --- | --- | --- |
+| `database` | 43–59 MiB fresh, 104 MiB once Airflow's metadata database exists | grows toward `shared_buffers`, 128 MiB by default | ~1% |
+| `backend` | 71–82 MiB | **+256 MiB** while hashing | <1% |
+| `frontend` | 49 MiB, 52 MiB under traffic | — | <1% |
+| `airflow-scheduler` | **511 MiB** | 580 MiB during a run | **5–50%, 75% during a run** |
+| `airflow-apiserver` | **217 MiB** | — | <1% |
+
+The backend's peak is a ceiling rather than an estimate. Argon2id costs 64 MiB
+per call at the library's current defaults, and `MAX_CONCURRENT_HASHES` caps
+concurrent hashing at four; past that, hashing queues rather than fanning out.
+Four times 64 MiB is the whole of it. It is the one cost in the stack that an
+unauthenticated caller can provoke, which is why it is bounded rather than
+merely small.
+
+`uvicorn` runs one worker. A second replica doubles these figures, and also
+gives every account a second rate-limit budget, for the reason under **Rate
+limiting**.
+
+### What a host needs
+
+Two answers, because two of the questions under **What is still open** move the
+number and neither is decided.
+
+| | Airflow, and the frontend image built on the host | Cron, and the image built in CI |
+| --- | --- | --- |
+| Memory | **4 GB** | **2 GB** |
+| Cores | **2** | 1, though 2 is better |
+| Disk | **40 GB** | **20 GB** |
+
+Steady state, summing the idle column, is about 970 MiB with Airflow and about
+190 MiB without it. The rest is headroom for the hashing ceiling, the operating
+system, and the page cache PostgreSQL reads through. Its reported memory climbs
+with traffic because that cache is attributed to it, so the floor is
+`shared_buffers` plus `work_mem` per connection rather than whatever a running
+host reports.
+
+Two cores rather than one even at the smaller size, because argon2id runs with
+`parallelism=4`: on a single core a sign-in serialises into roughly four times
+its measured 60 ms.
+
+Building the frontend image on the host rather than in CI is what forces the
+larger box, and it is the weakest reason to buy one. `next build` peaked at
+436 MiB in its largest process at 201% CPU, and the tree it needs —
+`node_modules` at 698 MB and `.next` at 184 MB — is most of the difference
+between the two disk figures. The image itself is 230 MB; a host that pulls it
+needs none of that.
+
+Disk, itemised: the images are 297 MB for PostgreSQL, 231 MB for the backend,
+230 MB for the frontend and 384 MB for Airflow. The database volume starts at
+84 MB with the schema alone and reached 179 MB with a development catalogue in
+it. CVs are capped at 5 MiB each by `SKILLSYNC_CV_MAX_UPLOAD_BYTES`, so that
+line grows with accounts and nothing else. The rest is logs and headroom.
+
 ## Runtime inputs
 
 Values are never in this repository. What follows is the list of names an
@@ -209,11 +268,15 @@ document does not make.
 ## What is still open
 
 - **Where this is hosted.** Nothing here needs a managed service beyond
-  PostgreSQL and a container runtime. The cost floor is one small database and
-  three small containers.
+  PostgreSQL and a container runtime. Five containers run long-term with the
+  pipelines profile and three without it; **Sizing** says how large a host has
+  to be for each.
 - **Whether Airflow is worth its own instance** for two hourly DAGs. It earns
   its place when board discovery (#120) multiplies the sources; until then a
-  cron entry calling the same function would do the same work.
+  cron entry calling the same function would do the same work. What it costs
+  in the meantime is measured: 728 MiB resident and a third of a core,
+  permanently, which is more than the API, the frontend and PostgreSQL
+  together and is the whole difference between a 2 GB host and a 4 GB one.
 - **Object storage for CVs**, which is a `CVStorage` implementation and a
   provider decision, not an architecture one.
 - **TLS termination and the public hostname**, which belong to whatever fronts
