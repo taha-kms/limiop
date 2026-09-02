@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { currentAccount } from "@/lib/api/session";
 
+import { NavLink } from "./nav-link";
 import { SignOutButton } from "./sign-out-button";
 
 /**
@@ -15,52 +16,58 @@ export async function SiteHeader() {
   const account = await currentAccount();
 
   return (
-    <header className="border-b border-slate-200 dark:border-slate-800">
+    <header className="sticky top-0 z-20 border-b border-line bg-background/90 backdrop-blur">
       <nav
         aria-label="Main"
-        className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 p-4"
+        className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-1 gap-y-2 px-4 py-3 sm:px-6"
       >
-        <Link href="/" className="font-semibold tracking-tight">
-          SkillSync
+        <Link
+          href="/"
+          className="mr-2 flex items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+        >
+          {/* Two arcs closing on each other: the overlap between what a
+              candidate has and what a posting asks for, which is the whole
+              of what this product measures. */}
+          <span aria-hidden className="flex">
+            <span className="h-3.5 w-3.5 rounded-full border-2 border-ink" />
+            <span className="-ml-1.5 h-3.5 w-3.5 rounded-full border-2 border-match" />
+          </span>
+          <span className="font-display text-lg font-semibold tracking-tight text-ink">
+            SkillSync
+          </span>
         </Link>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Link href="/jobs" className="underline underline-offset-2">
-            Jobs
-          </Link>
-          <Link href="/insights" className="underline underline-offset-2">
-            Job market
-          </Link>
-          {account ? (
-            <>
-              <Link href="/matches" className="underline underline-offset-2">
-                Matches
-              </Link>
-              <Link href="/cv" className="underline underline-offset-2">
-                Your CV
-              </Link>
-              <Link href="/onboarding" className="underline underline-offset-2">
-                Your profile
-              </Link>
-              <Link href="/account" className="underline underline-offset-2">
-                Account
-              </Link>
-              <span className="text-slate-600 dark:text-slate-400">{account.email}</span>
+
+        <NavLink href="/jobs">Jobs</NavLink>
+        <NavLink href="/insights">Job market</NavLink>
+
+        {account ? (
+          <>
+            <NavLink href="/matches">Matches</NavLink>
+            <NavLink href="/cv">Your CV</NavLink>
+            <NavLink href="/onboarding">Your profile</NavLink>
+
+            {/* The account and the way out sit apart from the sections, because
+                they act on the account rather than navigating the catalogue. */}
+            <span className="ml-auto flex items-center gap-2 pl-2">
+              <NavLink href="/account">Account</NavLink>
+              <span aria-hidden className="hidden h-4 w-px bg-line sm:block" />
+              <span className="hidden max-w-[14rem] truncate text-sm text-ink-soft sm:block">
+                {account.email}
+              </span>
               <SignOutButton />
-            </>
-          ) : (
-            <>
-              <Link href="/sign-in" className="underline underline-offset-2">
-                Sign in
-              </Link>
-              <Link
-                href="/register"
-                className="rounded-md border border-slate-300 px-3 py-1.5 font-medium dark:border-slate-700"
-              >
-                Create an account
-              </Link>
-            </>
-          )}
-        </div>
+            </span>
+          </>
+        ) : (
+          <span className="ml-auto flex items-center gap-2">
+            <NavLink href="/sign-in">Sign in</NavLink>
+            <Link
+              href="/register"
+              className="rounded-lg bg-ink px-3.5 py-2 text-sm font-medium text-background transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              Create an account
+            </Link>
+          </span>
+        )}
       </nav>
     </header>
   );

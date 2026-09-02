@@ -1,32 +1,78 @@
 @import "tailwindcss";
 
+/*
+ * One warm signal on cool neutrals.
+ *
+ * `--match` is the only warm colour in the system and it means one thing: a
+ * skill the candidate already has. Spending it anywhere else would make the
+ * thing the product exists to show indistinguishable from decoration.
+ */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111c2e;
+
+  --ink: #111c2e;
+  --ink-soft: #43536b;
+  --mist: #f1f5f9;
+  --line: #dde5ee;
+  --match: #994f0c;
+  --match-soft: #fdf4e6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a1120;
+    --foreground: #e8edf4;
+
+    --ink: #e8edf4;
+    --ink-soft: #9aabc2;
+    --mist: #101a2c;
+    --line: #22314a;
+    --match: #f0a93b;
+    --match-soft: #1d1708;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-mist: var(--mist);
+  --color-line: var(--line);
+  --color-match: var(--match);
+  --color-match-soft: var(--match-soft);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-bricolage);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* The loaded families, rather than the Arial that used to sit here and
+     override every one of them. */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer components {
   .primary-button {
-    @apply w-fit rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900;
+    @apply inline-flex w-fit items-center justify-center rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-background transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .secondary-button {
+    @apply inline-flex w-fit items-center justify-center rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink;
+  }
+
+  /* Horizontal rails scroll with the trackpad, a touch, or the keyboard
+     moving focus between cards -- all of which the browser does itself, so
+     the rail keeps working with scripting turned off. */
+  .rail {
+    @apply flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2;
+    scrollbar-width: thin;
+  }
+
+  .rail > * {
+    @apply snap-start;
   }
 }
