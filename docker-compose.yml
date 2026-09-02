@@ -100,6 +100,39 @@ services:
     ports:
       - "127.0.0.1:${SKILLSYNC_API_PORT:-8000}:8000"
 
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Inlined into the client bundle at build time, so this must be the
+        # address a browser can reach -- the published port, not the compose
+        # network name the server uses. The build refuses an empty value.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    image: skillsync-frontend:local
+    environment:
+      SKILLSYNC_API_URL: ${SKILLSYNC_API_URL:-http://api:8000}
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # Sign-in renders without the API, so this reports on the frontend
+      # rather than on whether the backend behind it happens to be up.
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          require('http')
+          .get('http://127.0.0.1:3000/sign-in', r => process.exit(r.statusCode === 200 ? 0 : 1))
+          .on('error', () => process.exit(1))
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    init: true
+    ports:
+      - "127.0.0.1:${SKILLSYNC_FRONTEND_PORT:-3000}:3000"
+
   airflow-init:
     <<: *airflow-service
     command:
