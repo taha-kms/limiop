@@ -1,32 +1,196 @@
 @import "tailwindcss";
 
+/*
+ * One warm signal on cool neutrals.
+ *
+ * `--match` is the only warm colour in the system and it means one thing: a
+ * skill the candidate already has. Spending it anywhere else would make the
+ * thing the product exists to show indistinguishable from decoration.
+ */
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #111c2e;
+
+  --ink: #111c2e;
+  --ink-soft: #43536b;
+  --mist: #f1f5f9;
+  --line: #dde5ee;
+  --match: #994f0c;
+  --match-soft: #fef3c7;
+  /* The glow carries no text, so it can be the yellow the label cannot be. */
+  --match-glow: #f7c948;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a1120;
+    --foreground: #e8edf4;
+
+    --ink: #e8edf4;
+    --ink-soft: #9aabc2;
+    --mist: #101a2c;
+    --line: #22314a;
+    --match: #f0a93b;
+    --match-soft: #2a2008;
+    --match-glow: #f7c948;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-mist: var(--mist);
+  --color-line: var(--line);
+  --color-match: var(--match);
+  --color-match-soft: var(--match-soft);
+  --color-match-glow: var(--match-glow);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-bricolage);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  /* The loaded families, rather than the Arial that used to sit here and
+     override every one of them. */
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
 @layer components {
   .primary-button {
-    @apply w-fit rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900;
+    @apply inline-flex w-fit items-center justify-center rounded-lg bg-ink px-4 py-2.5 text-sm font-medium text-background transition-colors hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .secondary-button {
+    @apply inline-flex w-fit items-center justify-center rounded-lg border border-line px-4 py-2.5 text-sm font-medium text-ink transition-colors hover:bg-mist focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink;
+  }
+
+  /* Horizontal rails scroll with the trackpad, a touch, or the keyboard
+     moving focus between cards -- all of which the browser does itself, so
+     the rail keeps working with scripting turned off. */
+  .rail {
+    @apply flex snap-x snap-mandatory gap-4 overflow-x-auto pb-2;
+    scrollbar-width: thin;
+  }
+
+  .rail > * {
+    @apply snap-start;
+  }
+}
+
+/*
+ * The hero's cycling fit card.
+ *
+ * Keyframes rather than a script: the catalogue is tested to render with
+ * scripting turned off, and an illustration of the product should not be the
+ * one thing on the page that needs it. Every card sits in the same grid cell
+ * and takes its turn on a shared cycle, offset by its index.
+ */
+@keyframes fit-cycle {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96) rotate(-1.2deg);
+  }
+  /* Overshoots on the way in, which is what makes it read as bouncy rather
+     than as a cross-fade. */
+  3% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.02) rotate(0.4deg);
+  }
+  6% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  21% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  25% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.97) rotate(1deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96) rotate(-1.2deg);
+  }
+}
+
+/* The fit filling in, on the same clock as the card carrying it. */
+@keyframes fit-fill {
+  0%,
+  4% {
+    transform: scaleX(0);
+  }
+  14%,
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+/* Held skills breathe. Nothing else on the page does, which is the point. */
+@keyframes fit-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--match-glow) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 10px 1px color-mix(in srgb, var(--match-glow) 85%, transparent);
+  }
+}
+
+@layer components {
+  .fit-stack {
+    display: grid;
+  }
+
+  .fit-stack > * {
+    grid-area: 1 / 1;
+  }
+
+  .fit-slide {
+    opacity: 0;
+    animation: fit-cycle calc(var(--count) * 3.4s) cubic-bezier(0.34, 1.4, 0.64, 1) infinite;
+    animation-delay: calc(var(--index) * 3.4s);
+  }
+
+  .fit-fill {
+    transform-origin: left;
+    animation: fit-fill calc(var(--count) * 3.4s) ease-out infinite;
+    animation-delay: calc(var(--index) * 3.4s);
+  }
+
+  .fit-held {
+    animation: fit-glow 2.4s ease-in-out infinite;
+  }
+
+  /* A pause anyone can reach without a script: hovering, or tabbing to
+     anything inside the card. */
+  .fit-stack:hover *,
+  .fit-stack:focus-within * {
+    animation-play-state: paused;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Freeze on the first card rather than cycling it silently. */
+  .fit-slide,
+  .fit-fill,
+  .fit-held {
+    animation: none;
+  }
+
+  .fit-slide {
+    opacity: 0;
+  }
+
+  .fit-slide:first-child {
+    opacity: 1;
+  }
+
+  .fit-fill {
+    transform: scaleX(1);
   }
 }
