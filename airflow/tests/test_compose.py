@@ -49,4 +49,14 @@ def test_airflow_image_does_not_install_the_backend() -> None:
     }
 
     assert "backend" not in dockerfile.lower()
-    assert requirements == {"apache-airflow==3.2.2", "-e ../services/job-ingestion-service"}
+
+    # Compared by name, not by version. What this protects is which packages
+    # the image installs; restating the pinned version here protected nothing
+    # and broke the test on every upgrade.
+    assert {line.split("==")[0].strip() for line in requirements} == {
+        "apache-airflow",
+        "-e ../services/job-ingestion-service",
+    }
+    # Pinned, though. Which version is Dependabot's business; that there is one
+    # is this test's.
+    assert any(line.startswith("apache-airflow==") for line in requirements)
