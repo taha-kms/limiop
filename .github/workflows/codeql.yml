@@ -25,8 +25,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Add javascript-typescript when the frontend lands.
-        language: [actions, python]
+        # build-mode: none suits all three: CodeQL reads the sources rather
+        # than watching a compiler, so a language costs a matrix entry and no
+        # build configuration.
+        language: [actions, javascript-typescript, python]
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
