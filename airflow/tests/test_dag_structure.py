@@ -35,7 +35,10 @@ ALLOWED_CALLS = frozenset(
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
+    # Airflow 3.3 dropped include_examples. Nothing replaces it here because
+    # nothing needed it: dag_folder points at this repository's dags, and the
+    # bundled examples were never inside it.
+    return DagBag(dag_folder=str(DAGS_DIR))
 
 
 def call_names(tree: ast.Module) -> set[str]:

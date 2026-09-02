@@ -13,7 +13,8 @@ DAG_ID = "greenhouse_ingestion"
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
+    # Airflow 3.3 dropped include_examples; see test_dag_structure.py.
+    return DagBag(dag_folder=str(DAGS_DIR))
 
 
 def test_the_greenhouse_ingestion_dag_is_registered(dagbag: DagBag) -> None:
