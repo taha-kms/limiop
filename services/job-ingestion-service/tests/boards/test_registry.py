@@ -13,6 +13,10 @@ def test_greenhouse_is_registered() -> None:
     assert provider_for("greenhouse").display_name == "Greenhouse"
 
 
+def test_polymer_is_registered() -> None:
+    assert provider_for("polymer").display_name == "Polymer"
+
+
 def test_an_unknown_source_is_refused_by_name() -> None:
     with pytest.raises(ValueError, match="no board provider named nope"):
         provider_for("nope")

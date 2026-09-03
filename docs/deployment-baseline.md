@@ -121,7 +121,8 @@ polls those boards instead of the shipped list, and an absent or empty list
 means the shipped one rather than no boards; a `base_url` key in the same
 block reads a provider's regional host, for example
 `{"lever":{"base_url":"https://api.eu.lever.co/v0/postings"}}`, and is
-absent otherwise).
+absent otherwise; `polymer` takes the same `boards` list and ships with none,
+for example `{"polymer":{"boards":["acme"]}}`).
 
 ### Secrets, by handling
 
