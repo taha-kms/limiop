@@ -1,4 +1,4 @@
-"""Report which stored companies have a findable Greenhouse board.
+"""Report which stored companies have a findable board on one provider.
 
 A discovery report, not a configuration change. It says what was found, what
 resolved to somebody else, and what could not be found at all — and adding a
@@ -19,8 +19,9 @@ from collections import Counter
 from dataclasses import asdict
 from urllib.parse import unquote, urlparse
 
-from job_ingestion.greenhouse.client import GreenhouseClient, GreenhouseConfig
-from job_ingestion.greenhouse.discovery import DiscoveryOutcome, discover
+from job_ingestion.boards.client import BoardClient, BoardConfig
+from job_ingestion.boards.discovery import DiscoveryOutcome, discover
+from job_ingestion.boards.registry import provider_for
 
 # Boards are polled by a scheduler and guessed one at a time. A limit keeps a
 # report from becoming an unannounced crawl of somebody's API.
@@ -73,12 +74,14 @@ def companies(database_url: str, limit: int) -> list[str]:
     return [line for line in result.stdout.splitlines() if line.strip()]
 
 
-async def report(names: list[str]) -> dict[str, object]:
-    async with GreenhouseClient(GreenhouseConfig(boards=())) as client:
+async def report(names: list[str], source_key: str) -> dict[str, object]:
+    provider = provider_for(source_key)
+    async with BoardClient(provider, BoardConfig(boards=())) as client:
         results = [await discover(client, name) for name in names]
 
     counts = Counter(result.outcome.value for result in results)
     return {
+        "source": source_key,
         "checked": len(results),
         "outcomes": dict(sorted(counts.items())),
         # Everything is listed, including what was not found. A report that
@@ -97,10 +100,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database-url", required=True)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
+    parser.add_argument("--source", default="greenhouse", help="registered board provider key")
     arguments = parser.parse_args()
 
     names = companies(arguments.database_url, arguments.limit)
-    json.dump(asyncio.run(report(names)), sys.stdout, indent=2)
+    json.dump(asyncio.run(report(names, arguments.source)), sys.stdout, indent=2)
     sys.stdout.write("\n")
 
 
