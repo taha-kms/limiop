@@ -10,8 +10,8 @@ from pydantic import ValidationError
 from job_ingestion.arbeitnow.normalizer import to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
-from job_ingestion.greenhouse.client import SOURCE_KEY
 from job_ingestion.greenhouse.records import GreenhouseJobRecord, describe_failure
+from job_ingestion.greenhouse.source import SOURCE_KEY
 from job_ingestion.schemas import NormalizedJob
 from job_ingestion.vocabulary import (
     EMPLOYMENT_PRECEDENCE,

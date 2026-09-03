@@ -13,34 +13,20 @@ import httpx2
 from job_ingestion.config import Settings, get_settings
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.database import Database
-from job_ingestion.greenhouse.client import (
-    DEFAULT_BASE_URL,
-    SOURCE_KEY,
-    GreenhouseClient,
-    GreenhouseConfig,
-)
+from job_ingestion.greenhouse.client import GreenhouseClient, GreenhouseConfig
 from job_ingestion.greenhouse.normalizer import GreenhouseNormalizer
 from job_ingestion.greenhouse.records import GreenhouseJobRecord, GreenhouseValidator
+from job_ingestion.greenhouse.source import (
+    DEFAULT_BASE_URL,
+    DISPLAY_NAME,
+    SOURCE_KEY,
+)
+from job_ingestion.greenhouse.source import DEFAULT_BOARDS as DEFAULT_BOARDS
+from job_ingestion.greenhouse.source import PRECEDENCE as PRECEDENCE
 from job_ingestion.persistence import SourceRegistration
 from job_ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
 from job_ingestion.reconciliation import ReconciliationResult, reconcile
 from job_ingestion.runs import complete_run, recorded_run
-
-DISPLAY_NAME = "Greenhouse"
-
-# Above the aggregator. An employer's own board is the better account of its own
-# posting, which is what source precedence exists to express.
-PRECEDENCE = 20
-
-# Boards are listed rather than discovered. A guessed board name that resolves
-# to a different company would ingest its postings under the wrong employer, so
-# adding one is a deliberate act. Discovery finds and verifies candidates; a
-# deployment decides which of them to read, through the setting below.
-DEFAULT_BOARDS = (
-    "anthropic",
-    "datadog",
-    "hudl",
-)
 
 BOARDS_SETTING = "boards"
 
@@ -59,7 +45,7 @@ def build_run(
         source=SourceRegistration(
             key=SOURCE_KEY,
             display_name=DISPLAY_NAME,
-            base_url=client.config.base_url,
+            base_url=client.base_url,
             precedence=PRECEDENCE,
         ),
         max_records=max_records,
