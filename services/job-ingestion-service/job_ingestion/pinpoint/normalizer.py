@@ -51,6 +51,14 @@ class PinpointNormalizer:
     prettier name renames the company in the catalogue afterwards; that is a
     presentation choice for the catalogue to make, not a mapping this
     normalizer should invent.
+
+    That choice has a cost: `matching.match_key_of` hashes `company.display_name`
+    together with the title, so a job this same employer also posts to
+    Greenhouse or Polymer under its real name lands on a different match key
+    here. Precedence 20 can never be weighed against that duplicate, and the
+    two postings show up as two separate jobs instead of one. Renaming the
+    company in the catalogue is what restores the shared match key and lets
+    cross-source deduplication see them as the same employer again.
     """
 
     def normalize(self, record: PinpointJobRecord, raw: RawRecord) -> NormalizedJob:
