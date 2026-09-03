@@ -118,7 +118,10 @@ the API at the same address, and a single value cannot be right for both.
 `SKILLSYNC_AUTH_ATTEMPTS` (10) and `SKILLSYNC_AUTH_ATTEMPT_WINDOW_SECONDS` (60),
 `SKILLSYNC_SOURCE_CONFIG` (per-source JSON; `{"greenhouse":{"boards":["hudl"]}}`
 polls those boards instead of the shipped list, and an absent or empty list
-means the shipped one rather than no boards).
+means the shipped one rather than no boards; a `base_url` key in the same
+block reads a provider's regional host, for example
+`{"lever":{"base_url":"https://api.eu.lever.co/v0/postings"}}`, and is
+absent otherwise).
 
 ### Secrets, by handling
 
