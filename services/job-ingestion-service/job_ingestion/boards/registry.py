@@ -8,9 +8,10 @@ from typing import Any
 
 from job_ingestion.boards.provider import BoardProvider
 from job_ingestion.greenhouse.provider import GREENHOUSE
+from job_ingestion.pinpoint.provider import PINPOINT
 from job_ingestion.polymer.provider import POLYMER
 
-PROVIDERS: tuple[BoardProvider[Any], ...] = (GREENHOUSE, POLYMER)
+PROVIDERS: tuple[BoardProvider[Any], ...] = (GREENHOUSE, POLYMER, PINPOINT)
 
 
 def provider_for(source_key: str) -> BoardProvider[Any]:
