@@ -77,6 +77,16 @@ def test_namespaces_are_dropped_from_names() -> None:
     assert records_in(root, "item") == ({"encoded": "x"},)
 
 
+def test_a_default_namespace_does_not_hide_the_item_elements() -> None:
+    """`records_in` matches on local name, so a feed whose elements sit in a
+    default namespace is still found rather than yielding zero records."""
+    body = b'<feed xmlns="http://example.test/ns"><position><id>1</id></position></feed>'
+
+    root = parse_xml("feed", "acme", response(body))
+
+    assert records_in(root, "position") == ({"id": "1"},)
+
+
 def test_attributes_are_kept_with_a_marker() -> None:
     root = parse_xml("feed", "acme", response(b'<root><item lang="en"><id>1</id></item></root>'))
 

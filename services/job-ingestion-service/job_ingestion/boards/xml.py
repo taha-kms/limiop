@@ -59,5 +59,13 @@ def element_to_record(element: Element) -> dict[str, Any]:
 
 
 def records_in(root: Element, tag: str) -> tuple[RawRecord, ...]:
-    """Every element named `tag`, each as a mapping."""
-    return tuple(element_to_record(element) for element in root.iter(tag))
+    """Every element named `tag`, each as a mapping.
+
+    Matched by local name, like `element_to_record` matches its children: a
+    feed published under a default namespace still qualifies every element's
+    tag with it, and matching the raw tag against a bare `tag` would silently
+    find nothing.
+    """
+    return tuple(
+        element_to_record(element) for element in root.iter() if local_name(element.tag) == tag
+    )
