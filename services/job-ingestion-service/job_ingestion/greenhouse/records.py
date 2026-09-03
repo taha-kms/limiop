@@ -21,7 +21,7 @@ from pydantic import (
 
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
-from job_ingestion.greenhouse.client import SOURCE_KEY
+from job_ingestion.greenhouse.source import SOURCE_KEY
 
 Required = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
