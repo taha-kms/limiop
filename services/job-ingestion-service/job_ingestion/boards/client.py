@@ -251,9 +251,14 @@ class BoardClient:
 
         A board is an independent company. One of them going away says nothing
         about the others, so its failure is recorded and the run continues.
+
+        Each walk reports its own failures: `failures` is reset here along with
+        the other per-walk state, so a second walk over the same client does not
+        carry forward what the first one recorded.
         """
         self._reached_the_end = False
         self._dropped_a_record = False
+        self.failures = []
         skipped = False
         for board in self.config.boards:
             try:
