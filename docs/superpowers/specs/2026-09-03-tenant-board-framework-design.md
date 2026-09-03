@@ -131,7 +131,7 @@ class BoardProvider[ProviderRecordT]:
     board_request: Callable[[str, str, object | None], Request]
     read_page: Callable[[str, httpx2.Response], PageRead]
     stated_company: Callable[[Sequence[RawRecord]], str | None]
-    detail_request: Callable[[RawRecord], Request | None] | None = None
+    detail_request: Callable[[str, RawRecord], Request | None] | None = None
 ```
 
 - `board_request(base_url, slug, cursor)` — the first call passes `None`. A
@@ -142,9 +142,10 @@ class BoardProvider[ProviderRecordT]:
   or an XML element is walked. It does not inspect job fields.
 - `stated_company(records)` — the company the board says these postings belong
   to, or `None` when the feed never says. Discovery reads it; nothing else does.
-- `detail_request(record)` — when present, the client fetches it and merges the
-  body into the record before the validator sees it. Absent for every provider
-  but SmartRecruiters.
+- `detail_request(base_url, record)` — when present, the client fetches it and
+  merges the body into the record before the validator sees it. The configured
+  host is passed so a regional override reaches detail requests as well as
+  listing requests. Absent for every provider but SmartRecruiters.
 
 `RawRecord` stays a `Mapping[str, Any]`. The client stamps `board` onto every
 record, as Greenhouse does today, because a posting identifier is only unique

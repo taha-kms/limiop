@@ -56,9 +56,11 @@ class BoardProvider[ProviderRecordT]:
     guessed slug. A provider that cannot state one makes every guess
     unverifiable, and discovery reports that rather than confirming anything.
 
-    `detail_request(record)`, when present, names a second request whose JSON
-    object body is merged over the listing record before validation. For
-    providers whose listing omits the description.
+    `detail_request(base_url, record)`, when present, names a second request
+    whose JSON object body is merged over the listing record before
+    validation. For providers whose listing omits the description. The
+    configured host is passed so a regional override reaches detail requests
+    as well as listing requests.
     """
 
     source_key: str
@@ -71,4 +73,4 @@ class BoardProvider[ProviderRecordT]:
     board_request: Callable[[str, str, object | None], Request]
     read_page: Callable[[str, httpx2.Response], PageRead]
     stated_company: Callable[[Sequence[RawRecord]], str | None]
-    detail_request: Callable[[RawRecord], Request | None] | None = None
+    detail_request: Callable[[str, RawRecord], Request | None] | None = None

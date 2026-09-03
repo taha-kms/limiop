@@ -111,6 +111,32 @@ def test_a_record_the_provider_has_no_detail_for_passes_through() -> None:
     assert fetcher.reached_the_end is True
 
 
+def test_a_configured_base_url_reaches_detail_requests() -> None:
+    """A regional override must reach detail requests, not just listings."""
+    seen: list[str] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        seen.append(str(request.url))
+        if request.url.path == "/acme/jobs":
+            return listing(1, 2)
+        return detail(int(request.url.path.rsplit("/", 1)[-1]))
+
+    fetcher = BoardClient(
+        hydrated_provider(),
+        BoardConfig(
+            boards=("acme",), base_url="https://eu.example.test", retry_backoff_seconds=0.0
+        ),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        sleeper=never_sleeps,
+    )
+
+    collect(fetcher)
+
+    detail_urls = [url for url in seen if "/postings/" in url]
+    assert detail_urls
+    assert all(url.startswith("https://eu.example.test/postings/") for url in detail_urls)
+
+
 def test_details_are_fetched_at_most_concurrency_at_a_time() -> None:
     in_flight = 0
     peak = 0

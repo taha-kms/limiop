@@ -84,15 +84,23 @@ def test_stated_company_with_no_records_states_nothing() -> None:
 
 
 def test_detail_request_names_the_second_call() -> None:
-    request = detail_request({"board": "aperturelabs", "id": 30084})
+    request = detail_request(DEFAULT_BASE_URL, {"board": "aperturelabs", "id": 30084})
 
     assert request is not None
     assert request.url == f"{DEFAULT_BASE_URL}/aperturelabs/jobs/30084"
 
 
 def test_detail_request_for_a_record_without_a_usable_id_asks_nothing() -> None:
-    assert detail_request({"board": "aperturelabs", "id": "not-an-int"}) is None
-    assert detail_request({"id": 30084}) is None
+    assert detail_request(DEFAULT_BASE_URL, {"board": "aperturelabs", "id": "not-an-int"}) is None
+    assert detail_request(DEFAULT_BASE_URL, {"id": 30084}) is None
+
+
+def test_detail_request_uses_the_configured_base_url() -> None:
+    """A regional override must reach detail requests, not just listings."""
+    request = detail_request("https://eu.example.test", {"board": "aperturelabs", "id": 30084})
+
+    assert request is not None
+    assert request.url == "https://eu.example.test/aperturelabs/jobs/30084"
 
 
 def walk() -> RawPage:
