@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "id": 30084,
+      "job_id": 30084,
+      "hash_id": "stgvtfmv53fe",
+      "title": "Back End Developer",
+      "country": "US",
+      "state_region": "AZ",
+      "city": "Phoenix",
+      "organization_name": "Aperture Labs",
+      "kind_pretty": "Full-time",
+      "created_at": "2024-03-29T03:08:22.914Z",
+      "published_at": "2024-03-29T03:10:54.238Z",
+      "created_at_timestamp": 1711681702,
+      "published_at_timestamp": 1711681854,
+      "published_at_time_ago_short": "over 2 Y",
+      "show_published_at_times": false,
+      "display_location": "Phoenix, AZ",
+      "job_post_url": "https://jobs.polymer.co/aperturelabs/30084",
+      "remoteness_pretty": "Remote friendly",
+      "job_category_name": "Software Development",
+      "salary_pretty": null,
+      "remote_restriction_country_residency_is_required": true,
+      "remote_restriction_country_list": [
+        "US"
+      ],
+      "remote_restriction_overlap_hours_is_required": true,
+      "remote_restriction_overlap_hours": 2,
+      "remote_restriction_city": "San Francisco, CA, USA",
+      "remote_restriction_city_google_place_id": "ChIJIQBpAG2ahYAR_6128GcTUEo",
+      "remote_restriction_timezone_utc_offset_seconds": -25200
+    }
+  ],
+  "meta": {
+    "total": 1,
+    "is_last": true,
+    "is_first": true,
+    "page": 1,
+    "next_page": null,
+    "count": 1,
+    "organization_name": "Aperture Labs"
+  }
+}
