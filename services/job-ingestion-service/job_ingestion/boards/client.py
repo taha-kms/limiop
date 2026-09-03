@@ -21,6 +21,7 @@ from typing import Any, Self
 import httpx2
 
 from job_ingestion.boards.provider import BoardProvider, Request
+from job_ingestion.boards.reading import json_object
 from job_ingestion.contracts import IngestionStage, RawPage, RawRecord, RecordFailure
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
 from job_ingestion.rate_limit import is_rate_limited, retry_delay
@@ -189,7 +190,61 @@ class BoardClient:
                 f"board {slug} did not end within {self.config.max_pages_per_board} pages",
             )
 
+        if self.provider.detail_request is not None:
+            records = await self.hydrate(slug, records)
         return RawPage(records=tuple(records), next_page=None)
+
+    async def hydrate(self, slug: str, records: list[RawRecord]) -> list[RawRecord]:
+        """Merge each record with the detail the provider asks for.
+
+        Order is the listing's. A record whose detail cannot be read is
+        dropped rather than passed on without it, because a posting without
+        its text cannot be normalized and would only fail later with a less
+        useful reason. The drop is recorded as a fetch failure, and the board
+        is no longer fully read: reconciliation must not conclude the posting
+        is gone.
+        """
+        detail_request = self.provider.detail_request
+        assert detail_request is not None
+        semaphore = asyncio.Semaphore(self.config.detail_concurrency)
+
+        async def one(record: RawRecord) -> RawRecord | RecordFailure:
+            request = detail_request(record)
+            if request is None:
+                return record
+            async with semaphore:
+                try:
+                    response = await self.request(slug, request)
+                    if response.status_code != httpx2.codes.OK:
+                        raise SourceResponseError(
+                            self.source_key,
+                            f"board {slug} returned status {response.status_code}",
+                            status_code=response.status_code,
+                        )
+                    detail = json_object(self.source_key, slug, response)
+                except (SourceResponseError, SourceUnavailableError) as error:
+                    return RecordFailure(
+                        stage=IngestionStage.FETCH,
+                        reason=f"posting detail could not be read: {error.message}",
+                        source_job_id=self._identifier(slug, record),
+                    )
+            return {**record, **detail}
+
+        hydrated: list[RawRecord] = []
+        for outcome in await asyncio.gather(*(one(record) for record in records)):
+            if isinstance(outcome, RecordFailure):
+                self._dropped_a_record = True
+                self.failures.append(outcome)
+            else:
+                hydrated.append(outcome)
+        return hydrated
+
+    @staticmethod
+    def _identifier(slug: str, record: RawRecord) -> str | None:
+        identifier = record.get("id")
+        if isinstance(identifier, int | str) and str(identifier).strip():
+            return f"{slug}:{identifier}"
+        return None
 
     async def fetch_pages(self) -> AsyncIterator[RawPage]:
         """Yield one page per board, skipping boards that cannot be read.
