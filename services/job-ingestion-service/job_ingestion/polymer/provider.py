@@ -51,13 +51,11 @@ def stated_company(records: Sequence[RawRecord]) -> str | None:
     return None
 
 
-def detail_request(record: RawRecord) -> Request | None:
+def detail_request(base_url: str, record: RawRecord) -> Request | None:
     board, identifier = record.get("board"), record.get("id")
     if not isinstance(board, str) or not isinstance(identifier, int):
         return None
-    # The hook sees only the record, so the provider's own host is used;
-    # Polymer has one host.
-    return Request(url=f"{DEFAULT_BASE_URL}/{board}/jobs/{identifier}")
+    return Request(url=f"{base_url.rstrip('/')}/{board}/jobs/{identifier}")
 
 
 POLYMER: BoardProvider[PolymerJobRecord] = BoardProvider(

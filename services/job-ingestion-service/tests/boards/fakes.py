@@ -130,9 +130,9 @@ def xml_provider() -> BoardProvider[FakeRecord]:
     )
 
 
-def detail_request(record: RawRecord) -> Request | None:
+def detail_request(base_url: str, record: RawRecord) -> Request | None:
     identifier = record.get("id")
-    return None if identifier is None else Request(url=f"{FAKE_BASE_URL}/postings/{identifier}")
+    return None if identifier is None else Request(url=f"{base_url}/postings/{identifier}")
 
 
 def read_listing(slug: str, response: httpx2.Response) -> PageRead:

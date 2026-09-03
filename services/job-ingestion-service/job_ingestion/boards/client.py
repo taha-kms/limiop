@@ -209,7 +209,7 @@ class BoardClient:
         semaphore = asyncio.Semaphore(self.config.detail_concurrency)
 
         async def one(record: RawRecord) -> RawRecord | RecordFailure:
-            request = detail_request(record)
+            request = detail_request(self.base_url, record)
             if request is None:
                 return record
             async with semaphore:
