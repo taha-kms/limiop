@@ -3,12 +3,16 @@
 What the stored data cannot do
 ------------------------------
 
-The obvious mechanism does not work here. A company was expected to carry an
-application URL naming its applicant tracking system, but measured over the
-stored catalogue exactly one company's URL names Greenhouse — the one already
-configured by hand. Every Arbeitnow posting points at `arbeitnow.com`, because
-the aggregator rewrites the link to its own page, and its payload carries
-`company_name`, `slug`, `title`, `location`, `tags` and no employer URL at all.
+A company's stored record could be expected to carry an application URL
+naming its applicant tracking system, but that is not something a source
+reliably provides. An aggregator rewrites the link to its own page rather
+than the employer's, and even a source that keeps the employer's own URL
+rarely has one that names the system behind it. Greenhouse and Arbeitnow are
+the case that forced this: measured over the stored catalogue, exactly one
+company's URL named Greenhouse — the one already configured by hand — and
+every Arbeitnow posting instead points at `arbeitnow.com`, its payload
+carrying `company_name`, `slug`, `title`, `location`, `tags` and no employer
+URL at all.
 
 So there is nothing to read a board out of, and the only input left is the
 company's name. That means guessing, which the issue rightly calls one input
@@ -191,8 +195,9 @@ async def discover(client: "BoardClient", company_name: str) -> DiscoveryResult:
         found = client.provider.stated_company(page.records)
         if found is None:
             # Nothing further can be learned from this provider about any
-            # slug, so the search ends where it is.
-            return DiscoveryResult(
+            # slug, so the search ends where it is. A wrong company recorded
+            # for an earlier slug still outranks this slug's silence.
+            return mismatch or DiscoveryResult(
                 company=company_name, outcome=DiscoveryOutcome.UNVERIFIABLE, slug=slug
             )
         if belongs_to(found, company_name):

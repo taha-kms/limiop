@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Sequence
 from typing import Any
 
 import httpx2
@@ -6,6 +7,7 @@ import httpx2
 from job_ingestion.boards.client import BoardClient, BoardConfig
 from job_ingestion.boards.discovery import DiscoveryOutcome, discover
 from job_ingestion.boards.provider import BoardProvider
+from job_ingestion.contracts import RawRecord
 from tests.boards.fakes import json_provider, never_sleeps, ok, responding, xml_provider
 
 
@@ -72,3 +74,20 @@ def test_an_empty_board_confirms_nothing() -> None:
     result = run(client(ok({"jobs": []}), ok({"jobs": []}), ok({"jobs": []})), "Acme Health Group")
 
     assert result.outcome is DiscoveryOutcome.NOT_FOUND
+
+
+def test_a_wrong_company_outranks_a_later_slugs_silence() -> None:
+    """A board named for an earlier slug states somebody else; a later slug states
+    nobody at all. The wrong company is the one that must be reported, not the
+    silence that happened to be checked last."""
+    answers = iter(["Globex", None])
+
+    def stated_company(_records: Sequence[RawRecord]) -> str | None:
+        return next(answers)
+
+    provider = json_provider(stated_company=stated_company)
+    result = run(client(board("Globex"), board("Globex"), provider=provider), "Acme Health Group")
+
+    assert result.outcome is DiscoveryOutcome.WRONG_COMPANY
+    assert result.slug == "acmehealthgroup"
+    assert result.found_company == "Globex"
