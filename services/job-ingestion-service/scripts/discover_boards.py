@@ -21,7 +21,9 @@ from urllib.parse import unquote, urlparse
 
 from job_ingestion.boards.client import BoardClient, BoardConfig
 from job_ingestion.boards.discovery import DiscoveryOutcome, discover
+from job_ingestion.boards.pipeline import configured_base_url
 from job_ingestion.boards.registry import provider_for
+from job_ingestion.config import get_settings
 
 # Boards are polled by a scheduler and guessed one at a time. A limit keeps a
 # report from becoming an unannounced crawl of somebody's API.
@@ -76,7 +78,8 @@ def companies(database_url: str, limit: int) -> list[str]:
 
 async def report(names: list[str], source_key: str) -> dict[str, object]:
     provider = provider_for(source_key)
-    async with BoardClient(provider, BoardConfig(boards=())) as client:
+    config = BoardConfig(boards=(), base_url=configured_base_url(provider, get_settings()))
+    async with BoardClient(provider, config) as client:
         results = [await discover(client, name) for name in names]
 
     counts = Counter(result.outcome.value for result in results)

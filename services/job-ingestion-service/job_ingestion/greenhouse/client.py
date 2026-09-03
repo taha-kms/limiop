@@ -4,6 +4,9 @@ Everything a Greenhouse client does is what any tenant-board client does with
 the Greenhouse provider. The names survive because the discovery script and
 the tests use them, and because a caller that only wants Greenhouse should
 not have to know about the registry.
+
+The surface is narrower than the old dedicated client's: `board_url` is gone,
+and `http_client`/`sleeper` are keyword-only.
 """
 
 import asyncio
