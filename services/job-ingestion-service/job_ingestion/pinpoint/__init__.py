@@ -1,0 +1,1 @@
+"""Pinpoint job board provider."""
