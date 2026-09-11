@@ -9,6 +9,7 @@ from platform_db.base import Base
 from platform_db.models import (  # noqa: F401
     Company,
     Job,
+    JobBoard,
     JobProvenance,
     JobSkill,
     JobSkillMention,
@@ -25,6 +26,7 @@ PLATFORM_TABLES = frozenset(
     {
         "companies",
         "ingestion_runs",
+        "job_boards",
         "job_provenance",
         "job_skill_mentions",
         "job_skills",

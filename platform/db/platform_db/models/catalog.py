@@ -3,6 +3,7 @@
 import unicodedata
 from datetime import datetime
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -22,6 +23,9 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from platform_db.base import Base
+
+if TYPE_CHECKING:
+    from platform_db.models.boards import JobBoard
 
 # A version prefix plus a 64-character SHA-256 digest, with room to grow.
 MATCH_KEY_LENGTH = 80
@@ -109,6 +113,7 @@ class JobSource(Base):
         onupdate=func.now(),
     )
     provenance_records: Mapped[list["JobProvenance"]] = relationship(back_populates="source")
+    boards: Mapped[list["JobBoard"]] = relationship(back_populates="source")
 
 
 class Company(Base):
@@ -133,6 +138,7 @@ class Company(Base):
         onupdate=func.now(),
     )
     jobs: Mapped[list["Job"]] = relationship(back_populates="company")
+    boards: Mapped[list["JobBoard"]] = relationship(back_populates="company")
 
     @validates("display_name")
     def derive_normalized_name(self, _key: str, display_name: str) -> str:
