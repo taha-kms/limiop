@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
-from platform_db.models import Company, Job, JobProvenance, JobSource
+from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,7 @@ async def clear(database: Database) -> None:
     async with database.session() as session:
         await session.execute(delete(JobProvenance))
         await session.execute(delete(Job))
+        await session.execute(delete(JobBoard))
         await session.execute(delete(Company))
         await session.execute(delete(JobSource))
         await session.commit()

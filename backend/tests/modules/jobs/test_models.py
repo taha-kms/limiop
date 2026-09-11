@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 from platform_db.base import Base
-from platform_db.models import JobSource
+from platform_db.models import JobBoard, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
@@ -22,11 +22,13 @@ def run_database_test(
         database = Database(database_url)
         try:
             async with database.session() as session:
+                await session.execute(delete(JobBoard))
                 await session.execute(delete(JobSource))
                 await session.commit()
             await test(database)
         finally:
             async with database.session() as session:
+                await session.execute(delete(JobBoard))
                 await session.execute(delete(JobSource))
                 await session.commit()
             await database.dispose()

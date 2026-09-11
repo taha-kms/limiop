@@ -7,7 +7,7 @@ from typing import Any
 
 import httpx2
 import pytest
-from platform_db.models import Company, Job, JobProvenance, JobSource
+from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
@@ -65,6 +65,7 @@ def run_database_test(
         async with database.session() as session:
             await session.execute(delete(JobProvenance))
             await session.execute(delete(Job))
+            await session.execute(delete(JobBoard))
             await session.execute(delete(Company))
             await session.execute(delete(JobSource))
             await session.commit()
