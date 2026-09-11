@@ -152,3 +152,66 @@ def test_a_provider_with_nothing_registered_runs_empty(database_url: PostgresDsn
         assert summary.reached_the_end is True
 
     run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_run_records_its_poll_on_the_registry(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
+            )
+            session.add(JobBoard(source_id=source.id, slug="acme", status=BoardStatus.CONFIRMED))
+            await session.commit()
+
+        await ingest_board_source(
+            json_provider(),
+            settings=Settings(environment=Environment.TEST, database_url=database_url),
+            http_client=responding(ok(jobs(1))),
+        )
+
+        async with database.session() as session:
+            board = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert board.last_polled_at is not None
+        assert board.last_posting_count == 1
+        assert board.consecutive_failures == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_board_that_keeps_failing_is_retired(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
+            )
+            session.add(JobBoard(source_id=source.id, slug="acme", status=BoardStatus.CONFIRMED))
+            await session.commit()
+
+        config = BoardConfig(boards=("acme",), retry_backoff_seconds=0.0)
+        for _ in range(3):
+            await ingest_board_source(
+                json_provider(),
+                config=config,
+                settings=Settings(environment=Environment.TEST, database_url=database_url),
+                http_client=responding(httpx2.Response(404)),
+            )
+
+        async with database.session() as session:
+            board = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert board.status is BoardStatus.INACTIVE
+
+        summary = await ingest_board_source(
+            json_provider(),
+            settings=Settings(environment=Environment.TEST, database_url=database_url),
+            http_client=responding(),
+        )
+
+        assert summary.fetched == 0
+
+    run_database_test(database_url, exercise)

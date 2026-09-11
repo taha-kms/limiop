@@ -14,6 +14,7 @@ from typing import Any
 import httpx2
 
 from job_ingestion.boards.client import BoardClient, BoardConfig
+from job_ingestion.boards.lifecycle import record_poll
 from job_ingestion.boards.provider import BoardProvider
 from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Settings, get_settings
@@ -121,6 +122,19 @@ async def ingest_board_source(
                         skill_alias_version=app_settings.skill_alias_version,
                     ).execute(database),
                     client,
+                )
+                async with database.session() as session:
+                    lifecycle_result = await record_poll(
+                        session,
+                        source_key=provider.source_key,
+                        outcomes=client.outcomes,
+                        polled_at=started_at,
+                    )
+                    await session.commit()
+                logger.info(
+                    "polled %s: %s",
+                    provider.source_key,
+                    lifecycle_result,
                 )
             await reconcile_after(database, summary, run_started_at=started_at)
         await complete_run(database, run_id, summary)
