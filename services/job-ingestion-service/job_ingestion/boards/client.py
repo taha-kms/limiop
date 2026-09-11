@@ -61,6 +61,22 @@ class BoardConfig:
                 raise ValueError("a board name must not be blank")
 
 
+@dataclass(frozen=True, slots=True)
+class BoardOutcome:
+    """What happened to one configured board during a walk.
+
+    `records` is the count read on success, or `None` when the board could
+    not be read at all. A board whose hydration dropped a record still
+    counts as read: the drop is already a record failure and denies
+    `reached_the_end`, but the board itself answered, so it is not a
+    fetch failure here.
+    """
+
+    slug: str
+    records: int | None
+    failure: str | None
+
+
 @dataclass
 class BoardClient:
     """Fetches untrusted postings from every configured board of one provider."""
@@ -81,6 +97,11 @@ class BoardClient:
         # unreachable company does not discard every other company's postings,
         # and reported afterwards so it is not lost either.
         self.failures: list[RecordFailure] = []
+        # One entry per configured board, in configuration order, reset at
+        # the start of each walk. This is what the pipeline hands to the
+        # registry so a poll's result reaches the board it was about, not
+        # just the source as a whole.
+        self.outcomes: list[BoardOutcome] = []
         self._reached_the_end = False
         self._dropped_a_record = False
 
@@ -259,13 +280,18 @@ class BoardClient:
         self._reached_the_end = False
         self._dropped_a_record = False
         self.failures = []
+        self.outcomes = []
         skipped = False
         for board in self.config.boards:
             try:
-                yield await self.fetch_board(board)
+                page = await self.fetch_board(board)
             except (SourceResponseError, SourceUnavailableError) as error:
                 skipped = True
                 self.failures.append(
                     RecordFailure(stage=IngestionStage.FETCH, reason=error.message)
                 )
+                self.outcomes.append(BoardOutcome(board, None, error.message))
+            else:
+                self.outcomes.append(BoardOutcome(board, len(page.records), None))
+                yield page
         self._reached_the_end = not skipped and not self._dropped_a_record
