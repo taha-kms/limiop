@@ -4,6 +4,7 @@ from typing import Any
 import httpx2
 import pytest
 from platform_db.models import Job, JobSource
+from platform_db.models.boards import BoardStatus, JobBoard
 from pydantic import JsonValue, PostgresDsn
 from sqlalchemy import select
 
@@ -11,14 +12,13 @@ from job_ingestion.boards.client import BoardClient, BoardConfig
 from job_ingestion.boards.pipeline import (
     build_run,
     configured_base_url,
-    configured_boards,
-    default_config,
     ingest_board_source,
     with_board_failures,
 )
 from job_ingestion.config import Environment, Settings
 from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFailure
 from job_ingestion.database import Database
+from job_ingestion.persistence import SourceRegistration, ensure_source
 from tests.boards.fakes import FAKE_BASE_URL, jobs, json_provider, ok, responding
 from tests.support.catalog import with_empty_catalog
 
@@ -27,43 +27,12 @@ def configured(**block: JsonValue) -> Settings:
     return Settings(environment=Environment.TEST, source_config={"fake": block})
 
 
-def test_the_default_configuration_reads_the_providers_boards() -> None:
-    config = default_config(json_provider(), Settings(environment=Environment.TEST))
-
-    assert config.boards == ("acme",)
-    assert config.base_url == FAKE_BASE_URL
-
-
-def test_configured_boards_replace_the_shipped_ones() -> None:
-    assert configured_boards(json_provider(), configured(boards=["globex"])) == ("globex",)
-
-
-def test_no_configured_boards_means_the_shipped_ones() -> None:
-    assert configured_boards(json_provider(), configured(boards=[])) == ("acme",)
-    assert configured_boards(json_provider(), configured()) == ("acme",)
-
-
-@pytest.mark.parametrize(
-    "boards",
-    [
-        pytest.param("acme", id="one name rather than a list"),
-        pytest.param([1], id="a list of something other than names"),
-    ],
-)
-def test_a_board_list_that_is_not_one_is_refused(boards: JsonValue) -> None:
-    with pytest.raises(ValueError, match=r"fake.boards must be a list of board names"):
-        configured_boards(json_provider(), configured(boards=boards))
-
-
 def test_a_configured_base_url_replaces_the_providers() -> None:
     """A regional host is a deployment fact, not a code change."""
     assert (
         configured_base_url(json_provider(), configured(base_url="https://eu.example.test"))
         == "https://eu.example.test"
     )
-    assert default_config(
-        json_provider(), configured(base_url="https://eu.example.test")
-    ).base_url == ("https://eu.example.test")
 
 
 def test_an_absent_base_url_means_the_providers() -> None:
@@ -143,5 +112,43 @@ def test_the_entry_point_runs_any_provider(database_url: PostgresDsn) -> None:
 
         assert summary.source_key == "fake"
         assert summary.created == 1
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_run_without_an_explicit_config_polls_the_registry(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
+            )
+            session.add(JobBoard(source_id=source.id, slug="acme", status=BoardStatus.CONFIRMED))
+            await session.commit()
+
+        summary = await ingest_board_source(
+            json_provider(),
+            settings=Settings(environment=Environment.TEST, database_url=database_url),
+            http_client=responding(ok(jobs(1))),
+        )
+
+        assert summary.created == 1
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_provider_with_nothing_registered_runs_empty(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        summary = await ingest_board_source(
+            json_provider(),
+            settings=Settings(environment=Environment.TEST, database_url=database_url),
+            http_client=responding(),
+        )
+
+        assert summary.fetched == 0
+        assert summary.failures == ()
+        assert summary.reached_the_end is True
 
     run_database_test(database_url, exercise)
