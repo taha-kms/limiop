@@ -156,6 +156,7 @@ table, it lives in `platform/db` instead. The shared tables are:
 jobs
 companies
 job_sources
+job_boards
 job_provenance
 skill_concepts
 skill_surface_forms
