@@ -9,7 +9,8 @@ from pydantic import PostgresDsn
 from sqlalchemy import select
 
 from job_ingestion.boards.client import BoardClient, BoardConfig
-from job_ingestion.boards.pipeline import build_run, configured_boards
+from job_ingestion.boards.pipeline import build_run
+from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
 from job_ingestion.pinpoint.pipeline import ingest_pinpoint
@@ -86,6 +87,12 @@ def test_the_entry_point_runs_against_the_configured_database(
     run_database_test(database_url, exercise)
 
 
-def test_the_default_configuration_ships_no_boards() -> None:
-    """The feed never states the company, so nothing ships as a default board."""
-    assert configured_boards(PINPOINT, Settings(environment=Environment.TEST)) == ()
+@pytest.mark.integration
+def test_nothing_is_polled_until_a_board_is_registered(database_url: PostgresDsn) -> None:
+    """The feed never states the company; nothing ships as a default board either way."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            assert await polled_slugs(session, "pinpoint") == ()
+
+    run_database_test(database_url, exercise)

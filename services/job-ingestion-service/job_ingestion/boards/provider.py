@@ -67,7 +67,6 @@ class BoardProvider[ProviderRecordT]:
     display_name: str
     precedence: int
     default_base_url: str
-    default_boards: tuple[str, ...]
     validator: JobRecordValidator[ProviderRecordT]
     normalizer: JobRecordNormalizer[ProviderRecordT]
     board_request: Callable[[str, str, object | None], Request]

@@ -26,7 +26,6 @@ from job_ingestion.runs import complete_run, recorded_run
 
 logger = logging.getLogger(__name__)
 
-BOARDS_SETTING = "boards"
 BASE_URL_SETTING = "base_url"
 
 
@@ -51,31 +50,6 @@ def build_run(
         max_records=max_records,
         skill_alias_version=skill_alias_version,
     )
-
-
-def configured_boards(provider: BoardProvider[Any], settings: Settings) -> tuple[str, ...]:
-    """The boards to read, from configuration when it names any.
-
-    An absent or empty list means the shipped default rather than no boards. A
-    run that reads nothing looks exactly like a run whose every board went away,
-    and only one of those is a deployment mistake worth reporting as one.
-
-    A setting that is present but not a list of names is refused. Falling back
-    would turn a typo into a run that quietly ingests the shipped list while the
-    operator believes it is reading the boards they configured.
-    """
-    key = provider.source_key
-    configured = settings.source_config.get(key, {}).get(BOARDS_SETTING)
-    if configured is None:
-        return provider.default_boards
-    if not isinstance(configured, list):
-        raise ValueError(f"{key}.{BOARDS_SETTING} must be a list of board names")
-    names = tuple(name for name in configured if isinstance(name, str))
-    if len(names) != len(configured):
-        raise ValueError(f"{key}.{BOARDS_SETTING} must be a list of board names")
-    # Blank names are left for BoardConfig to refuse, so what a board name may
-    # be is decided in one place.
-    return names or provider.default_boards
 
 
 def configured_base_url(provider: BoardProvider[Any], settings: Settings) -> str:

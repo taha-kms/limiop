@@ -11,18 +11,12 @@ import httpx2
 
 from job_ingestion.boards import pipeline as boards
 from job_ingestion.boards.client import BoardClient
-from job_ingestion.boards.pipeline import BOARDS_SETTING, with_board_failures
-from job_ingestion.config import Settings, get_settings
+from job_ingestion.boards.pipeline import with_board_failures
+from job_ingestion.config import Settings
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.greenhouse.client import GreenhouseConfig
 from job_ingestion.greenhouse.provider import GREENHOUSE
-from job_ingestion.greenhouse.source import (
-    DEFAULT_BASE_URL,
-    DEFAULT_BOARDS,
-    DISPLAY_NAME,
-    PRECEDENCE,
-    SOURCE_KEY,
-)
+from job_ingestion.greenhouse.source import DEFAULT_BASE_URL, DISPLAY_NAME, PRECEDENCE, SOURCE_KEY
 from job_ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
 
 
@@ -33,18 +27,6 @@ def build_run(
     skill_alias_version: str | None = None,
 ) -> IngestionRun[Any]:
     return boards.build_run(client, max_records, skill_alias_version=skill_alias_version)
-
-
-def configured_boards(settings: Settings) -> tuple[str, ...]:
-    return boards.configured_boards(GREENHOUSE, settings)
-
-
-def default_config(settings: Settings | None = None) -> GreenhouseConfig:
-    resolved = settings if settings is not None else get_settings()
-    return GreenhouseConfig(
-        boards=boards.configured_boards(GREENHOUSE, resolved),
-        base_url=boards.configured_base_url(GREENHOUSE, resolved),
-    )
 
 
 async def ingest_greenhouse(
@@ -65,15 +47,11 @@ async def ingest_greenhouse(
 
 
 __all__ = [
-    "BOARDS_SETTING",
     "DEFAULT_BASE_URL",
-    "DEFAULT_BOARDS",
     "DISPLAY_NAME",
     "PRECEDENCE",
     "SOURCE_KEY",
     "build_run",
-    "configured_boards",
-    "default_config",
     "ingest_greenhouse",
     "with_board_failures",
 ]
