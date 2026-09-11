@@ -85,7 +85,6 @@ def json_provider(**overrides: Any) -> BoardProvider[FakeRecord]:
         "display_name": "Fake Boards",
         "precedence": 15,
         "default_base_url": FAKE_BASE_URL,
-        "default_boards": ("acme",),
         "validator": FakeValidator(),
         "normalizer": FakeNormalizer(),
         "board_request": single_request,

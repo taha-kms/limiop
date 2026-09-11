@@ -49,7 +49,6 @@ def test_a_provider_is_a_frozen_value() -> None:
         display_name="Fake",
         precedence=1,
         default_base_url="https://example.test",
-        default_boards=("acme",),
         validator=None,  # type: ignore[arg-type]
         normalizer=None,  # type: ignore[arg-type]
         board_request=lambda base, slug, cursor: Request(url=f"{base}/{slug}"),

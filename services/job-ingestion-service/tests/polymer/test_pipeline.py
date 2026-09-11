@@ -9,7 +9,8 @@ from pydantic import PostgresDsn
 from sqlalchemy import select
 
 from job_ingestion.boards.client import BoardClient, BoardConfig
-from job_ingestion.boards.pipeline import build_run, configured_boards
+from job_ingestion.boards.pipeline import build_run
+from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
 from job_ingestion.polymer.pipeline import ingest_polymer
@@ -99,6 +100,12 @@ def test_the_entry_point_runs_against_the_configured_database(
     run_database_test(database_url, exercise)
 
 
-def test_the_default_configuration_ships_no_boards() -> None:
-    """The only slug known to answer is Polymer's own demo organisation."""
-    assert configured_boards(POLYMER, Settings(environment=Environment.TEST)) == ()
+@pytest.mark.integration
+def test_nothing_is_polled_until_a_board_is_registered(database_url: PostgresDsn) -> None:
+    """Polymer ships no boards; the registry decides, and starts empty."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            assert await polled_slugs(session, "polymer") == ()
+
+    run_database_test(database_url, exercise)

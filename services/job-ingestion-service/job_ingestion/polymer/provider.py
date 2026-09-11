@@ -18,7 +18,6 @@ from job_ingestion.polymer.normalizer import PolymerNormalizer
 from job_ingestion.polymer.records import PolymerJobRecord, PolymerValidator
 from job_ingestion.polymer.source import (
     DEFAULT_BASE_URL,
-    DEFAULT_BOARDS,
     DISPLAY_NAME,
     PRECEDENCE,
     SOURCE_KEY,
@@ -63,7 +62,6 @@ POLYMER: BoardProvider[PolymerJobRecord] = BoardProvider(
     display_name=DISPLAY_NAME,
     precedence=PRECEDENCE,
     default_base_url=DEFAULT_BASE_URL,
-    default_boards=DEFAULT_BOARDS,
     validator=PolymerValidator(),
     normalizer=PolymerNormalizer(),
     board_request=board_request,

@@ -116,13 +116,16 @@ the API at the same address, and a single value cannot be right for both.
 `SKILLSYNC_CV_STORAGE_ROOT`, `SKILLSYNC_CV_PDF_MAX_PAGES`,
 `SKILLSYNC_SKILL_ALIAS_VERSION` (unset follows the newest published table),
 `SKILLSYNC_AUTH_ATTEMPTS` (10) and `SKILLSYNC_AUTH_ATTEMPT_WINDOW_SECONDS` (60),
-`SKILLSYNC_SOURCE_CONFIG` (per-source JSON; `{"greenhouse":{"boards":["hudl"]}}`
-polls those boards instead of the shipped list, and an absent or empty list
-means the shipped one rather than no boards; a `base_url` key in the same
-block reads a provider's regional host, for example
-`{"lever":{"base_url":"https://api.eu.lever.co/v0/postings"}}`, and is
-absent otherwise; `polymer` and `pinpoint` take the same `boards` list and
-ship with none, for example `{"polymer":{"boards":["acme"]}}`).
+`SKILLSYNC_SOURCE_CONFIG` (per-source JSON; carries only a `base_url` override
+for a provider's regional host, for example
+`{"lever":{"base_url":"https://api.eu.lever.co/v0/postings"}}`, and is absent
+otherwise. Which boards a run polls comes from the `job_boards` table, not
+from this variable: discovery fills it, and an operator fills it by hand with
+`scripts/boards.py`, for example
+`python scripts/boards.py --database-url "$SKILLSYNC_DATABASE_URL" add --source greenhouse hudl`
+to pin a board, or
+`python scripts/boards.py --database-url "$SKILLSYNC_DATABASE_URL" block --source greenhouse hudl`
+to refuse one).
 
 ### Secrets, by handling
 

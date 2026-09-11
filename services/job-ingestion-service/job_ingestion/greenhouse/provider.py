@@ -17,7 +17,6 @@ from job_ingestion.greenhouse.normalizer import GreenhouseNormalizer
 from job_ingestion.greenhouse.records import GreenhouseJobRecord, GreenhouseValidator
 from job_ingestion.greenhouse.source import (
     DEFAULT_BASE_URL,
-    DEFAULT_BOARDS,
     DISPLAY_NAME,
     PRECEDENCE,
     SOURCE_KEY,
@@ -47,7 +46,6 @@ GREENHOUSE: BoardProvider[GreenhouseJobRecord] = BoardProvider(
     display_name=DISPLAY_NAME,
     precedence=PRECEDENCE,
     default_base_url=DEFAULT_BASE_URL,
-    default_boards=DEFAULT_BOARDS,
     validator=GreenhouseValidator(),
     normalizer=GreenhouseNormalizer(),
     board_request=board_request,

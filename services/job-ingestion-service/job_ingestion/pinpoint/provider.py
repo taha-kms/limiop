@@ -20,7 +20,6 @@ from job_ingestion.pinpoint.normalizer import PinpointNormalizer
 from job_ingestion.pinpoint.records import PinpointJobRecord, PinpointValidator
 from job_ingestion.pinpoint.source import (
     DEFAULT_BASE_URL,
-    DEFAULT_BOARDS,
     DISPLAY_NAME,
     PRECEDENCE,
     SOURCE_KEY,
@@ -49,7 +48,6 @@ PINPOINT: BoardProvider[PinpointJobRecord] = BoardProvider(
     display_name=DISPLAY_NAME,
     precedence=PRECEDENCE,
     default_base_url=DEFAULT_BASE_URL,
-    default_boards=DEFAULT_BOARDS,
     validator=PinpointValidator(),
     normalizer=PinpointNormalizer(),
     board_request=board_request,
