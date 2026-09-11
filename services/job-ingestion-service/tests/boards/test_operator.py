@@ -10,6 +10,7 @@ from job_ingestion.boards.operator import add_board, block_board, list_boards, u
 from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
+from job_ingestion.persistence import SourceRegistration, ensure_source
 from tests.boards.fakes import json_provider
 from tests.support.catalog import with_empty_catalog
 
@@ -166,5 +167,35 @@ def test_list_returns_every_row(database_url: PostgresDsn) -> None:
         assert acme["pinned"] is True
         assert acme["company"] is None
         assert acme["consecutive_failures"] == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_add_on_an_inactive_row_leaves_the_streak_at_zero(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        provider = json_provider()
+        settings = settings_for(database_url)
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url="https://x"),
+            )
+            session.add(
+                JobBoard(
+                    source_id=source.id,
+                    slug="acme",
+                    status=BoardStatus.INACTIVE,
+                    consecutive_failures=3,
+                )
+            )
+            await session.commit()
+
+        async with database.session() as session:
+            board = await add_board(session, provider, settings, "acme")
+            await session.commit()
+
+        assert board.status is BoardStatus.CONFIRMED
+        assert board.consecutive_failures == 0
 
     run_database_test(database_url, exercise)

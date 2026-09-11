@@ -106,6 +106,10 @@ async def add_board(
     board.pinned = True
     board.verified_at = checked_at
     board.evidence = operator_evidence(checked_at)
+    # A board an operator is pinning may have been retired by repeated poll
+    # failures; the pin is a fresh decision, so the streak that led to that
+    # retirement should not linger and immediately retire it again.
+    board.consecutive_failures = 0
     await session.flush()
     return board
 

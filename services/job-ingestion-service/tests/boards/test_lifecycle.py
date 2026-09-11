@@ -3,12 +3,18 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from platform_db.models import Company
 from platform_db.models.boards import BoardStatus, JobBoard
 from pydantic import PostgresDsn
 from sqlalchemy import select
 
 from job_ingestion.boards.client import BoardOutcome
-from job_ingestion.boards.lifecycle import INACTIVE_AFTER_FAILURES, LifecycleResult, record_poll
+from job_ingestion.boards.lifecycle import (
+    INACTIVE_AFTER_FAILURES,
+    LifecycleResult,
+    reactivate,
+    record_poll,
+)
 from job_ingestion.database import Database
 from job_ingestion.persistence import SourceRegistration, ensure_source
 from tests.boards.fakes import FAKE_BASE_URL
@@ -27,14 +33,13 @@ def run_database_test(database_url: PostgresDsn, test: Any) -> None:
 
 
 async def register(database: Database, slug: str, **fields: Any) -> None:
+    fields.setdefault("status", BoardStatus.CONFIRMED)
     async with database.session() as session:
         source = await ensure_source(
             session,
             SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
         )
-        session.add(
-            JobBoard(source_id=source.id, slug=slug, status=BoardStatus.CONFIRMED, **fields)
-        )
+        session.add(JobBoard(source_id=source.id, slug=slug, **fields))
         await session.commit()
 
 
@@ -162,5 +167,112 @@ def test_a_slug_without_a_row_is_skipped(database_url: PostgresDsn) -> None:
             await session.commit()
 
         assert result == LifecycleResult(polled=0, retired=())
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_reactivate_on_an_inactive_discovered_row_with_a_company_confirms_it(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            company = Company(display_name="Acme")
+            session.add(company)
+            await session.commit()
+            company_id = company.id
+
+        await register(
+            database,
+            "acme",
+            status=BoardStatus.INACTIVE,
+            consecutive_failures=INACTIVE_AFTER_FAILURES,
+            company_id=company_id,
+            evidence={"kind": "provider_name"},
+        )
+
+        async with database.session() as session:
+            changed = await reactivate(session, source_key="fake", slug="acme")
+            await session.commit()
+
+        assert changed is True
+        row = await board_row(database, "acme")
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.consecutive_failures == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_reactivate_on_an_inactive_row_without_a_company_returns_it_to_candidate(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await register(
+            database,
+            "acme",
+            status=BoardStatus.INACTIVE,
+            consecutive_failures=INACTIVE_AFTER_FAILURES,
+        )
+
+        async with database.session() as session:
+            changed = await reactivate(session, source_key="fake", slug="acme")
+            await session.commit()
+
+        assert changed is True
+        row = await board_row(database, "acme")
+        assert row.status is BoardStatus.CANDIDATE
+        assert row.consecutive_failures == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_reactivate_on_an_inactive_operator_pinned_row_that_lost_its_pin_goes_to_candidate(
+    database_url: PostgresDsn,
+) -> None:
+    """An operator's own evidence does not name a company, so it does not
+    stand in for verification once the pin protecting the row is gone."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            company = Company(display_name="Acme")
+            session.add(company)
+            await session.commit()
+            company_id = company.id
+
+        await register(
+            database,
+            "acme",
+            status=BoardStatus.INACTIVE,
+            consecutive_failures=INACTIVE_AFTER_FAILURES,
+            company_id=company_id,
+            evidence={"kind": "operator", "checked_at": "2026-01-01T00:00:00+00:00"},
+            pinned=False,
+        )
+
+        async with database.session() as session:
+            changed = await reactivate(session, source_key="fake", slug="acme")
+            await session.commit()
+
+        assert changed is True
+        row = await board_row(database, "acme")
+        assert row.status is BoardStatus.CANDIDATE
+        assert row.consecutive_failures == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_reactivate_on_a_non_inactive_row_does_nothing(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        await register(database, "acme")
+
+        async with database.session() as session:
+            changed = await reactivate(session, source_key="fake", slug="acme")
+
+        assert changed is False
+        row = await board_row(database, "acme")
+        assert row.status is BoardStatus.CONFIRMED
 
     run_database_test(database_url, exercise)

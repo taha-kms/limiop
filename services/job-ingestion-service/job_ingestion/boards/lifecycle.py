@@ -97,3 +97,30 @@ async def record_poll(
 
     await session.flush()
     return LifecycleResult(polled=polled, retired=tuple(retired))
+
+
+async def reactivate(session: AsyncSession, *, source_key: str, slug: str) -> bool:
+    """Put an inactive board back into the walk. Returns whether a row changed.
+
+    Called by whoever learns the board answers again: discovery, or an
+    operator. Sets status confirmed only if the row's evidence still names a
+    company (evidence kind other than operator and company_id set) or the
+    row is pinned; otherwise back to candidate so it is verified again
+    before polling.
+    """
+    boards = await _boards_by_slug(session, source_key, [slug])
+    board = boards.get(slug)
+    if board is None or board.status is not BoardStatus.INACTIVE:
+        return False
+
+    named_by_evidence = (
+        board.evidence is not None
+        and board.evidence.get("kind") != "operator"
+        and board.company_id is not None
+    )
+    board.status = (
+        BoardStatus.CONFIRMED if (named_by_evidence or board.pinned) else BoardStatus.CANDIDATE
+    )
+    board.consecutive_failures = 0
+    await session.flush()
+    return True
