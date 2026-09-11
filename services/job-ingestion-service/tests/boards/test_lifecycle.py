@@ -125,6 +125,73 @@ def test_the_third_consecutive_failure_retires_the_board(database_url: PostgresD
 
 
 @pytest.mark.integration
+def test_a_failure_against_an_already_inactive_row_is_not_reported_as_retired_again(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await register(
+            database,
+            "acme",
+            status=BoardStatus.INACTIVE,
+            consecutive_failures=INACTIVE_AFTER_FAILURES,
+        )
+
+        async with database.session() as session:
+            result = await record_poll(
+                session,
+                source_key="fake",
+                outcomes=[BoardOutcome("acme", None, "board acme returned status 404")],
+                polled_at=datetime.now(UTC),
+            )
+            await session.commit()
+
+        assert result.retired == ()
+        row = await board_row(database, "acme")
+        assert row.status is BoardStatus.INACTIVE
+        assert row.consecutive_failures == INACTIVE_AFTER_FAILURES + 1
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_success_against_an_inactive_row_with_provider_evidence_reactivates_it(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            company = Company(display_name="Acme")
+            session.add(company)
+            await session.commit()
+            company_id = company.id
+
+        await register(
+            database,
+            "acme",
+            status=BoardStatus.INACTIVE,
+            consecutive_failures=INACTIVE_AFTER_FAILURES,
+            company_id=company_id,
+            evidence={"kind": "provider_name"},
+        )
+
+        async with database.session() as session:
+            result = await record_poll(
+                session,
+                source_key="fake",
+                outcomes=[BoardOutcome("acme", 3, None)],
+                polled_at=datetime.now(UTC),
+            )
+            await session.commit()
+
+        assert result.reactivated == ("acme",)
+        row = await board_row(database, "acme")
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.consecutive_failures == 0
+        assert row.last_posting_count == 3
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
 def test_a_pinned_row_reaches_the_threshold_and_stays_confirmed(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
         await register(database, "acme", pinned=True)

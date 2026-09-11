@@ -21,6 +21,11 @@ import sys
 from collections.abc import Callable, Coroutine
 from typing import Any
 
+from platform_db.models import JobSource
+from platform_db.models.boards import JobBoard
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
 from job_ingestion.boards.lifecycle import reactivate
 from job_ingestion.boards.operator import add_board, as_row, block_board, list_boards, unblock_board
 from job_ingestion.boards.registry import provider_for
@@ -67,8 +72,15 @@ async def run_reactivate(database: Database, source_key: str, slug: str) -> obje
     provider_for(source_key)
     async with database.session() as session:
         changed = await reactivate(session, source_key=source_key, slug=slug)
+        statement = (
+            select(JobBoard)
+            .join(JobSource, JobBoard.source_id == JobSource.id)
+            .options(selectinload(JobBoard.company))
+            .where(JobSource.key == source_key, JobBoard.slug == slug)
+        )
+        board = (await session.scalars(statement)).one()
         await session.commit()
-        return {"slug": slug, "reactivated": changed}
+        return {**as_row(board), "reactivated": changed}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
