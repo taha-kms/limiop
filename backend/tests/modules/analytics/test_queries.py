@@ -10,6 +10,7 @@ import pytest
 from platform_db.models import (
     Company,
     Job,
+    JobBoard,
     JobProvenance,
     JobSource,
     SkillAliasVersion,
@@ -48,6 +49,7 @@ def wipe(engine: Engine) -> None:
         connection.execute(delete(JobSkill))
         connection.execute(delete(JobProvenance))
         connection.execute(delete(Job))
+        connection.execute(delete(JobBoard))
         connection.execute(delete(Company))
         connection.execute(delete(JobSource))
         connection.execute(delete(SkillConcept).where(SkillConcept.id.in_(CONCEPTS)))

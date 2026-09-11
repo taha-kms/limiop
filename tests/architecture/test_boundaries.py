@@ -19,6 +19,7 @@ ALLOWED_PLATFORM_DB_MODULES = frozenset(
         "platform_db",
         "platform_db.base",
         "platform_db.models",
+        "platform_db.models.boards",
         "platform_db.models.catalog",
         "platform_db.models.ingestion",
         "platform_db.models.skills",

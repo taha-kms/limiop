@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from platform_db.models import Company, Job, JobProvenance, JobSource
+from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from pydantic import PostgresDsn, ValidationError
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
@@ -55,6 +55,7 @@ def run_database_test(
         async with database.session() as session:
             await session.execute(delete(JobProvenance))
             await session.execute(delete(Job))
+            await session.execute(delete(JobBoard))
             await session.execute(delete(Company))
             await session.execute(delete(JobSource))
             await session.commit()

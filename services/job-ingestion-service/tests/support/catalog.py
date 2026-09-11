@@ -2,7 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 
-from platform_db.models import Company, Job, JobProvenance, JobSource
+from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from sqlalchemy import delete
 
 from job_ingestion.database import Database
@@ -13,6 +13,7 @@ async def clear(database: Database) -> None:
     async with database.session() as session:
         await session.execute(delete(JobProvenance))
         await session.execute(delete(Job))
+        await session.execute(delete(JobBoard))
         await session.execute(delete(Company))
         await session.execute(delete(JobSource))
         await session.commit()

@@ -13,7 +13,7 @@ from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-from platform_db.models import Company, Job, JobProvenance, JobSource
+from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from platform_db.models.job_skills import (
     EXTRACTOR_VERSION_LENGTH,
     JobSkill,
@@ -229,6 +229,7 @@ def run_database_test(
             await session.execute(delete(JobSkill))
             await session.execute(delete(JobProvenance))
             await session.execute(delete(Job))
+            await session.execute(delete(JobBoard))
             await session.execute(delete(Company))
             await session.execute(delete(JobSource))
             await session.execute(delete(SkillSurfaceForm))
