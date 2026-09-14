@@ -10,6 +10,8 @@ from job_ingestion.contracts import RawPage
 from job_ingestion.errors import SourceResponseError
 from job_ingestion.pinpoint.provider import PINPOINT, board_request, read_page, stated_company
 from job_ingestion.pinpoint.source import DEFAULT_BASE_URL
+from job_ingestion.pinpoint.verification import locate as verification_locate
+from job_ingestion.pinpoint.verification import verify as verification_verify
 from tests.boards.fakes import never_sleeps, ok, responding
 
 FIXTURE = Path(__file__).parent / "fixtures" / "postings.json"
@@ -47,6 +49,11 @@ def test_a_response_with_no_data_array_is_refused() -> None:
 def test_stated_company_is_always_none() -> None:
     """The feed never names an employer, so nothing here can confirm a slug."""
     assert stated_company(fixture_body()["data"]) is None
+
+
+def test_the_provider_wires_verify_and_locate_to_verification() -> None:
+    assert PINPOINT.verify is verification_verify
+    assert PINPOINT.locate is verification_locate
 
 
 def test_a_board_walk_yields_one_record_stamped_with_its_slug() -> None:
