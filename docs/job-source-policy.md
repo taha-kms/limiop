@@ -192,7 +192,9 @@ its design, and no crawler should be implemented as a tier-one adapter.
 **Added 2026-09-14.** Automatic board registration for a provider whose feed
 states no company (Pinpoint) may verify a guessed board by fetching, per
 company: a careers site's front page and its RSS feed, and at most three
-pages of the company's own website. Nothing here extracts postings; the only
+pages of the company's own website. The same three pages may also be read to
+learn which board a site links to, when no guessed board answered at all; no
+new pages are fetched for this. Nothing here extracts postings; the only
 question ever asked of a page is whether it names or links a board this
 already suspects exists. Every website fetch obeys `robots.txt` and
 identifies itself by user agent.

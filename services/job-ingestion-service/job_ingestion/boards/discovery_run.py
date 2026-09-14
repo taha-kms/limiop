@@ -67,6 +67,7 @@ _TALLIED_OUTCOMES = (
     "reverified",
     "demoted",
     "pinned_reported",
+    "located",
 )
 
 
@@ -109,6 +110,7 @@ class DiscoverySummary:
     reverified: int = 0  # a previously verified row confirmed or named again
     demoted: int = 0  # a previously verified row's recheck came back weaker
     pinned_reported: int = 0  # a pinned row's recheck, written but never acted on
+    located: int = 0  # no guess answered, and the company's website named a board
     skipped_nameless: int = 0  # companies whose name yields no candidate slug
     stopped_at_budget: bool = False
 
@@ -204,6 +206,77 @@ async def _skip_slugs(session: AsyncSession, source_id: UUID) -> set[str]:
     return set((await session.scalars(statement)).all())
 
 
+async def _register_named(
+    session: AsyncSession,
+    *,
+    source: JobSource,
+    company: Company,
+    named: Verification,
+    now: datetime,
+) -> str:
+    """Write the board `named.slug` actually names — a slug a guess never
+    tried, learned either because no guess answered at all (`locate`) or
+    because the one that did could not be confirmed but named a different
+    board (`verify`).
+
+    The same settled-row rules a guessed slug gets apply here too: a row
+    that is blocked, wrong-company, pinned, or confirmed/named for a
+    *different* company is left alone (`unchanged`), never overwritten by
+    what this company's probe happened to turn up. Otherwise the row is
+    written fresh, keyed to `company`, with `named.outcome` deciding the
+    status — `CONFIRMED`, `NAMED`, or `WRONG_COMPANY`, the only outcomes a
+    verifier naming a board this way is documented to return. A `CONFIRMED`
+    landing on a row that had gone `inactive` revives it exactly as the
+    guessed slug's own `CONFIRMED` revival does — a clean failure count,
+    back in the walk — and is `reactivated` rather than plain `confirmed`,
+    so a run does not undercount how many boards it actually revived.
+    """
+    assert named.slug is not None  # only ever called with a named slug
+    slug = named.slug
+    board = await _existing_board(session, source.id, slug)
+    owned_by_someone_else = (
+        board is not None
+        and board.company_id is not None
+        and board.company_id != company.id
+        and board.status in _OWNED_STATUSES
+    )
+    if board is not None and (
+        board.status in _SETTLED_STATUSES or owned_by_someone_else or board.pinned
+    ):
+        return "unchanged"
+
+    if board is None:
+        board = JobBoard(source_id=source.id, slug=slug)
+        session.add(board)
+
+    board.company_id = company.id
+    board.last_checked_at = now
+    board.evidence = dict(named.evidence)
+    was_inactive = board.status is BoardStatus.INACTIVE
+
+    if named.outcome is DiscoveryOutcome.CONFIRMED:
+        board.verified_at = now
+        if was_inactive:
+            board.status = _revived_status(board)
+            board.consecutive_failures = 0
+            outcome = "reactivated"
+        else:
+            board.status = BoardStatus.CONFIRMED
+            outcome = "confirmed"
+    elif named.outcome is DiscoveryOutcome.NAMED:
+        board.status = BoardStatus.NAMED
+        board.verified_at = now
+        outcome = "named"
+    elif named.outcome is DiscoveryOutcome.WRONG_COMPANY:
+        board.status = BoardStatus.WRONG_COMPANY
+        outcome = "wrong_company"
+    else:
+        raise AssertionError(f"a named board cannot verify as {named.outcome!r}")
+
+    await session.flush()
+    return outcome
+
+
 async def register(
     session: AsyncSession,
     *,
@@ -287,6 +360,26 @@ async def register(
     that was skipped because it already belongs to somebody else — keying on
     a skipped slug would find that settled row, refuse to touch it, and
     leave this company with no row at all to show it was checked.
+
+    Two more ways a probe can end up naming a board this guess never tried,
+    both written by `_register_named` once the guessed slug's own row is
+    settled: when `result.outcome` is `UNVERIFIABLE` and `client.provider.verify`
+    answers with its own `slug` set to something other than the guess, that
+    slug is written instead — the guessed slug still gets exactly the
+    `candidate`/`unverified` row an unverifiable guess always does, as if
+    `verify` had said nothing about it. And when `result.outcome` is
+    `NOT_FOUND`, the guess is a *first* guess (not `previously_verified` —
+    a recheck's own `NOT_FOUND` is not believed, above, and asking the
+    website to name some other board would contradict that on the same
+    recheck), and `client.provider.locate` is configured, it is asked
+    whether the company's website names a board at all; a `Verification` it
+    returns is written the same way, and the run tallies it `located` (as
+    well as `not_found`, for the guessed slug's own row, which is written
+    exactly as it always is regardless of what `locate` found) — plus
+    `reactivated` too, when the board it names had gone `inactive`. Neither
+    path runs when the guessed slug's own row is already settled — that
+    early return happens first, before `client.provider.verify` or
+    `.locate` is ever asked.
     """
     tried = [
         candidate for candidate in candidate_slugs(company.display_name) if candidate not in skip
@@ -334,6 +427,16 @@ async def register(
     ):
         verification = await client.provider.verify(client, slug, company)
         outcome_kind = verification.outcome
+
+    renamed: Verification | None = None
+    if verification is not None and verification.slug is not None and verification.slug != slug:
+        # The verifier learned a different board than the one guessed. The
+        # guessed slug's own row gets exactly what an unverifiable guess
+        # always gets (below); the board it actually names is written
+        # separately, once the guessed slug's row is settled.
+        renamed = verification
+        verification = None
+        outcome_kind = DiscoveryOutcome.UNVERIFIABLE
 
     if board is None:
         board = JobBoard(source_id=source.id, slug=slug)
@@ -495,6 +598,34 @@ async def register(
         board.evidence = {"kind": "unreachable"}
         outcome = "unreachable"
 
+    if renamed is not None:
+        renamed_outcome = await _register_named(
+            session, source=source, company=company, named=renamed, now=now
+        )
+        if renamed_outcome != "unchanged":
+            outcome = renamed_outcome
+    elif (
+        result.outcome is DiscoveryOutcome.NOT_FOUND
+        and client is not None
+        and client.provider.locate is not None
+        and not previously_verified
+    ):
+        # A previously verified row's own `NOT_FOUND` recheck is not
+        # believed on one silent probe (above) — asking the website whether
+        # it names some *other* board would contradict that: the guessed
+        # slug's row would stand unchanged while a second row got written,
+        # both for the same recheck. `locate` is only ever asked when this
+        # is a first guess with nothing settled yet to contradict.
+        located = await client.provider.locate(client, company)
+        if located is not None:
+            located_outcome = await _register_named(
+                session, source=source, company=company, named=located, now=now
+            )
+            if located_outcome == "reactivated":
+                outcome = "located_reactivated"
+            elif located_outcome != "unchanged":
+                outcome = "located"
+
     await session.flush()
     return outcome
 
@@ -565,6 +696,13 @@ async def run_discovery(
                 if outcome == "named_reactivated":
                     tallies["named"] += 1
                     tallies["reactivated"] += 1
+                elif outcome == "located":
+                    tallies["located"] += 1
+                    tallies["not_found"] += 1
+                elif outcome == "located_reactivated":
+                    tallies["located"] += 1
+                    tallies["not_found"] += 1
+                    tallies["reactivated"] += 1
                 elif outcome in tallies:
                     tallies[outcome] += 1
 
@@ -585,6 +723,7 @@ async def run_discovery(
         reverified=tallies["reverified"],
         demoted=tallies["demoted"],
         pinned_reported=tallies["pinned_reported"],
+        located=tallies["located"],
         skipped_nameless=skipped_nameless,
         stopped_at_budget=stopped_at_budget,
     )

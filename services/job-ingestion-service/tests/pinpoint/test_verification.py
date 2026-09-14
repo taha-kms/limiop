@@ -15,7 +15,14 @@ from platform_db.models import Company
 from job_ingestion.boards.client import BoardClient, BoardConfig
 from job_ingestion.boards.discovery import DiscoveryOutcome
 from job_ingestion.pinpoint.provider import PINPOINT
-from job_ingestion.pinpoint.verification import corroborate, identity, stated_name, verify
+from job_ingestion.pinpoint.verification import (
+    corroborate,
+    identity,
+    linked_subdomains,
+    locate,
+    stated_name,
+    verify,
+)
 from tests.boards.fakes import FAKE_BASE_URL, never_sleeps, routing
 
 
@@ -104,6 +111,62 @@ def test_a_title_naming_nothing_returns_none() -> None:
 
 def test_a_blank_title_returns_none() -> None:
     assert stated_name("   ") is None
+
+
+# --- linked_subdomains ------------------------------------------------------
+
+
+def test_linked_subdomains_finds_one_link() -> None:
+    content = b'<a href="https://workwithus.pinpointhq.com/">Careers</a>'
+
+    assert linked_subdomains(content, "pinpointhq.com") == ("workwithus",)
+
+
+def test_linked_subdomains_finds_several_in_first_seen_order() -> None:
+    content = (
+        b'<a href="https://beta.pinpointhq.com/">B</a><a href="https://alpha.pinpointhq.com/">A</a>'
+    )
+
+    assert linked_subdomains(content, "pinpointhq.com") == ("beta", "alpha")
+
+
+def test_linked_subdomains_excludes_www() -> None:
+    content = b'<a href="https://www.pinpointhq.com/">Home</a>'
+
+    assert linked_subdomains(content, "pinpointhq.com") == ()
+
+
+def test_linked_subdomains_requires_the_host_to_match_exactly() -> None:
+    """`notpinpointhq.com` is a different host entirely, and
+    `pinpointhq.com.evil.test` merely has the real host as a prefix of a
+    longer one — neither is a Pinpoint subdomain."""
+    content = (
+        b'<a href="https://sub.notpinpointhq.com/">A</a>'
+        b'<a href="https://sub.pinpointhq.com.evil.test/">B</a>'
+    )
+
+    assert linked_subdomains(content, "pinpointhq.com") == ()
+
+
+def test_linked_subdomains_is_case_insensitive() -> None:
+    content = b'<A HREF="HTTPS://WorkWithUs.PinpointHQ.com/">Careers</A>'
+
+    assert linked_subdomains(content, "pinpointhq.com") == ("workwithus",)
+
+
+def test_linked_subdomains_reads_src_as_well_as_href() -> None:
+    content = b'<script src="https://workwithus.pinpointhq.com/widget.js"></script>'
+
+    assert linked_subdomains(content, "pinpointhq.com") == ("workwithus",)
+
+
+def test_linked_subdomains_dedupes_repeated_links() -> None:
+    content = (
+        b'<a href="https://workwithus.pinpointhq.com/">A</a>'
+        b'<a href="https://workwithus.pinpointhq.com/jobs/1">B</a>'
+    )
+
+    assert linked_subdomains(content, "pinpointhq.com") == ("workwithus",)
 
 
 # --- identity -------------------------------------------------------------
@@ -431,6 +494,401 @@ def test_a_redirect_with_a_non_printable_location_yields_none() -> None:
             fetcher,
             "acme",
             company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_home_page_linking_a_different_subdomain_names_it() -> None:
+    """The guess (`pinpoint`) does not answer for `Pinpoint`'s own board, but
+    the website links a different tenant subdomain, `workwithus`. That is
+    stronger evidence than the guess itself and names the board the guess
+    could not."""
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(
+                200, text='<a href="https://workwithus.boards.example.test/">Careers</a>'
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_link"
+    assert result.slug == "workwithus"
+    assert result.evidence["linked"] == "workwithus"
+
+
+def test_careers_page_redirecting_to_a_different_subdomain_names_it() -> None:
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(200, text="<html>Welcome</html>"),
+            "https://pinpoint.example.test/careers": httpx2.Response(
+                302, headers={"location": "https://workwithus.boards.example.test/"}
+            ),
+            "https://workwithus.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_redirect"
+    assert result.slug == "workwithus"
+
+
+def test_a_website_that_already_is_a_different_subdomain_names_it_directly() -> None:
+    """`company.website_url` sometimes already points straight at the
+    tenant's board — no redirect ever happens, so the evidence must say
+    `website_self`, not claim a redirect that never occurred."""
+    fetcher = url_client(
+        {
+            "https://workwithus.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://workwithus.boards.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_self"
+    assert result.slug == "workwithus"
+
+
+def test_a_redirect_to_an_invalid_subdomain_label_names_nothing() -> None:
+    """A redirect target is not something this controls; a hostname whose
+    label falls outside `linked_subdomains`'s own charset must not be read
+    as naming a board just because it happens to end in the right host."""
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(
+                302, headers={"location": "https://a_b.boards.example.test/"}
+            ),
+            "https://a_b.boards.example.test/": httpx2.Response(200, text="ok"),
+            "https://pinpoint.example.test/careers": httpx2.Response(404),
+            "https://pinpoint.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_a_redirect_to_www_names_nothing() -> None:
+    """`www.{host}` is the provider's own bare host, not a tenant — a
+    redirect there must never be read as naming a board called `www`."""
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(
+                302, headers={"location": "https://www.boards.example.test/"}
+            ),
+            "https://pinpoint.example.test/careers": httpx2.Response(404),
+            "https://pinpoint.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_a_page_linking_two_subdomains_is_ambiguous_and_the_walk_continues() -> None:
+    """A group site listing several tenants must not have one of them picked
+    for it; the ambiguous page is skipped and the walk goes on to the next
+    one, which names a single subdomain."""
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://workwithus.boards.example.test/">A</a>'
+                    '<a href="https://othertenant.boards.example.test/">B</a>'
+                ),
+            ),
+            "https://pinpoint.example.test/careers": httpx2.Response(404),
+            "https://pinpoint.example.test/jobs": httpx2.Response(
+                200, text='<a href="https://workwithus.boards.example.test/">Careers</a>'
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.slug == "workwithus"
+
+
+def test_a_page_linking_only_the_ambiguous_pair_names_nothing() -> None:
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://workwithus.boards.example.test/">A</a>'
+                    '<a href="https://othertenant.boards.example.test/">B</a>'
+                ),
+            ),
+            "https://pinpoint.example.test/careers": httpx2.Response(404),
+            "https://pinpoint.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+# --- locate -------------------------------------------------------------------
+
+
+def test_locate_finds_the_one_linked_subdomain() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200, text='<a href="https://workwithus.boards.example.test/">Careers</a>'
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.slug == "workwithus"
+    assert result.evidence["kind"] == "website_link"
+    assert result.evidence["linked"] == "workwithus"
+
+
+def test_locate_follows_a_redirect_to_a_subdomain() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                302, headers={"location": "https://workwithus.boards.example.test/"}
+            ),
+            "https://workwithus.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_redirect"
+    assert result.slug == "workwithus"
+
+
+def test_locate_names_a_subdomain_the_website_already_is() -> None:
+    fetcher = url_client(
+        {
+            "https://workwithus.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://workwithus.boards.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_self"
+    assert result.slug == "workwithus"
+
+
+def test_locate_ignores_a_redirect_to_an_invalid_subdomain_label() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                302, headers={"location": "https://a_b.boards.example.test/"}
+            ),
+            "https://a_b.boards.example.test/": httpx2.Response(200, text="ok"),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_locate_finds_nothing_when_the_site_links_no_subdomain() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(200, text="<html>Welcome</html>"),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_locate_is_none_when_the_site_links_several_subdomains() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://workwithus.boards.example.test/">A</a>'
+                    '<a href="https://othertenant.boards.example.test/">B</a>'
+                ),
+            ),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_locate_robots_disallowing_everything_fetches_only_robots() -> None:
+    robots_txt = "User-agent: *\nDisallow: /\n"
+    fetcher = url_client(
+        {
+            "https://acme.example.test/robots.txt": httpx2.Response(200, text=robots_txt),
+            "https://acme.example.test/": AssertionError("must not be fetched"),
+            "https://acme.example.test/careers": AssertionError("must not be fetched"),
+            "https://acme.example.test/jobs": AssertionError("must not be fetched"),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_locate_with_no_website_is_none_without_any_request() -> None:
+    def explode(request: httpx2.Request) -> httpx2.Response:
+        raise AssertionError(f"unexpected request to {request.url}")
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(explode)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        locate(fetcher, company("Acme", website_url=None), resolve=public_resolver)
+    )
+
+    assert result is None
+
+
+def test_locate_with_a_private_website_url_makes_no_request() -> None:
+    def explode(request: httpx2.Request) -> httpx2.Response:
+        raise AssertionError(f"unexpected request to {request.url}")
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(explode)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="http://169.254.169.254/"),
             resolve=public_resolver,
         )
     )

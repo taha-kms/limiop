@@ -59,11 +59,18 @@ class Verification:
     `UNVERIFIABLE` — the same vocabulary `discover()` reports, so the
     registry writes both through one switch. `evidence` is stored on the row
     exactly as given; its `kind` says which check produced it.
+
+    `slug`, when set, means the verifier learned a board the guess did not
+    name — a link or redirect to a different subdomain than the one being
+    checked. The registry keys the row on this slug instead of the guessed
+    one. `None`, the default, is every verifier's answer about the slug it
+    was actually asked about.
     """
 
     outcome: DiscoveryOutcome
     found_company: str | None
     evidence: dict[str, object]
+    slug: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +102,13 @@ class BoardProvider[ProviderRecordT]:
     `UNVERIFIABLE`). It looks beyond the feed — a careers site's own title,
     a link on the company's website — for evidence the feed cannot give.
     Absent, an unverifiable guess just stays unverifiable, as it always has.
+
+    `locate(client, company)`, when present, is called by discovery when NO
+    guess answered at all (`discover()` reported `NOT_FOUND`), to ask the
+    company's own website whether it names a board this provider hosts,
+    without a guessed slug to check against. Returns a `Verification` with
+    `slug` set, naming the board it found, or `None`. Absent, a not-found
+    guess just stays not-found, as it always has.
     """
 
     source_key: str
@@ -108,3 +122,4 @@ class BoardProvider[ProviderRecordT]:
     stated_company: Callable[[Sequence[RawRecord]], str | None]
     detail_request: Callable[[str, RawRecord], Request | None] | None = None
     verify: Callable[["BoardClient", str, Company], Awaitable[Verification]] | None = None
+    locate: Callable[["BoardClient", Company], Awaitable[Verification | None]] | None = None
