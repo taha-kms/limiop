@@ -37,6 +37,9 @@ ALLOWED_CALLS = frozenset(
         "discover",
         "board_discovery",
         "discover_boards",
+        "company_websites",
+        "resolve",
+        "resolve_websites",
     }
 )
 

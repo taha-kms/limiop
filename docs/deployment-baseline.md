@@ -16,6 +16,10 @@ Four things run, and they are separately deployable on purpose.
 | `job-ingestion-service` | The pipeline. Installed as a library and run by a scheduler, never as a server. | Source count and catalogue size |
 | `airflow` | The scheduler that runs the pipeline hourly. Orchestrates; does not transform. | Nothing — one instance |
 
+Next to the hourly ingestion DAGs, `airflow` also runs one board-discovery DAG
+per provider daily and staggered off-peak (03:10, 03:17, 03:24) and a
+`company_websites` DAG daily at 02:40, ahead of them.
+
 PostgreSQL is the only datastore, shared by all of them. There is no second one,
 and adding one needs a demonstrated need rather than a preference.
 
