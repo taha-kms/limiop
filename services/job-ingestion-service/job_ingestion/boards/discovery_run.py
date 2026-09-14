@@ -155,7 +155,7 @@ async def due_companies(
     A company with no row for this provider is always due. A company whose
     rows are all past their cadence is due for a recheck. A company with any
     blocked or wrong-company row is excluded entirely: nothing here can add
-    to a decision already that settled. A pinned row is never excluded this
+    to a decision already settled. A pinned row is never excluded this
     way; it is due on `recheck_verified` like a confirmed row, so its own
     monthly recheck still runs, even though `register` will only report
     what it found. No limit is applied here; the budget is the run's job.
