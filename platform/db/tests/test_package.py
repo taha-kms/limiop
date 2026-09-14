@@ -1,10 +1,11 @@
 import ast
 from pathlib import Path
 
-from sqlalchemy import Table, UniqueConstraint
+from sqlalchemy import String, Table, UniqueConstraint
 
 from platform_db.base import Base
 from platform_db.models.boards import BoardStatus, JobBoard
+from platform_db.models.catalog import Company
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "platform_db"
 FORBIDDEN_IMPORT_ROOTS = {"app", "backend", "fastapi", "httpx2", "starlette", "uvicorn"}
@@ -52,3 +53,14 @@ def test_job_boards_has_a_unique_slug_per_source() -> None:
         if isinstance(constraint, UniqueConstraint)
     }
     assert "uq_job_boards_source_id_slug" in constraint_names
+
+
+def test_companies_records_where_its_website_came_from() -> None:
+    table = Company.__table__
+    assert isinstance(table, Table)
+    columns = {column.name: column for column in table.columns}
+    website_source_type = columns["website_source"].type
+    assert isinstance(website_source_type, String)
+    assert website_source_type.length == 32
+    assert columns["website_source"].nullable
+    assert columns["website_checked_at"].nullable

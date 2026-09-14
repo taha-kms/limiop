@@ -126,6 +126,14 @@ class Company(Base):
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(255), nullable=False)
     website_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    # Where `website_url` came from ("source", "postings", "wikidata") and when
+    # resolution last ran, so a company with no findable website is not
+    # retried every run. Both null until resolution has run at least once.
+    website_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    website_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
