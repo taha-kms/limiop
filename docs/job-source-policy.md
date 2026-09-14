@@ -194,7 +194,11 @@ states no company (Pinpoint) may verify a guessed board by fetching, per
 company: a careers site's front page and its RSS feed, and at most three
 pages of the company's own website. The same three pages may also be read to
 learn which board a site links to, when no guessed board answered at all; no
-new pages are fetched for this. Nothing here extracts postings; the only
+new pages are fetched for this. When a page links several boards, each is
+asked for its board feed, at most five per page, which is a board request
+rather than a website page, so the three-page limit is unchanged; a page
+linking more than five is treated as a directory and none is asked. Nothing
+here extracts postings; the only
 question ever asked of a page is whether it names or links a board this
 already suspects exists. Every website fetch obeys `robots.txt` and
 identifies itself by user agent.
