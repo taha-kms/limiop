@@ -204,6 +204,23 @@ def test_record_marks_an_unresolved_company_as_checked() -> None:
     assert company.website_checked_at == now
 
 
+def test_record_keeps_the_original_source_when_a_known_url_is_reconfirmed() -> None:
+    """A recheck of a company that already has a url always resolves as
+    `SOURCE` (`resolve_website` short-circuits on any stored url), but that
+    must not erase where the url actually came from the first time."""
+    earlier = datetime(2026, 6, 1, tzinfo=UTC)
+    later = datetime(2026, 9, 14, tzinfo=UTC)
+    company = Company(display_name="Acme", website_url="https://acme.example/")
+    company.website_source = "postings"
+    company.website_checked_at = earlier
+
+    record(company, WebsiteResolution("https://acme.example/", WebsiteSource.SOURCE), later)
+
+    assert company.website_url == "https://acme.example/"
+    assert company.website_source == "postings"
+    assert company.website_checked_at == later
+
+
 # ----------------------------------------------------------------------------
 # Integration: needs a real database
 # ----------------------------------------------------------------------------
@@ -333,6 +350,16 @@ def test_from_postings_resolves_from_seeded_provenance(database_url: PostgresDsn
     run_database_test(database_url, exercise)
 
 
+class RecordingSleeper:
+    """A sleeper that never actually sleeps, but remembers being asked to."""
+
+    def __init__(self) -> None:
+        self.calls: list[float] = []
+
+    async def __call__(self, seconds: float) -> None:
+        self.calls.append(seconds)
+
+
 @pytest.mark.integration
 def test_run_respects_the_budget_and_reports_more_waiting(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
@@ -340,16 +367,25 @@ def test_run_respects_the_budget_and_reports_more_waiting(database_url: Postgres
         for name in ("Alpha", "Bravo", "Charlie"):
             await seed_company_with_postings(database, source, name, [])
 
+        sleeper = RecordingSleeper()
         summary = await resolve_company_websites(
             database,
             budget=2,
             http_client=always_unreachable_client(),
-            sleeper=never_sleeps,
+            sleeper=sleeper,
+            politeness_seconds=5.0,
         )
 
-        assert summary.seeded == 2
+        # Three companies are due; the budget only lets two be processed.
+        assert summary.seeded == 3
+        assert summary.processed == 2
         assert summary.stopped_at_budget is True
         assert summary.unresolved == 2
+
+        # Both processed companies have nothing in postings, so both reach
+        # Wikidata (which always fails here): a politeness sleep belongs
+        # between them, but not trailing after the last one processed.
+        assert sleeper.calls == [5.0]
 
     run_database_test(database_url, exercise)
 
@@ -381,6 +417,7 @@ def test_run_skips_a_company_checked_recently_and_rechecks_an_old_one(
         )
 
         assert summary.seeded == 1
+        assert summary.processed == 1
         recent_after = await reload_company(database, recent.id)
         stale_after = await reload_company(database, stale.id)
         assert recent_after.website_checked_at == now - timedelta(days=1)
@@ -411,6 +448,7 @@ def test_a_run_counts_a_resolution_and_owns_its_default_client(
         )
 
         assert summary.seeded == 1
+        assert summary.processed == 1
         assert summary.resolved_by == {"postings": 1}
         assert summary.unresolved == 0
 
@@ -461,5 +499,6 @@ def test_resolve_websites_entry_point_runs_against_the_configured_database(
         )
         assert isinstance(summary, WebsiteSummary)
         assert summary.seeded == 1
+        assert summary.processed == 1
 
     run_database_test(database_url, exercise)

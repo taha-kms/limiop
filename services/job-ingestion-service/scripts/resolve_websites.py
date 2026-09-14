@@ -26,10 +26,9 @@ from job_ingestion.database import Database
 DEFAULT_LIMIT = 25
 
 
-async def report(database_url: str, limit: int) -> dict[str, object]:
+async def report(database_url: PostgresDsn, limit: int) -> dict[str, object]:
     started_at = datetime.now(UTC)
-    settings = Settings(database_url=PostgresDsn(database_url))
-    summary = await resolve_websites(settings=settings, budget=limit)
+    summary = await resolve_websites(settings=Settings(database_url=database_url), budget=limit)
 
     database = Database(database_url)
     try:
@@ -58,7 +57,8 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     arguments = parser.parse_args()
 
-    json.dump(asyncio.run(report(arguments.database_url, arguments.limit)), sys.stdout, indent=2)
+    database_url = PostgresDsn(arguments.database_url)
+    json.dump(asyncio.run(report(database_url, arguments.limit)), sys.stdout, indent=2)
     sys.stdout.write("\n")
 
 

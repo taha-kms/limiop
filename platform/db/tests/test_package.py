@@ -1,7 +1,7 @@
 import ast
 from pathlib import Path
 
-from sqlalchemy import String, Table, UniqueConstraint
+from sqlalchemy import DateTime, String, Table, UniqueConstraint
 
 from platform_db.base import Base
 from platform_db.models.boards import BoardStatus, JobBoard
@@ -63,4 +63,8 @@ def test_companies_records_where_its_website_came_from() -> None:
     assert isinstance(website_source_type, String)
     assert website_source_type.length == 32
     assert columns["website_source"].nullable
+
+    website_checked_at_type = columns["website_checked_at"].type
+    assert isinstance(website_checked_at_type, DateTime)
+    assert website_checked_at_type.timezone is True
     assert columns["website_checked_at"].nullable

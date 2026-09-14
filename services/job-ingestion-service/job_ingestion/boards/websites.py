@@ -124,7 +124,10 @@ class WebsiteResolution:
 class WebsiteSummary:
     """What one run of website resolution accomplished."""
 
+    # How many companies were due for resolution, before the budget slice.
     seeded: int
+    # How many of those were actually looked at this run (`min(seeded, budget)`).
+    processed: int
     resolved_by: dict[str, int]
     unresolved: int
     stopped_at_budget: bool
@@ -376,13 +379,22 @@ def record(company: Company, resolution: WebsiteResolution, now: datetime) -> No
 
     `website_url` is set only when the row does not already have one — this
     strategy list only ever adds evidence, it never overwrites what a source
-    stated. `website_source` and `website_checked_at` are set unconditionally,
-    including when nothing was found, which is what keeps an unresolved
-    company from being retried every run.
+    stated. `website_source` follows the url it describes, not the most
+    recent attempt: a company whose url was already known and is merely
+    reconfirmed (`resolve_website`'s `SOURCE` short-circuit fires on every
+    recheck once a url exists, however it first got there) must keep
+    describing where that url actually came from. So `website_source` is set
+    only the first time a url exists — when this call is the one that finds
+    it, or when the row already had a url but no recorded source yet.
+    `website_checked_at` is set unconditionally, including when nothing was
+    found, which is what keeps an unresolved company from being retried
+    every run.
     """
-    if company.website_url is None and resolution.url is not None:
+    newly_found = company.website_url is None and resolution.url is not None
+    if newly_found:
         company.website_url = resolution.url
-    company.website_source = resolution.source.value if resolution.source is not None else None
+    if newly_found or (company.website_source is None and resolution.source is not None):
+        company.website_source = resolution.source.value if resolution.source is not None else None
     company.website_checked_at = now
 
 
@@ -419,10 +431,10 @@ async def resolve_company_websites(
 
     Candidates are companies with no `website_url` that were never checked or
     were last checked before `recheck` ago, ordered by job count so the
-    companies with the most postings to lose are looked at first. One extra
-    row is read past the budget so `stopped_at_budget` can say whether more
-    were waiting, without pretending a run that exactly emptied the queue
-    stopped early.
+    companies with the most postings to lose are looked at first. `seeded`
+    counts every company that matched, before the budget cuts the list down
+    to `processed`, so a run can say how much of the queue is left without
+    pretending a run that exactly emptied it stopped early.
     """
     moment = now()
     cutoff = moment - recheck
@@ -430,6 +442,16 @@ async def resolve_company_websites(
     client = http_client if http_client is not None else httpx2.AsyncClient()
     try:
         async with database.session() as session:
+            due = (
+                Company.website_url.is_(None),
+                or_(
+                    Company.website_checked_at.is_(None),
+                    Company.website_checked_at < cutoff,
+                ),
+            )
+            seeded = await session.scalar(select(func.count()).select_from(Company).where(*due))
+            seeded = seeded or 0
+
             job_counts = (
                 select(Job.company_id, func.count(Job.id).label("job_count"))
                 .group_by(Job.company_id)
@@ -438,24 +460,15 @@ async def resolve_company_websites(
             statement = (
                 select(Company)
                 .outerjoin(job_counts, job_counts.c.company_id == Company.id)
-                .where(
-                    Company.website_url.is_(None),
-                    or_(
-                        Company.website_checked_at.is_(None),
-                        Company.website_checked_at < cutoff,
-                    ),
-                )
+                .where(*due)
                 .order_by(func.coalesce(job_counts.c.job_count, 0).desc(), Company.display_name)
-                .limit(budget + 1)
+                .limit(budget)
             )
-            fetched = list((await session.scalars(statement)).all())
-            stopped_at_budget = len(fetched) > budget
-            candidates = fetched[:budget]
+            candidates = list((await session.scalars(statement)).all())
 
             resolved_by: Counter[str] = Counter()
             unresolved = 0
             for index, company in enumerate(candidates):
-                had_url = company.website_url is not None
                 resolution = await resolve_website(
                     session, client, company, now=moment, sleeper=sleeper
                 )
@@ -464,10 +477,11 @@ async def resolve_company_websites(
                 else:
                     unresolved += 1
 
-                # Only a Wikidata lookup touches the network; a company whose
-                # website came from the row itself or from its own postings
-                # cost nothing to check and needs no politeness delay.
-                hit_network = not had_url and resolution.source is not WebsiteSource.POSTINGS
+                # Every candidate here was seeded with no `website_url`, so
+                # `resolve_website` can only have reached this point through
+                # postings or Wikidata; only the latter touches the network,
+                # so only it needs a politeness delay before the next one.
+                hit_network = resolution.source is not WebsiteSource.POSTINGS
                 if hit_network and index < len(candidates) - 1:
                     await sleeper(politeness_seconds)
 
@@ -477,10 +491,11 @@ async def resolve_company_websites(
             await client.aclose()
 
     return WebsiteSummary(
-        seeded=len(candidates),
+        seeded=seeded,
+        processed=len(candidates),
         resolved_by=dict(resolved_by),
         unresolved=unresolved,
-        stopped_at_budget=stopped_at_budget,
+        stopped_at_budget=seeded > len(candidates),
     )
 
 
