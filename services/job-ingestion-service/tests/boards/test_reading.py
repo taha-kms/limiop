@@ -57,5 +57,6 @@ def test_a_provider_is_a_frozen_value() -> None:
     )
 
     assert provider.detail_request is None
+    assert provider.verify is None
     with pytest.raises(AttributeError):
         provider.source_key = "other"  # type: ignore[misc]

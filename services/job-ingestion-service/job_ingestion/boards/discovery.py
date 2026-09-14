@@ -85,6 +85,8 @@ class DiscoveryOutcome(StrEnum):
     """What checking one candidate slug established."""
 
     CONFIRMED = "confirmed"
+    # The board states a matching name with no outside evidence yet.
+    NAMED = "named"
     # The board answered and belongs to somebody else. The single outcome the
     # hand-written list existed to prevent.
     WRONG_COMPANY = "wrong_company"
