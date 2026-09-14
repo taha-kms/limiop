@@ -248,8 +248,12 @@ async def register(
     a fresh `confirmed` or `named` answer keeps or upgrades the status
     (`named` becomes `confirmed` when the new evidence is stronger, never
     the reverse), replaces the evidence, advances `verified_at`, leaves
-    `consecutive_failures` alone, and is `reverified`. A `not_found` or
-    `unreachable` answer is not believed on one recheck — a single silent
+    `consecutive_failures` alone, and is `reverified`. A `wrong_company`
+    answer is believed immediately and `demoted`, `company_id` kept rather
+    than cleared: a board answering for somebody else is the one outcome
+    the registry exists to catch, however settled the row looked a moment
+    ago. A `not_found` or `unreachable` answer is not believed on one
+    recheck — a single silent
     probe is not evidence the board moved, and the poll lifecycle is what
     retires a board that actually stops answering — so the row's status is
     left exactly as it was, only `evidence["last_recheck"]` (`kind` and
@@ -352,6 +356,7 @@ async def register(
     if previously_verified and outcome_kind in (
         DiscoveryOutcome.CONFIRMED,
         DiscoveryOutcome.NAMED,
+        DiscoveryOutcome.WRONG_COMPANY,
         DiscoveryOutcome.NOT_FOUND,
         DiscoveryOutcome.UNREACHABLE,
         DiscoveryOutcome.UNVERIFIABLE,
@@ -385,6 +390,18 @@ async def register(
             )
             board.verified_at = now
             outcome = "reverified"
+        elif outcome_kind is DiscoveryOutcome.WRONG_COMPANY:
+            # Believed immediately, unlike a silent recheck below: a board
+            # answering for somebody else is the one outcome the registry
+            # exists to catch. `company_id` is kept, not cleared — it
+            # records who we thought it was.
+            board.status = BoardStatus.WRONG_COMPANY
+            board.evidence = (
+                dict(verification.evidence)
+                if verification is not None
+                else {"kind": "provider_name", "found_company": result.found_company}
+            )
+            outcome = "demoted"
         elif outcome_kind in (DiscoveryOutcome.NOT_FOUND, DiscoveryOutcome.UNREACHABLE):
             # One silent recheck is not evidence the board moved; the poll
             # lifecycle (not discovery) is what retires a board that stops

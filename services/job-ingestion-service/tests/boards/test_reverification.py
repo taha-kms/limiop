@@ -301,6 +301,65 @@ def test_a_confirmed_row_that_404s_is_left_alone_but_noted(database_url: Postgre
     run_database_test(database_url, exercise)
 
 
+# --- a board that now answers for somebody else is believed immediately ----
+
+
+@pytest.mark.integration
+def test_a_confirmed_row_that_now_answers_for_somebody_else_is_demoted(
+    database_url: PostgresDsn,
+) -> None:
+    """A board answering for somebody else is the one outcome the registry
+    exists to catch, however settled the row looked a moment ago: it is
+    believed immediately, not given the benefit of the doubt a silent
+    recheck gets."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        moment = datetime.now(UTC)
+        async with database.session() as session:
+            company = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=company.id,
+                status=BoardStatus.CONFIRMED,
+                verified_at=moment - OLD,
+                last_checked_at=moment - OLD,
+                evidence={
+                    "kind": "provider_name",
+                    "found_company": "Acme",
+                    "checked_at": (moment - OLD).isoformat(),
+                },
+            )
+            await session.commit()
+
+        transport = routing({"/acme/jobs": board("Globex")})
+        summary = await run_discovery(
+            database,
+            json_provider(),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: moment,
+        )
+
+        assert summary.demoted == 1
+        assert summary.wrong_company == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+            slugs = await polled_slugs(session, "fake")
+
+        assert row.status is BoardStatus.WRONG_COMPANY
+        assert row.company_id == company.id
+        assert row.evidence is not None
+        assert row.evidence["found_company"] == "Globex"
+        assert slugs == ()
+
+    run_database_test(database_url, exercise)
+
+
 # --- a feed that stops stating a company demotes what it can no longer back -
 
 
