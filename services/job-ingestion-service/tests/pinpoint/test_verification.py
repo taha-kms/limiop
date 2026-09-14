@@ -397,6 +397,47 @@ def test_more_than_three_redirects_is_none() -> None:
     assert result is None
 
 
+def test_a_redirect_with_a_non_printable_location_yields_none() -> None:
+    """`client.request` raises `httpx2.InvalidURL` when the URL it is asked
+    to send carries a non-printable character — exactly what a redirect
+    target built from a malformed `Location` header can be. `_get` must
+    swallow that itself; `verify` promises never to raise, and a run that
+    let this propagate would abort mid-pass and roll back its writes.
+
+    A plain string-keyed header, as every other test in this file uses,
+    gets sanitized on construction before it is ever read back — this uses
+    the raw byte-tuple form to actually preserve the bad character."""
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        if url == "https://acme.example.test/":
+            return httpx2.Response(302, headers=[(b"location", b"http://example.com/\x01path")])
+        routes = {
+            "https://acme.example.test/robots.txt": httpx2.Response(404),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+        }
+        return routes.get(url, httpx2.Response(404))
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "acme",
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
 # --- verify -----------------------------------------------------------------
 
 

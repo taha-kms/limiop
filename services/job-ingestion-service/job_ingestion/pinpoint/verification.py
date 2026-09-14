@@ -149,12 +149,19 @@ async def _get(
     is made, when `url` does not resolve to the public internet. A redirect
     that lands on a private address is treated the same as an unreachable
     page: refused, not followed.
+
+    A URL that passed that check can still be one `client.request` itself
+    cannot send: a redirect `Location` carrying a non-printable character
+    raises `httpx2.InvalidURL`, and an IDNA edge case in the hostname raises
+    `ValueError` or `UnicodeError`. Those are caught here, not in
+    `client.request` itself — every other caller of that method sends a URL
+    this module built, never one read out of someone else's response.
     """
     if not is_public_http_url(url, resolve=resolve):
         return None
     try:
         return await client.request(slug, Request(url=url, headers=headers or {}))
-    except SourceUnavailableError:
+    except (SourceUnavailableError, httpx2.InvalidURL, ValueError, UnicodeError):
         return None
 
 

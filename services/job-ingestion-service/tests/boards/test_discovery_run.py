@@ -817,7 +817,9 @@ def test_a_verify_hook_returning_named_on_an_inactive_row_resets_the_failures(
     """A board that went inactive after repeated failures, then verifies
     `NAMED` again, must not carry its stale failure count back into the
     walk — one more failure would retire it immediately otherwise, unlike a
-    `CONFIRMED` revival, which already resets it."""
+    `CONFIRMED` revival, which already resets it. It is also a revival, so
+    it counts under both `reactivated` and `named` — undercounting either
+    would misreport what the run actually did."""
 
     async def exercise(database: Database) -> None:
         settings = Settings(environment=Environment.TEST, database_url=database_url)
@@ -852,6 +854,7 @@ def test_a_verify_hook_returning_named_on_an_inactive_row_resets_the_failures(
         )
 
         assert summary.named == 1
+        assert summary.reactivated == 1
 
         async with database.session() as session:
             row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()

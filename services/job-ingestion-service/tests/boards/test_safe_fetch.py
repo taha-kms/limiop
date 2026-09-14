@@ -101,3 +101,14 @@ def test_an_unparseable_resolved_address_is_refused() -> None:
         is_public_http_url("http://garbage.example.com/", resolve=resolver_returning("not-an-ip"))
         is False
     )
+
+
+def test_a_port_outside_the_valid_range_is_refused_not_raised() -> None:
+    """`urlparse` accepts this URL, but `.port` validates the number itself
+    and raises `ValueError` for anything outside 0-65535 — a malformed port
+    must refuse the same as any other unsafe URL, not propagate an
+    exception out of a function every caller relies on never raising."""
+    assert (
+        is_public_http_url("http://example.com:99999/", resolve=resolver_returning("93.184.216.34"))
+        is False
+    )

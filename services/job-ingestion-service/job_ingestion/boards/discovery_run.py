@@ -201,7 +201,8 @@ async def register(
 ) -> str:
     """Write one probe's outcome onto the registry. Returns what happened:
     confirmed, named, wrong_company, unverifiable, not_found, unreachable,
-    reactivated, or unchanged when an already-settled row was left alone.
+    reactivated, unchanged when an already-settled row was left alone, or
+    named_reactivated for the one case that is both at once (below).
 
     A feed that states nothing (`result.outcome` is `UNVERIFIABLE`) gets one
     more chance: when `client` is given and its provider has a `verify`
@@ -209,7 +210,11 @@ async def register(
     and its answer — `CONFIRMED`, `NAMED`, `WRONG_COMPANY`, or still
     `UNVERIFIABLE` — is written instead, evidence and all. Without a
     `client`, or a provider that cannot verify beyond its feed, this behaves
-    exactly as before.
+    exactly as before. A `NAMED` verdict on a row that had gone `inactive`
+    is `named_reactivated`, not just `named`: it revives the row exactly as
+    a `CONFIRMED` revival would (clean failure count, back in the walk), and
+    the run tallies it under both `reactivated` and `named` rather than
+    picking one and undercounting the other.
 
     Never modifies a row that is pinned, blocked, already `wrong_company`, or
     `confirmed`/`named` for a *different* company: a decision an operator, an
@@ -306,16 +311,27 @@ async def register(
             board.status = BoardStatus.CONFIRMED
             outcome = "confirmed"
     elif outcome_kind is DiscoveryOutcome.NAMED:
-        assert verification is not None  # only a provider's verify() reports NAMED
+        if verification is None:
+            # Unreachable: `outcome_kind` only ever becomes `NAMED` a few
+            # lines up, by assigning it `verification.outcome` right after
+            # `verification` itself is set. An explicit guard, not a bare
+            # `assert`, so this cannot be compiled away by `-O` and silently
+            # write a `NAMED` row with no evidence behind it.
+            raise AssertionError("NAMED can only come from a provider's verify()")
         board.status = BoardStatus.NAMED
         board.evidence = dict(verification.evidence)
         board.verified_at = now
         if was_inactive:
             # Re-entering the walk with a stale failure count would retire
             # it again after one more failure; a fresh verification earns
-            # the same clean slate a `CONFIRMED` revival gets.
+            # the same clean slate a `CONFIRMED` revival gets. Tallied under
+            # both `reactivated` and `named`, not instead of either: it is a
+            # revival that also happens to be a naming, and undercounting
+            # either would misreport what the run actually did.
             board.consecutive_failures = 0
-        outcome = "named"
+            outcome = "named_reactivated"
+        else:
+            outcome = "named"
     elif outcome_kind is DiscoveryOutcome.WRONG_COMPANY:
         board.status = BoardStatus.WRONG_COMPANY
         board.evidence = (
@@ -408,7 +424,10 @@ async def run_discovery(
                     skip=skip,
                     client=client,
                 )
-                if outcome in tallies:
+                if outcome == "named_reactivated":
+                    tallies["named"] += 1
+                    tallies["reactivated"] += 1
+                elif outcome in tallies:
                     tallies[outcome] += 1
 
         await session.commit()

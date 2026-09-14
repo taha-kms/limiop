@@ -84,7 +84,14 @@ def is_public_http_url(url: str, *, resolve: Callable[[str], list[str]] = defaul
         return False
     if parsed.username is not None or parsed.password is not None:
         return False
-    if parsed.port is not None and parsed.port not in _ALLOWED_PORTS:
+    try:
+        port = parsed.port
+    except ValueError:
+        # `.port` validates the number itself and raises rather than
+        # returning something to compare — a port outside 0-65535 is
+        # exactly as refused as one that names some other service.
+        return False
+    if port is not None and port not in _ALLOWED_PORTS:
         return False
 
     hostname = parsed.hostname
