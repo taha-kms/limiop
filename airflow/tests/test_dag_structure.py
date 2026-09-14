@@ -33,6 +33,13 @@ ALLOWED_CALLS = frozenset(
         "ingest_board_source",
         "datetime",
         "timedelta",
+        "discovery",
+        "discover",
+        "board_discovery",
+        "discover_boards",
+        "company_websites",
+        "resolve",
+        "resolve_websites",
     }
 )
 
