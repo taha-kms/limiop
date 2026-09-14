@@ -4,7 +4,7 @@ from typing import Any
 import httpx2
 import pytest
 
-from job_ingestion.boards.client import BoardClient, BoardConfig
+from job_ingestion.boards.client import BoardClient, BoardConfig, BoardOutcome
 from job_ingestion.boards.provider import BoardProvider
 from job_ingestion.contracts import IngestionStage, RawPage
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
@@ -90,6 +90,27 @@ def test_every_configured_board_is_read_and_the_end_is_reached() -> None:
 
     assert {record["board"] for page in pages for record in page.records} == {"acme", "globex"}
     assert fetcher.reached_the_end is True
+
+
+def test_the_client_reports_an_outcome_per_board() -> None:
+    fetcher = client(ok(jobs(1, 2)), httpx2.Response(404), boards=("acme", "gone"))
+
+    collect(fetcher)
+
+    assert fetcher.outcomes[0] == BoardOutcome("acme", 2, None)
+    assert fetcher.outcomes[1].slug == "gone"
+    assert fetcher.outcomes[1].records is None
+    assert fetcher.outcomes[1].failure is not None
+    assert "returned status 404" in fetcher.outcomes[1].failure
+
+
+def test_outcomes_reset_between_walks() -> None:
+    fetcher = client(ok(jobs(1)), ok(jobs(1)))
+
+    collect(fetcher)
+    collect(fetcher)
+
+    assert len(fetcher.outcomes) == 1
 
 
 def test_one_unreachable_board_does_not_discard_the_others() -> None:
