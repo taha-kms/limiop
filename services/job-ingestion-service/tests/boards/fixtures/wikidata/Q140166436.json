@@ -1,0 +1,17 @@
+{
+  "entities": {
+    "Q140166436": {
+      "labels": {
+        "en": {"language": "en", "value": "Pinpoint"}
+      },
+      "claims": {
+        "P31": [
+          {"mainsnak": {"datavalue": {"value": {"id": "Q4830453"}}}}
+        ],
+        "P856": [
+          {"mainsnak": {"datavalue": {"value": "https://pinpoint.ro"}}}
+        ]
+      }
+    }
+  }
+}

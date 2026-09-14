@@ -1,0 +1,14 @@
+{
+  "entities": {
+    "Q99010001": {
+      "labels": {
+        "en": {"language": "en", "value": "Hudl"}
+      },
+      "claims": {
+        "P31": [
+          {"mainsnak": {"datavalue": {"value": {"id": "Q101352"}}}}
+        ]
+      }
+    }
+  }
+}
