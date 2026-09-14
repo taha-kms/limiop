@@ -56,6 +56,16 @@ def rss(title: str) -> httpx2.Response:
     )
 
 
+def rss_with_item(channel_title: str, item_title: str) -> httpx2.Response:
+    return httpx2.Response(
+        200,
+        content=(
+            f"<rss><channel><title>{channel_title}</title>"
+            f"<item><title>{item_title}</title></item></channel></rss>"
+        ).encode(),
+    )
+
+
 def company(name: str, *, website_url: str | None = None) -> Company:
     return Company(display_name=name, website_url=website_url)
 
@@ -110,6 +120,23 @@ def test_a_title_naming_someone_else_is_wrong_company() -> None:
     assert result is not None
     assert result.outcome is DiscoveryOutcome.WRONG_COMPANY
     assert result.found_company == "Globex"
+
+
+def test_an_rss_item_title_is_never_mistaken_for_the_channel_title() -> None:
+    """A posting titled "Senior Engineer Jobs" is not the channel naming
+    "Senior Engineer" — reading the first `<title>` anywhere in the document,
+    rather than only the channel's own, would make that mistake, and a
+    `WRONG_COMPANY` verdict from it is permanent."""
+    fetcher = client(
+        {
+            "/": html(""),
+            "/jobs.rss": rss_with_item("", "Senior Engineer Jobs"),
+        }
+    )
+
+    result = asyncio.run(identity(fetcher, "acme", company("Acme")))
+
+    assert result is None
 
 
 def test_an_empty_title_falls_back_to_the_rss_channel_title() -> None:

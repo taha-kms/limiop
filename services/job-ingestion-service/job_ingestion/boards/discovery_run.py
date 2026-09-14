@@ -93,13 +93,13 @@ class DiscoverySummary:
     seeded: int  # companies that were due
     probed: int = 0
     confirmed: int = 0
-    named: int = 0  # a board states a matching name with no outside evidence
     wrong_company: int = 0
     unverifiable: int = 0
     not_found: int = 0
     unreachable: int = 0
     reactivated: int = 0
     unchanged: int = 0  # a settled row, owned by another company, left alone
+    named: int = 0  # a board states a matching name with no outside evidence
     skipped_nameless: int = 0  # companies whose name yields no candidate slug
     stopped_at_budget: bool = False
 
@@ -285,9 +285,9 @@ async def register(
 
     board.company_id = company.id
     board.last_checked_at = now
+    was_inactive = board.status is BoardStatus.INACTIVE
 
     if outcome_kind is DiscoveryOutcome.CONFIRMED:
-        was_inactive = board.status is BoardStatus.INACTIVE
         board.evidence = (
             dict(verification.evidence)
             if verification is not None
@@ -310,6 +310,11 @@ async def register(
         board.status = BoardStatus.NAMED
         board.evidence = dict(verification.evidence)
         board.verified_at = now
+        if was_inactive:
+            # Re-entering the walk with a stale failure count would retire
+            # it again after one more failure; a fresh verification earns
+            # the same clean slate a `CONFIRMED` revival gets.
+            board.consecutive_failures = 0
         outcome = "named"
     elif outcome_kind is DiscoveryOutcome.WRONG_COMPANY:
         board.status = BoardStatus.WRONG_COMPANY
@@ -413,13 +418,13 @@ async def run_discovery(
         seeded=seeded,
         probed=probed,
         confirmed=tallies["confirmed"],
-        named=tallies["named"],
         wrong_company=tallies["wrong_company"],
         unverifiable=tallies["unverifiable"],
         not_found=tallies["not_found"],
         unreachable=tallies["unreachable"],
         reactivated=tallies["reactivated"],
         unchanged=tallies["unchanged"],
+        named=tallies["named"],
         skipped_nameless=skipped_nameless,
         stopped_at_budget=stopped_at_budget,
     )

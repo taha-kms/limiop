@@ -811,6 +811,58 @@ def test_a_verify_hook_returning_named_registers_a_named_row(database_url: Postg
 
 
 @pytest.mark.integration
+def test_a_verify_hook_returning_named_on_an_inactive_row_resets_the_failures(
+    database_url: PostgresDsn,
+) -> None:
+    """A board that went inactive after repeated failures, then verifies
+    `NAMED` again, must not carry its stale failure count back into the
+    walk — one more failure would retire it immediately otherwise, unlike a
+    `CONFIRMED` revival, which already resets it."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            company = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=company.id,
+                status=BoardStatus.INACTIVE,
+                consecutive_failures=3,
+                evidence={"kind": "site_title", "found_company": "Acme"},
+            )
+            await session.commit()
+
+        async def verify(_client: BoardClient, _slug: str, _company: Company) -> Verification:
+            return Verification(
+                outcome=DiscoveryOutcome.NAMED,
+                found_company="Acme",
+                evidence={"kind": "site_title", "found_company": "Acme", "source": "title"},
+            )
+
+        transport = routing({"/acme/jobs": board("")})
+        summary = await run_discovery(
+            database,
+            verifying_provider(verify),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.named == 1
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.status is BoardStatus.NAMED
+        assert row.consecutive_failures == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
 def test_a_verify_hook_returning_confirmed_registers_confirmed_with_its_evidence(
     database_url: PostgresDsn,
 ) -> None:

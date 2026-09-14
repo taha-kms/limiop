@@ -102,16 +102,26 @@ def careers_site_name(html: str) -> str | None:
 
 
 def _rss_channel_title(content: bytes) -> str | None:
-    """An RSS feed's `<channel><title>` text, or `None` if it is not one."""
+    """An RSS feed's `<channel><title>` text, or `None` if it has none.
+
+    Scoped to the channel's own direct children, not `root.iter()` over the
+    whole document: an item's own title is also a `<title>` element, and a
+    posting titled "Senior Engineer Jobs" would otherwise be read as the
+    channel naming "Senior Engineer" — a wrong-company verdict this system
+    then treats as permanent.
+    """
     try:
         root = fromstring(content, forbid_dtd=True, forbid_entities=True, forbid_external=True)
     except (ParseError, DefusedXmlException):
         return None
     for element in root.iter():
-        if local_name(element.tag) == "title" and element.text:
-            text = element.text.strip()
-            if text:
-                return text
+        if local_name(element.tag) != "channel":
+            continue
+        for child in element:
+            if local_name(child.tag) == "title":
+                text = (child.text or "").strip()
+                return text or None
+        return None
     return None
 
 
@@ -165,7 +175,7 @@ async def identity(client: "BoardClient", slug: str, company: Company) -> Verifi
     scheme, _, _ = client.base_url.rstrip("/").partition("://")
     base = f"{scheme}://{_slug_host(client, slug)}"
 
-    title_response = await _get(client, slug, f"{base}/")
+    title_response = await _get(client, slug, f"{base}/", headers={"User-Agent": USER_AGENT})
     if title_response is not None and title_response.status_code == httpx2.codes.OK:
         html_title = careers_site_name(title_response.text)
         if html_title is not None:
@@ -173,7 +183,7 @@ async def identity(client: "BoardClient", slug: str, company: Company) -> Verifi
             if name is not None:
                 return _identity_verification(name, company, source="title")
 
-    rss_response = await _get(client, slug, f"{base}/jobs.rss")
+    rss_response = await _get(client, slug, f"{base}/jobs.rss", headers={"User-Agent": USER_AGENT})
     if rss_response is not None and rss_response.status_code == httpx2.codes.OK:
         rss_title = _rss_channel_title(rss_response.content)
         if rss_title is not None:
