@@ -22,15 +22,15 @@ def test_every_registered_provider_has_a_discovery_dag(dagbag: DagBag, dag_id: s
     assert dag_id in dagbag.dags
 
 
-@pytest.mark.parametrize("dag_id", DAG_IDS)
-def test_each_discovery_dag_runs_daily_off_peak(dagbag: DagBag, dag_id: str) -> None:
+@pytest.mark.parametrize(("index", "dag_id"), list(enumerate(DAG_IDS)))
+def test_each_discovery_dag_runs_daily_off_peak(dagbag: DagBag, index: int, dag_id: str) -> None:
+    """Staggered by registry position, so the documented minutes stay true."""
     dag: DAG = dagbag.dags[dag_id]
-    minute, hour = dag.schedule.split()[:2]
 
-    assert hour == "3"
-    assert minute.isdigit()
+    assert dag.schedule == f"{(10 + index * 7) % 60} 3 * * *"
     assert dag.catchup is False
     assert dag.max_active_runs == 1
+    assert dag.tags == {"discovery", "boards"}
 
 
 @pytest.mark.parametrize("dag_id", DAG_IDS)

@@ -26,6 +26,7 @@ def test_the_dag_runs_daily_before_discovery(dagbag: DagBag) -> None:
     assert dag.schedule == "40 2 * * *"
     assert dag.catchup is False
     assert dag.max_active_runs == 1
+    assert dag.tags == {"discovery", "companies"}
 
 
 def test_failure_behavior_is_explicit(dagbag: DagBag) -> None:
