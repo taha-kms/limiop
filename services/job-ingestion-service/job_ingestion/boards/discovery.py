@@ -37,6 +37,7 @@ who looked at the careers page.
 """
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
@@ -161,13 +162,18 @@ def belongs_to(found_company: str, expected_company: str) -> bool:
     )
 
 
-async def discover(client: "BoardClient", company_name: str) -> DiscoveryResult:
+async def discover(
+    client: "BoardClient", company_name: str, *, skip: Collection[str] = ()
+) -> DiscoveryResult:
     """Check this company's candidate slugs until one is confirmed.
 
     Stops at the first confirmation. A board that answers for somebody else is
     reported rather than tried again with a looser rule — a second attempt to
     make a wrong answer fit is how a company's postings end up under another
     employer's name.
+
+    `skip` names slugs already known to belong to somebody else, or blocked by
+    an operator. They are not worth a request and must never be re-guessed.
     """
     slugs = candidate_slugs(company_name)
     if not slugs:
@@ -176,6 +182,8 @@ async def discover(client: "BoardClient", company_name: str) -> DiscoveryResult:
     mismatch: DiscoveryResult | None = None
     unreachable: DiscoveryResult | None = None
     for slug in slugs:
+        if slug in skip:
+            continue
         try:
             page = await client.fetch_board(slug)
         except SourceResponseError:
