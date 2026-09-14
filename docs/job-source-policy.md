@@ -198,10 +198,9 @@ new pages are fetched for this. When a page links several boards, each is
 asked for its board feed, at most five per page, which is a board request
 rather than a website page, so the three-page limit is unchanged; a page
 linking more than five is treated as a directory and none is asked. Nothing
-here extracts postings; the only
-question ever asked of a page is whether it names or links a board this
-already suspects exists. Every website fetch obeys `robots.txt` and
-identifies itself by user agent.
+here extracts postings; the only question ever asked of a page is whether it
+names or links a board this already suspects exists. Every website fetch
+obeys `robots.txt` and identifies itself by user agent.
 
 That is not the career-page crawling this section leaves undecided. A
 crawler reads a site's markup to extract postings, on an ongoing basis, for

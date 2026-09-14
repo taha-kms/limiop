@@ -792,7 +792,8 @@ def test_a_page_linking_two_subdomains_is_ambiguous_and_the_walk_continues() -> 
     assert result.slug == "workwithus"
 
 
-def test_a_page_linking_only_the_ambiguous_pair_names_nothing() -> None:
+def test_a_page_linking_two_boards_that_both_fail_to_answer_names_nothing() -> None:
+    """Both candidates are probed and neither serves a board, so nothing is chosen."""
     fetcher = url_client(
         {
             "https://pinpoint.example.test/": httpx2.Response(
