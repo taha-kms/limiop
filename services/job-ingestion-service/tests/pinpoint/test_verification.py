@@ -20,6 +20,7 @@ from job_ingestion.pinpoint.verification import (
     identity,
     linked_subdomains,
     locate,
+    serving_subdomains,
     stated_name,
     verify,
 )
@@ -167,6 +168,131 @@ def test_linked_subdomains_dedupes_repeated_links() -> None:
     )
 
     assert linked_subdomains(content, "pinpointhq.com") == ("workwithus",)
+
+
+# --- serving_subdomains ------------------------------------------------------
+
+
+def test_serving_subdomains_keeps_the_one_that_answers() -> None:
+    fetcher = url_client(
+        {
+            "https://trends.boards.example.test/postings.json": httpx2.Response(404),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        serving_subdomains(fetcher, ("trends", "workwithus"), resolve=public_resolver)
+    )
+
+    assert result == ("workwithus",)
+
+
+def test_serving_subdomains_keeps_both_when_both_answer() -> None:
+    fetcher = url_client(
+        {
+            "https://trends.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        serving_subdomains(fetcher, ("trends", "workwithus"), resolve=public_resolver)
+    )
+
+    assert result == ("trends", "workwithus")
+
+
+def test_serving_subdomains_is_empty_when_neither_answers() -> None:
+    fetcher = url_client(
+        {
+            "https://trends.boards.example.test/postings.json": httpx2.Response(404),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        serving_subdomains(fetcher, ("trends", "workwithus"), resolve=public_resolver)
+    )
+
+    assert result == ()
+
+
+def test_serving_subdomains_treats_a_transport_error_as_not_serving() -> None:
+    fetcher = url_client(
+        {
+            "https://trends.boards.example.test/postings.json": httpx2.ConnectError("boom"),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        serving_subdomains(fetcher, ("trends", "workwithus"), resolve=public_resolver)
+    )
+
+    assert result == ("workwithus",)
+
+
+def test_serving_subdomains_preserves_order() -> None:
+    fetcher = url_client(
+        {
+            "https://beta.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+            "https://alpha.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+    )
+
+    result = asyncio.run(serving_subdomains(fetcher, ("beta", "alpha"), resolve=public_resolver))
+
+    assert result == ("beta", "alpha")
+
+
+def test_serving_subdomains_probes_none_past_the_cap() -> None:
+    """More than five distinct candidates is a directory, not a company
+    site: no board is asked for its feed at all."""
+
+    def explode(request: httpx2.Request) -> httpx2.Response:
+        raise AssertionError(f"unexpected request to {request.url}")
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(explode)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        serving_subdomains(fetcher, ("a", "b", "c", "d", "e", "f"), resolve=public_resolver)
+    )
+
+    assert result == ()
+
+
+def test_serving_subdomains_cap_counts_distinct_candidates() -> None:
+    """Six entries naming only two distinct tenants must not hit the cap."""
+    fetcher = url_client(
+        {
+            "https://a.boards.example.test/postings.json": httpx2.Response(200, json={"data": []}),
+            "https://b.boards.example.test/postings.json": httpx2.Response(200, json={"data": []}),
+        }
+    )
+
+    result = asyncio.run(
+        serving_subdomains(fetcher, ("a", "b", "a", "b", "a", "b"), resolve=public_resolver)
+    )
+
+    assert result == ("a", "b")
 
 
 # --- identity -------------------------------------------------------------
@@ -693,6 +819,88 @@ def test_a_page_linking_only_the_ambiguous_pair_names_nothing() -> None:
     assert result is None
 
 
+def test_corroborate_narrows_several_links_to_the_one_that_serves() -> None:
+    """The company site links Pinpoint's own product subdomain alongside the
+    tenant's real careers subdomain. Only the one that answers with a board
+    feed is kept, so the page is no longer ambiguous."""
+    requested: list[str] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        requested.append(url)
+        routes = {
+            "https://pinpoint.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://trends.boards.example.test/">Product</a>'
+                    '<a href="https://workwithus.boards.example.test/">Careers</a>'
+                ),
+            ),
+            "https://trends.boards.example.test/postings.json": httpx2.Response(404),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+        return routes.get(url, httpx2.Response(404))
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.slug == "workwithus"
+    assert result.evidence["kind"] == "website_link"
+    assert result.evidence["probed"] == ["trends", "workwithus"]
+    assert result.evidence["linked"] == "workwithus"
+    assert "https://pinpoint.boards.example.test/postings.json" not in requested
+
+
+def test_corroborate_a_page_linking_six_subdomains_probes_none() -> None:
+    requested: list[str] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        requested.append(url)
+        if url == "https://pinpoint.example.test/":
+            links = "".join(
+                f'<a href="https://tenant{i}.boards.example.test/">T{i}</a>' for i in range(6)
+            )
+            return httpx2.Response(200, text=links)
+        return httpx2.Response(404)
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+    assert not any(url.endswith("/postings.json") for url in requested)
+
+
 # --- locate -------------------------------------------------------------------
 
 
@@ -832,6 +1040,136 @@ def test_locate_is_none_when_the_site_links_several_subdomains() -> None:
     )
 
     assert result is None
+
+
+def test_locate_narrows_several_links_to_the_one_that_serves() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://trends.boards.example.test/">Product</a>'
+                    '<a href="https://workwithus.boards.example.test/">Careers</a>'
+                ),
+            ),
+            "https://trends.boards.example.test/postings.json": httpx2.Response(404),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.slug == "workwithus"
+    assert result.evidence["kind"] == "website_link"
+    assert result.evidence["probed"] == ["trends", "workwithus"]
+    assert result.evidence["linked"] == "workwithus"
+
+
+def test_locate_is_none_when_both_narrowed_candidates_serve() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://trends.boards.example.test/">Product</a>'
+                    '<a href="https://workwithus.boards.example.test/">Careers</a>'
+                ),
+            ),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+            "https://trends.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(
+                200, json={"data": []}
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
+def test_locate_narrowing_to_nothing_lets_the_walk_continue() -> None:
+    """Neither candidate on the home page answers with a board feed, so the
+    page names nothing — but that must not end the walk: `/careers` is
+    still asked."""
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200,
+                text=(
+                    '<a href="https://trends.boards.example.test/">Product</a>'
+                    '<a href="https://workwithus.boards.example.test/">Careers</a>'
+                ),
+            ),
+            "https://trends.boards.example.test/postings.json": httpx2.Response(404),
+            "https://workwithus.boards.example.test/postings.json": httpx2.Response(404),
+            "https://acme.example.test/careers": httpx2.Response(
+                200, text='<a href="https://onlyone.boards.example.test/">Careers</a>'
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.slug == "onlyone"
+
+
+def test_locate_a_page_linking_six_subdomains_probes_none() -> None:
+    requested: list[str] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        url = str(request.url)
+        requested.append(url)
+        if url == "https://acme.example.test/":
+            links = "".join(
+                f'<a href="https://tenant{i}.boards.example.test/">T{i}</a>' for i in range(6)
+            )
+            return httpx2.Response(200, text=links)
+        return httpx2.Response(404)
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+    assert not any(url.endswith("/postings.json") for url in requested)
 
 
 def test_locate_robots_disallowing_everything_fetches_only_robots() -> None:

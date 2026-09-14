@@ -31,7 +31,7 @@ company, never more, and never posting extraction. See
 """
 
 import re
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from html import unescape
 from typing import TYPE_CHECKING
@@ -49,7 +49,7 @@ from job_ingestion.boards.provider import Request, Verification
 from job_ingestion.boards.safe_fetch import default_resolver, is_public_http_url
 from job_ingestion.boards.websites import USER_AGENT
 from job_ingestion.boards.xml import local_name
-from job_ingestion.errors import SourceUnavailableError
+from job_ingestion.errors import SourceResponseError, SourceUnavailableError
 
 if TYPE_CHECKING:
     from job_ingestion.boards.client import BoardClient
@@ -61,6 +61,11 @@ _WEBSITE_PATHS = ("", "careers", "jobs")
 _MAX_REDIRECTS = 3
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
 _MAX_BODY_BYTES = 2 * 1024 * 1024
+# How many distinct subdomains a single page may name before probing which of
+# them serve a board. A page naming more than this is a directory of tenants,
+# not a company site, and probing it would be the crawl `docs/job-source-policy.md`
+# forbids rather than the handful of requests one company's page is owed.
+_MAX_CANDIDATE_PROBES = 5
 # A link, an iframe embed, or a script tag naming the board's host — the
 # three shapes a careers-site widget actually takes on a company's own page.
 _LINK_TEMPLATE = r'(?:href|src)\s*=\s*["\'][^"\']*{host}[^"\']*["\']'
@@ -177,6 +182,66 @@ def linked_subdomains(content: bytes, host: str) -> tuple[str, ...]:
         if subdomain and subdomain != "www" and subdomain not in seen:
             seen[subdomain] = None
     return tuple(seen)
+
+
+async def serving_subdomains(
+    client: "BoardClient",
+    candidates: Sequence[str],
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
+) -> tuple[str, ...]:
+    """Which of `candidates` actually serve a Pinpoint board, in first-seen
+    order, deduplicated.
+
+    A page linking several distinct subdomains is ambiguous on its own — one
+    of them may be the vendor's own marketing host, not a tenant — so this
+    asks each candidate for its board feed and keeps only the ones that
+    answer. "Answer" means `client.fetch_board(candidate)` returns a
+    `RawPage` without raising, whatever its record count: an empty board is
+    still a board, and only an unusable answer (a non-200 status, or a body
+    that is not the documented shape — `SourceResponseError`) or a transport
+    failure (`SourceUnavailableError`) counts as not serving. Neither is
+    raised past this function; a candidate that fails to answer is evidence
+    of nothing, not a reason to stop checking the others.
+
+    Each probe is `client.fetch_board(candidate)`, the exact call — and so
+    the exact `client.request` code path, with its bounded retries — every
+    ordinary configured board already goes through; nothing here asks more
+    of the transport, or less, than a real board fetch. `client.request`
+    itself performs no host-reachability check of its own (confirmed by
+    reading it: it retries transport failures and rate limits and otherwise
+    returns whatever the transport gives back). What keeps a probe from ever
+    reaching an address a page merely claims is upstream of this function:
+    `candidate` came from `linked_subdomains`, whose capture group is
+    `[a-z0-9-]+` — no dot, no scheme — so the URL `client.fetch_board` builds
+    can only ever be `{candidate}.{the provider's own configured host}`,
+    never a host a malicious page chose outright. `resolve` is accepted
+    only so this function's signature matches every other one in this module
+    that a caller forwards `resolve` through uniformly; it is not used here,
+    because `fetch_board` takes no resolver of its own.
+
+    More than `_MAX_CANDIDATE_PROBES` distinct candidates probes none of them
+    and returns `()` instead: a page naming that many tenant subdomains is a
+    directory, not a company's own site, and asking each one for its board
+    feed would be exactly the crawl `docs/job-source-policy.md` carves this
+    module out from being. The cap is checked before any request is made,
+    counting distinct candidates — a repeated one is not two entries against
+    the budget.
+    """
+    distinct: dict[str, None] = {}
+    for candidate in candidates:
+        distinct.setdefault(candidate, None)
+    if len(distinct) > _MAX_CANDIDATE_PROBES:
+        return ()
+
+    serving: list[str] = []
+    for candidate in distinct:
+        try:
+            await client.fetch_board(candidate)
+        except (SourceResponseError, SourceUnavailableError):
+            continue
+        serving.append(candidate)
+    return tuple(serving)
 
 
 _SUBDOMAIN_LABEL = re.compile(r"^[a-z0-9-]+$")
@@ -397,11 +462,18 @@ def _links_to(content: bytes, host: str) -> bool:
 
 
 def _website_evidence(
-    *, kind: str, website: str, slug: str | None = None, linked: str | None = None
+    *,
+    kind: str,
+    website: str,
+    slug: str | None = None,
+    linked: str | None = None,
+    probed: list[str] | None = None,
 ) -> Verification:
     evidence: dict[str, object] = {"kind": kind, "website": website, "checked_at": _checked_at()}
     if linked is not None:
         evidence["linked"] = linked
+    if probed is not None:
+        evidence["probed"] = probed
     return Verification(
         outcome=DiscoveryOutcome.CONFIRMED, found_company=None, evidence=evidence, slug=slug
     )
@@ -466,10 +538,15 @@ async def corroborate(
     URL — confirms `sub` instead, carried on `Verification.slug`, evidence
     kind `website_redirect` when at least one hop actually happened and
     `website_self` when the page answered directly; a page linking
-    `{slug}.{host}` confirms the guess unchanged; a page whose only
-    Pinpoint link is to exactly one other subdomain confirms that one,
-    evidence noting what was `linked`; a page linking several distinct
-    other subdomains says nothing about any of them — a site listing many
+    `{slug}.{host}` confirms the guess unchanged; a page whose only other
+    Pinpoint link is to exactly one subdomain confirms that one, evidence
+    noting what was `linked`. A page linking several distinct other
+    subdomains is narrowed first, by `serving_subdomains`, to the ones that
+    actually answer with a board feed — a vendor's own marketing subdomain
+    linked alongside the tenant's does not get to make the page ambiguous —
+    and evidence then records every candidate tried as `probed`; only when
+    exactly one of them serves does the page confirm it. Still more than one
+    serving, or none, says nothing about any of them — a site listing many
     tenants (a group of companies) must not have one of them picked for it
     — and the walk moves on to the next page rather than giving up.
 
@@ -495,10 +572,18 @@ async def corroborate(
             continue
         if _links_to(response.content, target_host):
             return _website_evidence(kind="website_link", website=final_url)
-        linked = tuple(sub for sub in linked_subdomains(response.content, host) if sub != slug)
+        candidates = tuple(sub for sub in linked_subdomains(response.content, host) if sub != slug)
+        linked = candidates
+        if len(candidates) > 1:
+            linked = await serving_subdomains(client, candidates, resolve=resolve)
         if len(linked) == 1:
+            probed = list(candidates) if len(candidates) > 1 else None
             return _website_evidence(
-                kind="website_link", website=final_url, slug=linked[0], linked=linked[0]
+                kind="website_link",
+                website=final_url,
+                slug=linked[0],
+                linked=linked[0],
+                probed=probed,
             )
 
     return None
@@ -520,10 +605,14 @@ async def locate(
     `sub` (evidence kind `website_redirect` when a hop actually happened,
     `website_self` when the page answered directly), and a page whose only
     Pinpoint link is to exactly one subdomain names that one. A page linking
-    several distinct subdomains names none of them, for the same reason
-    `corroborate` skips it — a website listing many tenants must not have
-    one of them picked for it — and the walk moves on rather than giving
-    up. Never raises for a website answer, and rejects a private
+    several distinct subdomains is narrowed first, the same way
+    `corroborate` narrows one, to the subdomains that actually answer with a
+    board feed, with every candidate tried recorded as `probed`; only when
+    exactly one of them serves does the page name it. Still more than one
+    serving, or none, names none of them, for the same reason `corroborate`
+    skips it — a website listing many tenants must not have one of them
+    picked for it — and the walk moves on rather than giving up. Never
+    raises for a website answer, and rejects a private
     `company.website_url` before a single request is made, the same
     guarantees `corroborate` gives.
     """
@@ -536,10 +625,18 @@ async def locate(
             return _website_evidence(kind=kind, website=final_url, slug=other)
         if response.status_code != httpx2.codes.OK:
             continue
-        linked = linked_subdomains(response.content, host)
+        candidates = linked_subdomains(response.content, host)
+        linked = candidates
+        if len(candidates) > 1:
+            linked = await serving_subdomains(client, candidates, resolve=resolve)
         if len(linked) == 1:
+            probed = list(candidates) if len(candidates) > 1 else None
             return _website_evidence(
-                kind="website_link", website=final_url, slug=linked[0], linked=linked[0]
+                kind="website_link",
+                website=final_url,
+                slug=linked[0],
+                linked=linked[0],
+                probed=probed,
             )
 
     return None
