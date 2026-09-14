@@ -30,7 +30,7 @@ from job_ingestion.boards.discovery import (
 )
 from job_ingestion.boards.lifecycle import _revived_status
 from job_ingestion.boards.pipeline import configured_base_url
-from job_ingestion.boards.provider import BoardProvider
+from job_ingestion.boards.provider import BoardProvider, Verification
 from job_ingestion.config import Settings, get_settings
 from job_ingestion.database import Database
 from job_ingestion.persistence import SourceRegistration, ensure_source
@@ -57,6 +57,7 @@ _OWNED_STATUSES = frozenset({BoardStatus.CONFIRMED, BoardStatus.NAMED})
 # `register`'s return values that a run tallies into its summary.
 _TALLIED_OUTCOMES = (
     "confirmed",
+    "named",
     "wrong_company",
     "unverifiable",
     "not_found",
@@ -98,6 +99,7 @@ class DiscoverySummary:
     unreachable: int = 0
     reactivated: int = 0
     unchanged: int = 0  # a settled row, owned by another company, left alone
+    named: int = 0  # a board states a matching name with no outside evidence
     skipped_nameless: int = 0  # companies whose name yields no candidate slug
     stopped_at_budget: bool = False
 
@@ -195,10 +197,24 @@ async def register(
     result: DiscoveryResult,
     now: datetime,
     skip: Collection[str] = (),
+    client: BoardClient | None = None,
 ) -> str:
     """Write one probe's outcome onto the registry. Returns what happened:
-    confirmed, wrong_company, unverifiable, not_found, unreachable,
-    reactivated, or unchanged when an already-settled row was left alone.
+    confirmed, named, wrong_company, unverifiable, not_found, unreachable,
+    reactivated, unchanged when an already-settled row was left alone, or
+    named_reactivated for the one case that is both at once (below).
+
+    A feed that states nothing (`result.outcome` is `UNVERIFIABLE`) gets one
+    more chance: when `client` is given and its provider has a `verify`
+    hook, that is called with the slug this probe would otherwise register,
+    and its answer — `CONFIRMED`, `NAMED`, `WRONG_COMPANY`, or still
+    `UNVERIFIABLE` — is written instead, evidence and all. Without a
+    `client`, or a provider that cannot verify beyond its feed, this behaves
+    exactly as before. A `NAMED` verdict on a row that had gone `inactive`
+    is `named_reactivated`, not just `named`: it revives the row exactly as
+    a `CONFIRMED` revival would (clean failure count, back in the walk), and
+    the run tallies it under both `reactivated` and `named` rather than
+    picking one and undercounting the other.
 
     Never modifies a row that is pinned, blocked, already `wrong_company`, or
     `confirmed`/`named` for a *different* company: a decision an operator, an
@@ -258,20 +274,34 @@ async def register(
         )
         return "unchanged"
 
+    verification: Verification | None = None
+    outcome_kind = result.outcome
+    if (
+        result.outcome is DiscoveryOutcome.UNVERIFIABLE
+        and client is not None
+        and client.provider.verify is not None
+    ):
+        verification = await client.provider.verify(client, slug, company)
+        outcome_kind = verification.outcome
+
     if board is None:
         board = JobBoard(source_id=source.id, slug=slug)
         session.add(board)
 
     board.company_id = company.id
     board.last_checked_at = now
+    was_inactive = board.status is BoardStatus.INACTIVE
 
-    if result.outcome is DiscoveryOutcome.CONFIRMED:
-        was_inactive = board.status is BoardStatus.INACTIVE
-        board.evidence = {
-            "kind": "provider_name",
-            "found_company": result.found_company,
-            "checked_at": now.isoformat(),
-        }
+    if outcome_kind is DiscoveryOutcome.CONFIRMED:
+        board.evidence = (
+            dict(verification.evidence)
+            if verification is not None
+            else {
+                "kind": "provider_name",
+                "found_company": result.found_company,
+                "checked_at": now.isoformat(),
+            }
+        )
         board.verified_at = now
         if was_inactive:
             board.status = _revived_status(board)
@@ -280,15 +310,45 @@ async def register(
         else:
             board.status = BoardStatus.CONFIRMED
             outcome = "confirmed"
-    elif result.outcome is DiscoveryOutcome.WRONG_COMPANY:
+    elif outcome_kind is DiscoveryOutcome.NAMED:
+        if verification is None:
+            # Unreachable: `outcome_kind` only ever becomes `NAMED` a few
+            # lines up, by assigning it `verification.outcome` right after
+            # `verification` itself is set. An explicit guard, not a bare
+            # `assert`, so this cannot be compiled away by `-O` and silently
+            # write a `NAMED` row with no evidence behind it.
+            raise AssertionError("NAMED can only come from a provider's verify()")
+        board.status = BoardStatus.NAMED
+        board.evidence = dict(verification.evidence)
+        board.verified_at = now
+        if was_inactive:
+            # Re-entering the walk with a stale failure count would retire
+            # it again after one more failure; a fresh verification earns
+            # the same clean slate a `CONFIRMED` revival gets. Tallied under
+            # both `reactivated` and `named`, not instead of either: it is a
+            # revival that also happens to be a naming, and undercounting
+            # either would misreport what the run actually did.
+            board.consecutive_failures = 0
+            outcome = "named_reactivated"
+        else:
+            outcome = "named"
+    elif outcome_kind is DiscoveryOutcome.WRONG_COMPANY:
         board.status = BoardStatus.WRONG_COMPANY
-        board.evidence = {"kind": "provider_name", "found_company": result.found_company}
+        board.evidence = (
+            dict(verification.evidence)
+            if verification is not None
+            else {"kind": "provider_name", "found_company": result.found_company}
+        )
         outcome = "wrong_company"
-    elif result.outcome is DiscoveryOutcome.UNVERIFIABLE:
+    elif outcome_kind is DiscoveryOutcome.UNVERIFIABLE:
         board.status = BoardStatus.CANDIDATE
-        board.evidence = {"kind": "unverified", "checked_at": now.isoformat()}
+        board.evidence = (
+            dict(verification.evidence)
+            if verification is not None
+            else {"kind": "unverified", "checked_at": now.isoformat()}
+        )
         outcome = "unverifiable"
-    elif result.outcome is DiscoveryOutcome.NOT_FOUND:
+    elif outcome_kind is DiscoveryOutcome.NOT_FOUND:
         board.status = BoardStatus.NOT_FOUND
         board.evidence = {"kind": "not_found", "tried": tried or [slug]}
         outcome = "not_found"
@@ -356,9 +416,18 @@ async def run_discovery(
                 result = await discover(client, company.display_name, skip=skip)
                 probed += 1
                 outcome = await register(
-                    session, source=source, company=company, result=result, now=moment, skip=skip
+                    session,
+                    source=source,
+                    company=company,
+                    result=result,
+                    now=moment,
+                    skip=skip,
+                    client=client,
                 )
-                if outcome in tallies:
+                if outcome == "named_reactivated":
+                    tallies["named"] += 1
+                    tallies["reactivated"] += 1
+                elif outcome in tallies:
                     tallies[outcome] += 1
 
         await session.commit()
@@ -374,6 +443,7 @@ async def run_discovery(
         unreachable=tallies["unreachable"],
         reactivated=tallies["reactivated"],
         unchanged=tallies["unchanged"],
+        named=tallies["named"],
         skipped_nameless=skipped_nameless,
         stopped_at_budget=stopped_at_budget,
     )

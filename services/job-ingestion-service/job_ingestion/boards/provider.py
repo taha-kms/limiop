@@ -9,20 +9,33 @@ The stage contracts for validation and normalization are the ones in
 verify a board, which those contracts deliberately do not cover.
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import httpx2
+from platform_db.models import Company
 
+from job_ingestion.boards.discovery import DiscoveryOutcome
 from job_ingestion.contracts import JobRecordNormalizer, JobRecordValidator, RawRecord
+
+if TYPE_CHECKING:
+    from job_ingestion.boards.client import BoardClient
 
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """One HTTP GET the client should make."""
+    """One HTTP GET the client should make.
+
+    `headers` defaults to empty for every ordinary board and detail request;
+    it exists for the one case that needs it — a verifier reaching a host
+    the client was not configured for, which identifies itself rather than
+    riding on whatever default the transport happens to send.
+    """
 
     url: str
     params: Mapping[str, str] = field(default_factory=dict)
+    headers: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +49,21 @@ class PageRead:
 
     records: tuple[RawRecord, ...]
     next_cursor: object | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Verification:
+    """What a provider's own `verify` learned about a board beyond its feed.
+
+    `outcome` is one of `CONFIRMED`, `NAMED`, `WRONG_COMPANY`, or
+    `UNVERIFIABLE` — the same vocabulary `discover()` reports, so the
+    registry writes both through one switch. `evidence` is stored on the row
+    exactly as given; its `kind` says which check produced it.
+    """
+
+    outcome: DiscoveryOutcome
+    found_company: str | None
+    evidence: dict[str, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +89,12 @@ class BoardProvider[ProviderRecordT]:
     validation. For providers whose listing omits the description. The
     configured host is passed so a regional override reaches detail requests
     as well as listing requests.
+
+    `verify(client, slug, company)`, when present, is called by discovery
+    when the feed itself states nothing (`discover()` reported
+    `UNVERIFIABLE`). It looks beyond the feed — a careers site's own title,
+    a link on the company's website — for evidence the feed cannot give.
+    Absent, an unverifiable guess just stays unverifiable, as it always has.
     """
 
     source_key: str
@@ -73,3 +107,4 @@ class BoardProvider[ProviderRecordT]:
     read_page: Callable[[str, httpx2.Response], PageRead]
     stated_company: Callable[[Sequence[RawRecord]], str | None]
     detail_request: Callable[[str, RawRecord], Request | None] | None = None
+    verify: Callable[["BoardClient", str, Company], Awaitable[Verification]] | None = None
