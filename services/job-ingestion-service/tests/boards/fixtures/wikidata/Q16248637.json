@@ -1,0 +1,17 @@
+{
+  "entities": {
+    "Q16248637": {
+      "labels": {
+        "en": {"language": "en", "value": "Datadog"}
+      },
+      "claims": {
+        "P31": [
+          {"mainsnak": {"datavalue": {"value": {"id": "Q4830453"}}}}
+        ],
+        "P856": [
+          {"mainsnak": {"datavalue": {"value": "https://www.datadoghq.com/"}}}
+        ]
+      }
+    }
+  }
+}
