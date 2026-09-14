@@ -186,3 +186,21 @@ need a separate decision covering at least:
 
 That decision is **undecided**. This policy neither approves crawling nor chooses
 its design, and no crawler should be implemented as a tier-one adapter.
+
+### Verification fetches are not crawling
+
+**Added 2026-09-14.** Automatic board registration for a provider whose feed
+states no company (Pinpoint) may verify a guessed board by fetching, per
+company: a careers site's front page and its RSS feed, and at most three
+pages of the company's own website. Nothing here extracts postings; the only
+question ever asked of a page is whether it names or links a board this
+already suspects exists. Every website fetch obeys `robots.txt` and
+identifies itself by user agent.
+
+That is not the career-page crawling this section leaves undecided. A
+crawler reads a site's markup to extract postings, on an ongoing basis, for
+sites this policy has not looked at. Verification reads at most three pages
+once per company, per recheck cycle, never for postings, and only to
+corroborate a guess this system already made from other evidence. See
+`docs/superpowers/specs/2026-09-03-automatic-board-registry-design.md` for
+the design this carve-out belongs to.
