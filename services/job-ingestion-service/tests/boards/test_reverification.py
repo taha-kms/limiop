@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from job_ingestion.boards.client import BoardClient
 from job_ingestion.boards.discovery import DiscoveryOutcome
 from job_ingestion.boards.discovery_run import DiscoveryConfig, due_companies, run_discovery
+from job_ingestion.boards.operator import list_boards
 from job_ingestion.boards.provider import Verification
 from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Environment, Settings
@@ -596,5 +597,38 @@ def test_a_one_day_old_confirmed_row_is_not_seeded(database_url: PostgresDsn) ->
             )
 
         assert due == []
+
+    run_database_test(database_url, exercise)
+
+
+# --- operator visibility: filtering the listing by status -------------------
+
+
+@pytest.mark.integration
+def test_list_boards_filtered_by_status_returns_only_that_status(
+    database_url: PostgresDsn,
+) -> None:
+    """An operator checking on `named` boards — the ones re-verification can
+    still upgrade — should not have to read past every `confirmed` row to
+    find them."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            named = await make_company(session, "Named Co")
+            confirmed = await make_company(session, "Confirmed Co")
+            await add_board_row(
+                session, slug="named-co", company_id=named.id, status=BoardStatus.NAMED
+            )
+            await add_board_row(
+                session,
+                slug="confirmed-co",
+                company_id=confirmed.id,
+                status=BoardStatus.CONFIRMED,
+            )
+            await session.commit()
+
+            rows = await list_boards(session, json_provider(), status=BoardStatus.NAMED)
+
+        assert [row["slug"] for row in rows] == ["named-co"]
 
     run_database_test(database_url, exercise)

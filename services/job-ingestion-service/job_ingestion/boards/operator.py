@@ -74,16 +74,23 @@ async def _board_for(session: AsyncSession, source_id: UUID, slug: str) -> JobBo
 
 
 async def list_boards(
-    session: AsyncSession, provider: BoardProvider[Any]
+    session: AsyncSession, provider: BoardProvider[Any], *, status: BoardStatus | None = None
 ) -> list[dict[str, object]]:
-    """Every row registered for one provider, whatever its status."""
+    """Every row registered for one provider, or only those at one status.
+
+    `status` narrows the listing to rows an operator is actually looking
+    for — `named`, say, to see what re-verification still has a chance to
+    upgrade — instead of making them read past every other row.
+    """
     statement = (
         select(JobBoard)
         .join(JobSource, JobBoard.source_id == JobSource.id)
         .options(selectinload(JobBoard.company))
         .where(JobSource.key == provider.source_key)
-        .order_by(JobBoard.slug)
     )
+    if status is not None:
+        statement = statement.where(JobBoard.status == status)
+    statement = statement.order_by(JobBoard.slug)
     boards = (await session.scalars(statement)).all()
     return [as_row(board) for board in boards]
 
