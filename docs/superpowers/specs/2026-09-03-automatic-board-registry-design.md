@@ -105,6 +105,10 @@ discovery already does; the change is that the outcome is stored.
 
 A guess that answers but states another name is `wrong_company`. A guess
 that answers and states nothing usable stays `candidate` and is not polled.
+When no guess answers at all, the same three pages are asked whether they
+link to any Pinpoint board; a single such link registers that subdomain as
+confirmed, and several links register nothing, since a site listing many
+tenants must not have one of them picked for it.
 
 ## Company websites
 
