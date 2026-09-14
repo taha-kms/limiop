@@ -437,7 +437,106 @@ def test_a_not_found_result_with_every_candidate_skipped_is_left_unchanged(
     run_database_test(database_url, exercise)
 
 
+@pytest.mark.integration
+def test_a_not_found_row_owned_by_another_company_may_still_be_rekeyed(
+    database_url: PostgresDsn,
+) -> None:
+    """`not_found`, `unreachable`, `candidate`, and `inactive` are unproven:
+    unlike a settled `confirmed`/`named` row, they may still be re-keyed to
+    whichever company a later probe actually confirms."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
+            )
+            other = await make_company(session, "Other Co")
+            session.add(
+                JobBoard(
+                    source_id=source.id,
+                    slug="acme",
+                    status=BoardStatus.NOT_FOUND,
+                    company_id=other.id,
+                )
+            )
+            company = await make_company(session, "Acme")
+            await session.commit()
+
+            result = DiscoveryResult(
+                company=company.display_name,
+                outcome=DiscoveryOutcome.CONFIRMED,
+                slug="acme",
+                found_company="Acme",
+            )
+            outcome = await register(
+                session, source=source, company=company, result=result, now=datetime.now(UTC)
+            )
+            await session.commit()
+
+        assert outcome == "confirmed"
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.company_id == company.id
+        assert row.status is BoardStatus.CONFIRMED
+
+    run_database_test(database_url, exercise)
+
+
 # --- run_discovery -----------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_a_confirmed_slug_owned_by_a_different_company_is_left_alone(
+    database_url: PostgresDsn,
+) -> None:
+    """Two companies whose names guess the same slug must not fight over it.
+    Company A is already confirmed there; company B's guess landing on the
+    same slug is reported as `unchanged` and left alone, not swapped in —
+    otherwise the row's `company_id` would ping-pong between the two on
+    every run that probes both."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        now = datetime.now(UTC)
+        async with database.session() as session:
+            company_a = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=company_a.id,
+                status=BoardStatus.CONFIRMED,
+                last_checked_at=now,
+            )
+            await make_company(session, "Acme Inc")
+            await session.commit()
+
+        transport = routing({"/acme/jobs": board("Acme")})
+        summary = await run_discovery(
+            database,
+            json_provider(),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: now,
+        )
+
+        # Company A's fresh confirmed row excludes it from `due`; only B is.
+        assert summary.seeded == 1
+        assert summary.probed == 1
+        assert summary.unchanged == 1
+        assert summary.confirmed == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.company_id == company_a.id
+        assert row.status is BoardStatus.CONFIRMED
+
+    run_database_test(database_url, exercise)
 
 
 @pytest.mark.integration
@@ -642,12 +741,15 @@ def test_an_unverifiable_provider_is_stored_as_candidate_and_not_polled(
 
 
 @pytest.mark.integration
-def test_politeness_sleeps_once_per_probed_company(database_url: PostgresDsn) -> None:
+def test_politeness_sleeps_between_probed_companies_but_not_after_the_last(
+    database_url: PostgresDsn,
+) -> None:
     async def exercise(database: Database) -> None:
         settings = Settings(environment=Environment.TEST, database_url=database_url)
         async with database.session() as session:
             await make_company(session, "Acme")
             await make_company(session, "Globex")
+            await make_company(session, "Initech")
             await session.commit()
 
         sleeps: list[float] = []
@@ -655,8 +757,14 @@ def test_politeness_sleeps_once_per_probed_company(database_url: PostgresDsn) ->
         async def recording_sleeper(seconds: float) -> None:
             sleeps.append(seconds)
 
-        transport = routing({"/acme/jobs": board("Acme"), "/globex/jobs": board("Globex")})
-        await run_discovery(
+        transport = routing(
+            {
+                "/acme/jobs": board("Acme"),
+                "/globex/jobs": board("Globex"),
+                "/initech/jobs": board("Initech"),
+            }
+        )
+        summary = await run_discovery(
             database,
             json_provider(),
             config=DiscoveryConfig(politeness_seconds=1.5),
@@ -666,6 +774,10 @@ def test_politeness_sleeps_once_per_probed_company(database_url: PostgresDsn) ->
             now=lambda: datetime.now(UTC),
         )
 
+        # Three companies probed, and a politeness pause only ever paces one
+        # probe against the next — never after the last one, with nothing
+        # left to be polite before.
+        assert summary.probed == 3
         assert sleeps == [1.5, 1.5]
 
     run_database_test(database_url, exercise)

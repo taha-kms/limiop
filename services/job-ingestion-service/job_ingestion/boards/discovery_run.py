@@ -46,8 +46,15 @@ _NEVER_DUE = frozenset({BoardStatus.BLOCKED, BoardStatus.WRONG_COMPANY})
 # A row `register` must never write over, whatever the new probe found.
 _SETTLED_STATUSES = frozenset({BoardStatus.BLOCKED, BoardStatus.WRONG_COMPANY})
 
-# `register`'s return values that a run tallies into its summary. Any other
-# return ("unchanged") means nothing was written and is not counted.
+# A row in one of these states has been proven to belong to whoever it is
+# keyed on. Owned by a *different* company than the one being registered, it
+# is just as settled as `_SETTLED_STATUSES` and must not be reassigned.
+# Owned by the same company, none of this applies. A row in any other state
+# (not_found, unreachable, candidate, inactive) is unproven and may still be
+# re-keyed to whoever a later probe actually confirms.
+_OWNED_STATUSES = frozenset({BoardStatus.CONFIRMED, BoardStatus.NAMED})
+
+# `register`'s return values that a run tallies into its summary.
 _TALLIED_OUTCOMES = (
     "confirmed",
     "wrong_company",
@@ -55,6 +62,7 @@ _TALLIED_OUTCOMES = (
     "not_found",
     "unreachable",
     "reactivated",
+    "unchanged",
 )
 
 
@@ -89,6 +97,7 @@ class DiscoverySummary:
     not_found: int = 0
     unreachable: int = 0
     reactivated: int = 0
+    unchanged: int = 0  # a settled row, owned by another company, left alone
     skipped_nameless: int = 0  # companies whose name yields no candidate slug
     stopped_at_budget: bool = False
 
@@ -191,9 +200,24 @@ async def register(
     confirmed, wrong_company, unverifiable, not_found, unreachable,
     reactivated, or unchanged when an already-settled row was left alone.
 
-    Never modifies a row that is pinned, blocked, or already `wrong_company`:
-    a decision an operator or an earlier probe already made outranks a fresh
-    guess, whatever this company's name happens to produce.
+    Never modifies a row that is pinned, blocked, already `wrong_company`, or
+    `confirmed`/`named` for a *different* company: a decision an operator, an
+    earlier probe, or an earlier confirmation already made outranks a fresh
+    guess, whatever this company's name happens to produce. Without this, two
+    companies whose names guess the same slug would fight over it, and the
+    row's `company_id` would ping-pong between them on every run that probes
+    both. A row that is `not_found`, `unreachable`, `candidate`, or `inactive`
+    for another company is unproven rather than settled, and may still be
+    re-keyed to whoever a later probe actually confirms.
+
+    A company whose only candidate is owned by a different, settled company
+    has no row of its own to become not-due, so `due_companies` marks it due
+    again every run: this returns `unchanged` before ever probing further,
+    but the probe itself still happens and still costs one budget slot each
+    time. There is no automatic way out of that from here; an operator
+    resolves it by blocking the slug (so it stops being guessed) or pinning
+    the row (which does not change whose company_id it holds, but ends the
+    argument).
 
     `skip` should be the same set `discover` was called with. A `NOT_FOUND`
     result carries no slug of its own, so one has to be picked to key the
@@ -214,12 +238,23 @@ async def register(
         # slug left to key a row on that isn't already somebody else's.
         slug = candidate_slugs(company.display_name)[0]
     board = await _existing_board(session, source.id, slug)
-    if board is not None and (board.pinned or board.status in _SETTLED_STATUSES):
+    owned_by_someone_else = (
+        board is not None
+        and board.company_id is not None
+        and board.company_id != company.id
+        and board.status in _OWNED_STATUSES
+    )
+    if board is not None and (
+        board.pinned or board.status in _SETTLED_STATUSES or owned_by_someone_else
+    ):
+        if board.pinned:
+            reason = "pinned"
+        elif owned_by_someone_else:
+            reason = f"{board.status.value} for a different company"
+        else:
+            reason = board.status.value
         logger.info(
-            "not writing over board %s for %s: row is %s",
-            slug,
-            company.display_name,
-            "pinned" if board.pinned else board.status.value,
+            "not writing over board %s for %s: row is %s", slug, company.display_name, reason
         )
         return "unchanged"
 
@@ -312,6 +347,12 @@ async def run_discovery(
                     skipped_nameless += 1
                     continue
 
+                # Paces one probe against the next, never after the last:
+                # nothing is waiting to be polite before once this run is
+                # about to make its final request.
+                if probed > 0:
+                    await sleeper(config.politeness_seconds)
+
                 result = await discover(client, company.display_name, skip=skip)
                 probed += 1
                 outcome = await register(
@@ -319,7 +360,6 @@ async def run_discovery(
                 )
                 if outcome in tallies:
                     tallies[outcome] += 1
-                await sleeper(config.politeness_seconds)
 
         await session.commit()
 
@@ -333,6 +373,7 @@ async def run_discovery(
         not_found=tallies["not_found"],
         unreachable=tallies["unreachable"],
         reactivated=tallies["reactivated"],
+        unchanged=tallies["unchanged"],
         skipped_nameless=skipped_nameless,
         stopped_at_budget=stopped_at_budget,
     )
