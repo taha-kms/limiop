@@ -1239,6 +1239,173 @@ def test_a_locate_hook_naming_a_slug_already_wrong_company_leaves_it_alone(
 
 
 @pytest.mark.integration
+def test_a_locate_hook_naming_a_slug_not_found_for_another_company_is_rekeyed(
+    database_url: PostgresDsn,
+) -> None:
+    """Unlike `wrong_company` above, `not_found` is unproven — the located
+    slug's existing row may still be re-keyed to whoever a probe actually
+    confirms, the same rule a guessed slug's own row already follows."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            other = await make_company(session, "Otherco")
+            # Fresh enough that Otherco's own `not_found` recheck is not due
+            # this run — it must not compete for "workwithus" independently.
+            await add_board_row(
+                session,
+                slug="workwithus",
+                company_id=other.id,
+                status=BoardStatus.NOT_FOUND,
+                last_checked_at=datetime.now(UTC),
+            )
+            pinpoint = await make_company(session, "Pinpoint")
+            await session.commit()
+
+        async def locate(_client: BoardClient, _company: Company) -> Verification:
+            return Verification(
+                outcome=DiscoveryOutcome.CONFIRMED,
+                found_company=None,
+                evidence={"kind": "website_link", "website": "https://pinpoint.example.test/"},
+                slug="workwithus",
+            )
+
+        transport = routing({"/pinpoint/jobs": httpx2.Response(404)})
+        summary = await run_discovery(
+            database,
+            locating_provider(locate),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.located == 1
+
+        async with database.session() as session:
+            row = (
+                await session.scalars(select(JobBoard).where(JobBoard.slug == "workwithus"))
+            ).one()
+
+        assert row.company_id == pinpoint.id
+        assert row.status is BoardStatus.CONFIRMED
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_previously_verified_not_found_recheck_never_asks_locate(
+    database_url: PostgresDsn,
+) -> None:
+    """A previously confirmed row's own `NOT_FOUND` recheck is not believed
+    on one silent probe (it stays `unchanged`); asking the website whether
+    it names some *other* board on that same recheck would contradict that,
+    writing a second row while the first stands untouched. `locate` must not
+    even be called."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            company = await make_company(session, "Pinpoint")
+            await add_board_row(
+                session,
+                slug="pinpoint",
+                company_id=company.id,
+                status=BoardStatus.CONFIRMED,
+                last_checked_at=datetime.now(UTC) - timedelta(days=31),
+            )
+            await session.commit()
+
+        called = False
+
+        async def locate(_client: BoardClient, _company: Company) -> Verification:
+            nonlocal called
+            called = True
+            raise AssertionError("locate must not be called for a previously verified recheck")
+
+        transport = routing({"/pinpoint/jobs": httpx2.Response(404)})
+        summary = await run_discovery(
+            database,
+            locating_provider(locate),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert called is False
+        assert summary.unchanged == 1
+        assert summary.located == 0
+        assert summary.not_found == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "pinpoint"))).one()
+
+        assert row.status is BoardStatus.CONFIRMED
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_locate_hook_reviving_an_inactive_board_resets_the_failures(
+    database_url: PostgresDsn,
+) -> None:
+    """`_register_named` revives an `inactive` row the same way the guessed
+    slug's own `CONFIRMED` revival does: a clean failure count, and counted
+    under `reactivated` (as well as `located` and `not_found`), not just a
+    plain `confirmed`."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            await add_board_row(
+                session,
+                slug="workwithus",
+                company_id=None,
+                status=BoardStatus.INACTIVE,
+                consecutive_failures=3,
+                evidence={"kind": "website_link", "website": "https://pinpoint.example.test/"},
+            )
+            await make_company(session, "Pinpoint")
+            await session.commit()
+
+        async def locate(_client: BoardClient, _company: Company) -> Verification:
+            return Verification(
+                outcome=DiscoveryOutcome.CONFIRMED,
+                found_company=None,
+                evidence={"kind": "website_link", "website": "https://pinpoint.example.test/"},
+                slug="workwithus",
+            )
+
+        transport = routing({"/pinpoint/jobs": httpx2.Response(404)})
+        summary = await run_discovery(
+            database,
+            locating_provider(locate),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.located == 1
+        assert summary.reactivated == 1
+        assert summary.not_found == 1
+
+        async with database.session() as session:
+            row = (
+                await session.scalars(select(JobBoard).where(JobBoard.slug == "workwithus"))
+            ).one()
+
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.consecutive_failures == 0
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
 def test_a_verify_hook_naming_a_different_slug_confirms_it_and_leaves_the_guess_candidate(
     database_url: PostgresDsn,
 ) -> None:

@@ -179,9 +179,19 @@ def linked_subdomains(content: bytes, host: str) -> tuple[str, ...]:
     return tuple(seen)
 
 
+_SUBDOMAIN_LABEL = re.compile(r"^[a-z0-9-]+$")
+
+
 def _subdomain_of(hostname: str | None, host: str) -> str | None:
     """The single label if `hostname` is exactly `{label}.{host}`, excluding
-    `www`, or `None` when it names no subdomain of `host` at all."""
+    `www`, or `None` when it names no subdomain of `host` at all.
+
+    `label` is held to the same `[a-z0-9-]+` charset `linked_subdomains`
+    requires of a link — a redirect's final URL is not something this
+    controls, and a hostname is not guaranteed to keep to that charset
+    (`a_b`, a percent-escape that survived unescaped) the way a same-process
+    check might assume.
+    """
     if hostname is None:
         return None
     suffix = f".{host.lower()}"
@@ -189,7 +199,7 @@ def _subdomain_of(hostname: str | None, host: str) -> str | None:
     if not lowered.endswith(suffix):
         return None
     label = lowered[: -len(suffix)]
-    if not label or "." in label or label == "www":
+    if label == "www" or not _SUBDOMAIN_LABEL.match(label):
         return None
     return label
 
@@ -402,11 +412,16 @@ async def _walk_website(
     company: Company,
     *,
     resolve: Callable[[str], list[str]] = default_resolver,
-) -> AsyncIterator[tuple[httpx2.Response, str]]:
+) -> AsyncIterator[tuple[httpx2.Response, str, str]]:
     """The company's own three pages, in order, that could actually be
     fetched — skipping any a `robots.txt` disallows, and any that could not
     be reached at all. Yields nothing when `company.website_url` is unknown
     or is not a public HTTP(S) address, before a single request is made.
+
+    Each item is `(response, final_url, page_url)`: the response and where
+    it actually answered, alongside the page that was requested before any
+    redirect — a caller comparing the two is how "this page redirected
+    somewhere" is told apart from "this page already was that URL".
 
     This is only the fetch rules: which pages exist to look at, and under
     what conditions. What a page says is entirely up to the caller —
@@ -427,7 +442,8 @@ async def _walk_website(
         fetched = await _follow(client, _WEBSITE_SLUG, page_url, resolve=resolve)
         if fetched is None:
             continue
-        yield fetched
+        response, final_url = fetched
+        yield response, final_url, page_url
 
 
 async def corroborate(
@@ -445,14 +461,17 @@ async def corroborate(
     disallows is skipped outright, never fetched anyway to see.
 
     Each page is read in order: a redirect landing on `{slug}.{host}`
-    confirms the guess unchanged; a redirect landing on any *other*
-    `{sub}.{host}` confirms `sub` instead, carried on `Verification.slug`; a
-    page linking `{slug}.{host}` confirms the guess unchanged; a page whose
-    only Pinpoint link is to exactly one other subdomain confirms that one,
-    evidence noting what was `linked`; a page linking several distinct other
-    subdomains says nothing about any of them — a site listing many tenants
-    (a group of companies) must not have one of them picked for it — and the
-    walk moves on to the next page rather than giving up.
+    confirms the guess unchanged; landing on any *other* `{sub}.{host}` —
+    whether by redirect or because `company.website_url` already was that
+    URL — confirms `sub` instead, carried on `Verification.slug`, evidence
+    kind `website_redirect` when at least one hop actually happened and
+    `website_self` when the page answered directly; a page linking
+    `{slug}.{host}` confirms the guess unchanged; a page whose only
+    Pinpoint link is to exactly one other subdomain confirms that one,
+    evidence noting what was `linked`; a page linking several distinct
+    other subdomains says nothing about any of them — a site listing many
+    tenants (a group of companies) must not have one of them picked for it
+    — and the walk moves on to the next page rather than giving up.
 
     `company.website_url` came from a posting payload or Wikidata, neither
     trustworthy, so it is checked against the public internet before
@@ -464,13 +483,14 @@ async def corroborate(
     host = _provider_host(client)
     target_host = _slug_host(client, slug).lower()
 
-    async for response, final_url in _walk_website(client, company, resolve=resolve):
+    async for response, final_url, page_url in _walk_website(client, company, resolve=resolve):
         final_host = urlparse(final_url).hostname
         if final_host == target_host:
             return _website_evidence(kind="website_redirect", website=final_url)
         other = _subdomain_of(final_host, host)
         if other is not None:
-            return _website_evidence(kind="website_redirect", website=final_url, slug=other)
+            kind = "website_redirect" if final_url != page_url else "website_self"
+            return _website_evidence(kind=kind, website=final_url, slug=other)
         if response.status_code != httpx2.codes.OK:
             continue
         if _links_to(response.content, target_host):
@@ -495,21 +515,25 @@ async def locate(
     failed to answer (`discover()` reported `NOT_FOUND`).
 
     Runs the same three-page walk as `corroborate`, but only the two rules
-    that make sense without a guess: a redirect landing on `{sub}.{host}`
-    names `sub`, and a page whose only Pinpoint link is to exactly one
-    subdomain names that one. A page linking several distinct subdomains
-    names none of them, for the same reason `corroborate` skips it — a
-    website listing many tenants must not have one of them picked for it —
-    and the walk moves on rather than giving up. Never raises for a website
-    answer, and rejects a private `company.website_url` before a single
-    request is made, the same guarantees `corroborate` gives.
+    that make sense without a guess: landing on `{sub}.{host}` — by
+    redirect, or because `company.website_url` already was that URL — names
+    `sub` (evidence kind `website_redirect` when a hop actually happened,
+    `website_self` when the page answered directly), and a page whose only
+    Pinpoint link is to exactly one subdomain names that one. A page linking
+    several distinct subdomains names none of them, for the same reason
+    `corroborate` skips it — a website listing many tenants must not have
+    one of them picked for it — and the walk moves on rather than giving
+    up. Never raises for a website answer, and rejects a private
+    `company.website_url` before a single request is made, the same
+    guarantees `corroborate` gives.
     """
     host = _provider_host(client)
 
-    async for response, final_url in _walk_website(client, company, resolve=resolve):
+    async for response, final_url, page_url in _walk_website(client, company, resolve=resolve):
         other = _subdomain_of(urlparse(final_url).hostname, host)
         if other is not None:
-            return _website_evidence(kind="website_redirect", website=final_url, slug=other)
+            kind = "website_redirect" if final_url != page_url else "website_self"
+            return _website_evidence(kind=kind, website=final_url, slug=other)
         if response.status_code != httpx2.codes.OK:
             continue
         linked = linked_subdomains(response.content, host)

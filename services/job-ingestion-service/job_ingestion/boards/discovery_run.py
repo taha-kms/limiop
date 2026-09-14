@@ -225,7 +225,11 @@ async def _register_named(
     what this company's probe happened to turn up. Otherwise the row is
     written fresh, keyed to `company`, with `named.outcome` deciding the
     status — `CONFIRMED`, `NAMED`, or `WRONG_COMPANY`, the only outcomes a
-    verifier naming a board this way is documented to return.
+    verifier naming a board this way is documented to return. A `CONFIRMED`
+    landing on a row that had gone `inactive` revives it exactly as the
+    guessed slug's own `CONFIRMED` revival does — a clean failure count,
+    back in the walk — and is `reactivated` rather than plain `confirmed`,
+    so a run does not undercount how many boards it actually revived.
     """
     assert named.slug is not None  # only ever called with a named slug
     slug = named.slug
@@ -248,11 +252,17 @@ async def _register_named(
     board.company_id = company.id
     board.last_checked_at = now
     board.evidence = dict(named.evidence)
+    was_inactive = board.status is BoardStatus.INACTIVE
 
     if named.outcome is DiscoveryOutcome.CONFIRMED:
-        board.status = BoardStatus.CONFIRMED
         board.verified_at = now
-        outcome = "confirmed"
+        if was_inactive:
+            board.status = _revived_status(board)
+            board.consecutive_failures = 0
+            outcome = "reactivated"
+        else:
+            board.status = BoardStatus.CONFIRMED
+            outcome = "confirmed"
     elif named.outcome is DiscoveryOutcome.NAMED:
         board.status = BoardStatus.NAMED
         board.verified_at = now
@@ -358,14 +368,18 @@ async def register(
     slug is written instead — the guessed slug still gets exactly the
     `candidate`/`unverified` row an unverifiable guess always does, as if
     `verify` had said nothing about it. And when `result.outcome` is
-    `NOT_FOUND` and `client.provider.locate` is configured, it is asked
+    `NOT_FOUND`, the guess is a *first* guess (not `previously_verified` —
+    a recheck's own `NOT_FOUND` is not believed, above, and asking the
+    website to name some other board would contradict that on the same
+    recheck), and `client.provider.locate` is configured, it is asked
     whether the company's website names a board at all; a `Verification` it
     returns is written the same way, and the run tallies it `located` (as
     well as `not_found`, for the guessed slug's own row, which is written
-    exactly as it always is regardless of what `locate` found). Neither path
-    runs when the guessed slug's own row is already settled — that early
-    return happens first, before `client.provider.verify` or `.locate` is
-    ever asked.
+    exactly as it always is regardless of what `locate` found) — plus
+    `reactivated` too, when the board it names had gone `inactive`. Neither
+    path runs when the guessed slug's own row is already settled — that
+    early return happens first, before `client.provider.verify` or
+    `.locate` is ever asked.
     """
     tried = [
         candidate for candidate in candidate_slugs(company.display_name) if candidate not in skip
@@ -594,13 +608,22 @@ async def register(
         result.outcome is DiscoveryOutcome.NOT_FOUND
         and client is not None
         and client.provider.locate is not None
+        and not previously_verified
     ):
+        # A previously verified row's own `NOT_FOUND` recheck is not
+        # believed on one silent probe (above) — asking the website whether
+        # it names some *other* board would contradict that: the guessed
+        # slug's row would stand unchanged while a second row got written,
+        # both for the same recheck. `locate` is only ever asked when this
+        # is a first guess with nothing settled yet to contradict.
         located = await client.provider.locate(client, company)
         if located is not None:
             located_outcome = await _register_named(
                 session, source=source, company=company, named=located, now=now
             )
-            if located_outcome != "unchanged":
+            if located_outcome == "reactivated":
+                outcome = "located_reactivated"
+            elif located_outcome != "unchanged":
                 outcome = "located"
 
     await session.flush()
@@ -676,6 +699,10 @@ async def run_discovery(
                 elif outcome == "located":
                     tallies["located"] += 1
                     tallies["not_found"] += 1
+                elif outcome == "located_reactivated":
+                    tallies["located"] += 1
+                    tallies["not_found"] += 1
+                    tallies["reactivated"] += 1
                 elif outcome in tallies:
                     tallies[outcome] += 1
 

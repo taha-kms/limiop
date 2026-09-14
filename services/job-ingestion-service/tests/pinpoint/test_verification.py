@@ -556,6 +556,58 @@ def test_careers_page_redirecting_to_a_different_subdomain_names_it() -> None:
     assert result.slug == "workwithus"
 
 
+def test_a_website_that_already_is_a_different_subdomain_names_it_directly() -> None:
+    """`company.website_url` sometimes already points straight at the
+    tenant's board — no redirect ever happens, so the evidence must say
+    `website_self`, not claim a redirect that never occurred."""
+    fetcher = url_client(
+        {
+            "https://workwithus.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://workwithus.boards.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_self"
+    assert result.slug == "workwithus"
+
+
+def test_a_redirect_to_an_invalid_subdomain_label_names_nothing() -> None:
+    """A redirect target is not something this controls; a hostname whose
+    label falls outside `linked_subdomains`'s own charset must not be read
+    as naming a board just because it happens to end in the right host."""
+    fetcher = url_client(
+        {
+            "https://pinpoint.example.test/": httpx2.Response(
+                302, headers={"location": "https://a_b.boards.example.test/"}
+            ),
+            "https://a_b.boards.example.test/": httpx2.Response(200, text="ok"),
+            "https://pinpoint.example.test/careers": httpx2.Response(404),
+            "https://pinpoint.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(
+            fetcher,
+            "pinpoint",
+            company("Pinpoint", website_url="https://pinpoint.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
+
+
 def test_a_redirect_to_www_names_nothing() -> None:
     """`www.{host}` is the provider's own bare host, not a tenant — a
     redirect there must never be read as naming a board called `www`."""
@@ -690,6 +742,50 @@ def test_locate_follows_a_redirect_to_a_subdomain() -> None:
     assert result.outcome is DiscoveryOutcome.CONFIRMED
     assert result.evidence["kind"] == "website_redirect"
     assert result.slug == "workwithus"
+
+
+def test_locate_names_a_subdomain_the_website_already_is() -> None:
+    fetcher = url_client(
+        {
+            "https://workwithus.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://workwithus.boards.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_self"
+    assert result.slug == "workwithus"
+
+
+def test_locate_ignores_a_redirect_to_an_invalid_subdomain_label() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                302, headers={"location": "https://a_b.boards.example.test/"}
+            ),
+            "https://a_b.boards.example.test/": httpx2.Response(200, text="ok"),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        locate(
+            fetcher,
+            company("Acme", website_url="https://acme.example.test/"),
+            resolve=public_resolver,
+        )
+    )
+
+    assert result is None
 
 
 def test_locate_finds_nothing_when_the_site_links_no_subdomain() -> None:
