@@ -128,6 +128,57 @@ def test_a_confirmed_row_that_confirms_again_is_reverified(database_url: Postgre
 
 
 @pytest.mark.integration
+def test_reverifying_a_confirmed_row_leaves_its_failure_streak_untouched(
+    database_url: PostgresDsn,
+) -> None:
+    """`consecutive_failures` is the poll lifecycle's concern (#332), not
+    discovery's: a reverification neither resets a non-zero streak (there
+    was no failure here to clear) nor otherwise touches it."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        moment = datetime.now(UTC)
+        async with database.session() as session:
+            company = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=company.id,
+                status=BoardStatus.CONFIRMED,
+                verified_at=moment - OLD,
+                last_checked_at=moment - OLD,
+                consecutive_failures=2,
+                evidence={
+                    "kind": "provider_name",
+                    "found_company": "Acme",
+                    "checked_at": (moment - OLD).isoformat(),
+                },
+            )
+            await session.commit()
+
+        transport = routing({"/acme/jobs": board("Acme")})
+        summary = await run_discovery(
+            database,
+            json_provider(),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: moment,
+        )
+
+        assert summary.reverified == 1
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.consecutive_failures == 2
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
 def test_a_named_row_that_now_confirms_is_upgraded_and_reverified(
     database_url: PostgresDsn,
 ) -> None:
@@ -596,6 +647,49 @@ def test_a_pinned_row_is_reported_monthly_and_never_modified(database_url: Postg
             "kind": "wrong_company",
             "checked_at": moment.isoformat(),
         }
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_pinned_row_follows_recheck_verified_regardless_of_its_own_status(
+    database_url: PostgresDsn,
+) -> None:
+    """A pinned `not_found` row would be due in a week under
+    `recheck_not_found` if it were not pinned. Pinned, it follows
+    `recheck_verified` (30 days) instead: past a week but short of 30 days
+    it must not be due, and past 30 days it must be — isolating that the
+    pinned cadence comes from `pinned`, not from the row's own status."""
+
+    async def exercise(database: Database) -> None:
+        moment = datetime.now(UTC)
+        async with database.session() as session:
+            company = await make_company(session, "Acme")
+            row = await add_board_row(
+                session,
+                slug="acme",
+                company_id=company.id,
+                status=BoardStatus.NOT_FOUND,
+                pinned=True,
+                last_checked_at=moment - timedelta(days=10),
+            )
+            await session.commit()
+
+            due = await due_companies(
+                session, source_key="fake", config=DiscoveryConfig(), now=moment
+            )
+        assert due == []
+
+        async with database.session() as session:
+            stale = await session.get(JobBoard, row.id)
+            assert stale is not None
+            stale.last_checked_at = moment - timedelta(days=45)
+            await session.commit()
+
+            due = await due_companies(
+                session, source_key="fake", config=DiscoveryConfig(), now=moment
+            )
+        assert [row.id for row in due] == [company.id]
 
     run_database_test(database_url, exercise)
 
