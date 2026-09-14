@@ -420,6 +420,120 @@ def test_a_confirmed_row_gone_unverifiable_is_demoted_to_named(database_url: Pos
     run_database_test(database_url, exercise)
 
 
+@pytest.mark.integration
+def test_a_confirmed_row_gone_unverifiable_with_no_stated_name_is_demoted_to_candidate(
+    database_url: PostgresDsn,
+) -> None:
+    """The other half of the demotion rule: evidence that was never just a
+    stated name (`website_link`, from corroboration) gives up nothing worth
+    keeping once the feed and `verify` both come up empty, so the row goes
+    all the way back to `candidate` and drops out of the walk."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        moment = datetime.now(UTC)
+        async with database.session() as session:
+            company = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=company.id,
+                status=BoardStatus.CONFIRMED,
+                verified_at=moment - OLD,
+                last_checked_at=moment - OLD,
+                evidence={"kind": "website_link", "url": "https://acme.example/careers"},
+            )
+            await session.commit()
+
+        async def verify(_client: BoardClient, _slug: str, _company: Company) -> Verification:
+            return Verification(
+                outcome=DiscoveryOutcome.UNVERIFIABLE,
+                found_company=None,
+                evidence={"kind": "unverified", "checked_at": moment.isoformat()},
+            )
+
+        transport = routing({"/acme/jobs": board("Acme")})
+        summary = await run_discovery(
+            database,
+            verifying_provider(verify),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: moment,
+        )
+
+        assert summary.demoted == 1
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+            slugs = await polled_slugs(session, "fake")
+
+        assert row.status is BoardStatus.CANDIDATE
+        assert row.evidence is not None
+        assert row.evidence["kind"] == "unverified"
+        assert slugs == ()
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_confirmed_row_that_becomes_unreachable_is_left_alone_but_noted(
+    database_url: PostgresDsn,
+) -> None:
+    """The `unreachable` twin of the 404 case above: a connection failure on
+    a recheck is just as silent as a 404 one, and must not demote the row
+    either."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        moment = datetime.now(UTC)
+        async with database.session() as session:
+            company = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=company.id,
+                status=BoardStatus.CONFIRMED,
+                verified_at=moment - OLD,
+                last_checked_at=moment - OLD,
+                evidence={
+                    "kind": "provider_name",
+                    "found_company": "Acme",
+                    "checked_at": (moment - OLD).isoformat(),
+                },
+            )
+            await session.commit()
+
+        transport = routing({"/acme/jobs": httpx2.ConnectError("could not connect")})
+        summary = await run_discovery(
+            database,
+            json_provider(),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: moment,
+        )
+
+        assert summary.unchanged == 1
+        assert summary.unreachable == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+            slugs = await polled_slugs(session, "fake")
+
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.evidence is not None
+        assert row.evidence["last_recheck"] == {
+            "kind": "unreachable",
+            "checked_at": moment.isoformat(),
+        }
+        assert slugs == ("acme",)
+
+    run_database_test(database_url, exercise)
+
+
 # --- a pinned row is reported, never rewritten -------------------------------
 
 

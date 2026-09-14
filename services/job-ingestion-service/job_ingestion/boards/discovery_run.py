@@ -410,8 +410,7 @@ async def register(
             evidence["last_recheck"] = {"kind": outcome_kind.value, "checked_at": now.isoformat()}
             board.evidence = evidence
             outcome = "unchanged"
-        else:
-            assert outcome_kind is DiscoveryOutcome.UNVERIFIABLE
+        elif outcome_kind is DiscoveryOutcome.UNVERIFIABLE:
             prior_kind = (board.evidence or {}).get("kind")
             board.status = (
                 BoardStatus.NAMED
@@ -424,6 +423,13 @@ async def register(
                 else {"kind": "unverified", "checked_at": now.isoformat()}
             )
             outcome = "demoted"
+        else:
+            # The outer `if` only lets outcomes in through that one of the
+            # branches above names explicitly. An explicit guard, not a bare
+            # `assert`, so a new `DiscoveryOutcome` member added to that
+            # tuple without a matching branch here fails loudly instead of
+            # silently falling through with `outcome` unset.
+            raise AssertionError(f"unhandled previously-verified outcome: {outcome_kind!r}")
     elif outcome_kind is DiscoveryOutcome.CONFIRMED:
         board.evidence = (
             dict(verification.evidence)
