@@ -18,7 +18,11 @@ Four things run, and they are separately deployable on purpose.
 
 Next to the hourly ingestion DAGs, `airflow` runs one board-discovery DAG per
 provider daily, off-peak and staggered (03:10, 03:17, 03:24), and a
-`company_websites` DAG daily at 02:40, ahead of them.
+`company_websites` DAG daily at 02:40, ahead of them. Each daily run carries
+its own recheck cadences rather than needing a separate schedule: a
+`not_found` or `inactive` row is rechecked weekly, and a `confirmed` or
+`named` row monthly; a pinned row is rechecked monthly too, but only ever
+reported, never changed.
 
 PostgreSQL is the only datastore, shared by all of them. There is no second one,
 and adding one needs a demonstrated need rather than a preference.
