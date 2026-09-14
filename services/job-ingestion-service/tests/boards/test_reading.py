@@ -37,6 +37,7 @@ def test_a_record_list_must_be_a_list_of_objects() -> None:
 
 def test_a_request_defaults_to_no_parameters() -> None:
     assert Request(url="https://example.test").params == {}
+    assert Request(url="https://example.test").headers == {}
 
 
 def test_a_page_read_defaults_to_no_next_cursor() -> None:

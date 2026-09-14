@@ -25,10 +25,17 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class Request:
-    """One HTTP GET the client should make."""
+    """One HTTP GET the client should make.
+
+    `headers` defaults to empty for every ordinary board and detail request;
+    it exists for the one case that needs it — a verifier reaching a host
+    the client was not configured for, which identifies itself rather than
+    riding on whatever default the transport happens to send.
+    """
 
     url: str
     params: Mapping[str, str] = field(default_factory=dict)
+    headers: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

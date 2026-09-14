@@ -156,6 +156,7 @@ class BoardClient:
                 response = await self._http_client.get(
                     request.url,
                     params=dict(request.params),
+                    headers=dict(request.headers),
                     timeout=self.config.timeout_seconds,
                 )
             except httpx2.TimeoutException as error:

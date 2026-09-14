@@ -22,9 +22,12 @@ company, never more, and never posting extraction. See
 """
 
 import re
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from html import unescape
 from typing import TYPE_CHECKING
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 from xml.etree.ElementTree import ParseError
 
 import httpx2
@@ -34,11 +37,23 @@ from platform_db.models import Company
 
 from job_ingestion.boards.discovery import DiscoveryOutcome, belongs_to
 from job_ingestion.boards.provider import Request, Verification
+from job_ingestion.boards.websites import USER_AGENT
 from job_ingestion.boards.xml import local_name
 from job_ingestion.errors import SourceUnavailableError
 
 if TYPE_CHECKING:
     from job_ingestion.boards.client import BoardClient
+
+# At most three pages of a company's own website, in the order checked,
+# stopping at the first one that says anything. See
+# `docs/job-source-policy.md`'s carve-out: this is not a career-page crawler.
+_WEBSITE_PATHS = ("", "careers", "jobs")
+_MAX_REDIRECTS = 3
+_REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
+_MAX_BODY_BYTES = 2 * 1024 * 1024
+# A link, an iframe embed, or a script tag naming the board's host — the
+# three shapes a careers-site widget actually takes on a company's own page.
+_LINK_TEMPLATE = r'(?:href|src)\s*=\s*["\'][^"\']*{host}[^"\']*["\']'
 
 # Title templates a Pinpoint tenant's careers site is built from, most
 # specific first so "Jobs at Pinpoint | Pinpoint Careers" is not mistaken for
@@ -106,11 +121,13 @@ def _slug_host(client: "BoardClient", slug: str) -> str:
     return f"{slug}.{host}"
 
 
-async def _get(client: "BoardClient", slug: str, url: str) -> httpx2.Response | None:
+async def _get(
+    client: "BoardClient", slug: str, url: str, *, headers: Mapping[str, str] | None = None
+) -> httpx2.Response | None:
     """One GET that never raises: an unreachable page is evidence of
     nothing, not a reason to stop verifying."""
     try:
-        return await client.request(slug, Request(url=url))
+        return await client.request(slug, Request(url=url, headers=headers or {}))
     except SourceUnavailableError:
         return None
 
@@ -167,14 +184,131 @@ async def identity(client: "BoardClient", slug: str, company: Company) -> Verifi
     return None
 
 
+def _origin(url: str) -> str:
+    parsed = urlparse(url)
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+async def _robots(
+    client: "BoardClient", slug: str, origin: str, cache: dict[str, RobotFileParser]
+) -> RobotFileParser:
+    """`origin`'s robots.txt, fetched once per `corroborate` call and cached.
+
+    `RobotFileParser.can_fetch` refuses everything until something has been
+    parsed into it — it is not, on its own, "nothing read yet means
+    allowed". So this mirrors what `RobotFileParser.read()` itself does with
+    a status code, entirely through `parse()`, its only public way to set
+    that state: 401 or 403 disallows everything; any other failure to read
+    one at all — a 404, a 5xx, or no answer — allows everything, the
+    ordinary meaning of a site with no robots.txt.
+    """
+    if origin in cache:
+        return cache[origin]
+    parser = RobotFileParser()
+    response = await _get(client, slug, f"{origin}/robots.txt", headers={"User-Agent": USER_AGENT})
+    if response is not None and response.status_code == httpx2.codes.OK:
+        parser.parse(response.text.splitlines())
+    elif response is not None and response.status_code in (
+        httpx2.codes.UNAUTHORIZED,
+        httpx2.codes.FORBIDDEN,
+    ):
+        parser.parse(["User-agent: *", "Disallow: /"])
+    else:
+        parser.parse(["User-agent: *", "Allow: /"])
+    cache[origin] = parser
+    return parser
+
+
+async def _disallowed(
+    client: "BoardClient", slug: str, url: str, cache: dict[str, RobotFileParser]
+) -> bool:
+    """Whether `robots.txt` refuses `url` to `*` or to `SkillSync` by name."""
+    parser = await _robots(client, slug, _origin(url), cache)
+    return not (parser.can_fetch("*", url) and parser.can_fetch("SkillSync", url))
+
+
+async def _follow(client: "BoardClient", slug: str, url: str) -> tuple[httpx2.Response, str] | None:
+    """GET `url`, following up to `_MAX_REDIRECTS` redirects by hand.
+
+    Returns the final response together with the URL it actually answered
+    at, or `None` when the page could not be reached, or redirected more
+    times than the cap allows.
+    """
+    current = url
+    for _ in range(_MAX_REDIRECTS + 1):
+        response = await _get(client, slug, current, headers={"User-Agent": USER_AGENT})
+        if response is None:
+            return None
+        if response.status_code not in _REDIRECT_STATUSES:
+            return response, current
+        location = response.headers.get("location")
+        if not location:
+            return response, current
+        current = urljoin(current, location)
+    return None
+
+
+def _links_to(content: bytes, host: str) -> bool:
+    text = content[:_MAX_BODY_BYTES].decode("utf-8", errors="replace").lower()
+    pattern = re.compile(_LINK_TEMPLATE.format(host=re.escape(host.lower())))
+    return pattern.search(text) is not None
+
+
+def _website_evidence(*, kind: str, website: str) -> Verification:
+    return Verification(
+        outcome=DiscoveryOutcome.CONFIRMED,
+        found_company=None,
+        evidence={"kind": kind, "website": website, "checked_at": _checked_at()},
+    )
+
+
+async def corroborate(client: "BoardClient", slug: str, company: Company) -> Verification | None:
+    """A link to the board on the company's own website, if one exists.
+
+    Tried only when `company.website_url` is known — nothing here guesses at
+    a website. At most three pages (the site's home, `/careers`, `/jobs`),
+    stopping at the first one that says anything; a path `robots.txt`
+    disallows is skipped outright, never fetched anyway to see.
+    """
+    if not company.website_url:
+        return None
+
+    target_host = _slug_host(client, slug).lower()
+    robots_cache: dict[str, RobotFileParser] = {}
+    base = company.website_url if company.website_url.endswith("/") else f"{company.website_url}/"
+
+    for path in _WEBSITE_PATHS:
+        page_url = urljoin(base, path)
+        if await _disallowed(client, slug, page_url, robots_cache):
+            continue
+        fetched = await _follow(client, slug, page_url)
+        if fetched is None:
+            continue
+        response, final_url = fetched
+        if urlparse(final_url).hostname == target_host:
+            return _website_evidence(kind="website_redirect", website=final_url)
+        if response.status_code == httpx2.codes.OK and _links_to(response.content, target_host):
+            return _website_evidence(kind="website_link", website=final_url)
+
+    return None
+
+
 async def verify(client: "BoardClient", slug: str, company: Company) -> Verification:
     """Everything this module can learn about one board beyond its feed.
 
-    Falls through to `UNVERIFIABLE` when nothing above found anything to
-    say — the same answer `discover()` already gave, just re-recorded so the
-    row's evidence says a verifier looked and found nothing, not that
-    nothing was tried.
+    Corroboration is tried first, and wins, whenever the company's website
+    is known — a link the company itself published is stronger evidence
+    than the tenant's own claim. Identity is the fallback: tried when there
+    is no website, or when the website said nothing usable. Falls through to
+    `UNVERIFIABLE` when neither found anything to say — the same answer
+    `discover()` already gave, just re-recorded so the row's evidence says a
+    verifier looked and found nothing, not that nothing was tried.
     """
+    if company.website_url:
+        corroborated = await corroborate(client, slug, company)
+        if corroborated is not None:
+            return corroborated
+
     result = await identity(client, slug, company)
     if result is not None:
         return result

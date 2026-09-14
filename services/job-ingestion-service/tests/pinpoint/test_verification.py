@@ -13,7 +13,7 @@ from platform_db.models import Company
 from job_ingestion.boards.client import BoardClient, BoardConfig
 from job_ingestion.boards.discovery import DiscoveryOutcome
 from job_ingestion.pinpoint.provider import PINPOINT
-from job_ingestion.pinpoint.verification import identity, stated_name, verify
+from job_ingestion.pinpoint.verification import corroborate, identity, stated_name, verify
 from tests.boards.fakes import FAKE_BASE_URL, never_sleeps, routing
 
 
@@ -22,6 +22,25 @@ def client(routes: dict[str, httpx2.Response | Exception]) -> BoardClient:
         PINPOINT,
         BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
         http_client=routing(routes),
+        sleeper=never_sleeps,
+    )
+
+
+def url_client(routes: dict[str, httpx2.Response | Exception]) -> BoardClient:
+    """Routes by the exact URL requested, not just its path — corroboration
+    reaches two different hosts (the company's website, and Pinpoint's own
+    subdomain) that can share a path like `/`."""
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        reply = routes.get(str(request.url), httpx2.Response(404))
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    return BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
         sleeper=never_sleeps,
     )
 
@@ -134,6 +153,117 @@ def test_a_404_site_is_none() -> None:
     assert result is None
 
 
+# --- corroborate --------------------------------------------------------------
+
+
+def test_no_website_is_none_without_any_request() -> None:
+    def explode(request: httpx2.Request) -> httpx2.Response:
+        raise AssertionError(f"unexpected request to {request.url}")
+
+    fetcher = BoardClient(
+        PINPOINT,
+        BoardConfig(boards=(), base_url=FAKE_BASE_URL),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(explode)),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(corroborate(fetcher, "acme", company("Acme", website_url=None)))
+
+    assert result is None
+
+
+def test_home_page_linking_the_subdomain_is_confirmed_website_link() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200, text='<a href="https://acme.boards.example.test/">Careers</a>'
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(fetcher, "acme", company("Acme", website_url="https://acme.example.test/"))
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_link"
+    assert result.evidence["website"] == "https://acme.example.test/"
+
+
+def test_careers_page_redirecting_to_the_subdomain_is_confirmed_website_redirect() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(200, text="<html>Welcome</html>"),
+            "https://acme.example.test/careers": httpx2.Response(
+                302, headers={"location": "https://acme.boards.example.test/"}
+            ),
+            "https://acme.boards.example.test/": httpx2.Response(200, text="Jobs"),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(fetcher, "acme", company("Acme", website_url="https://acme.example.test/"))
+    )
+
+    assert result is not None
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_redirect"
+    assert result.evidence["website"] == "https://acme.boards.example.test/"
+
+
+def test_robots_disallowing_a_path_skips_it_without_fetching() -> None:
+    robots_txt = "User-agent: *\nDisallow: /careers\n"
+    fetcher = url_client(
+        {
+            "https://acme.example.test/robots.txt": httpx2.Response(200, text=robots_txt),
+            "https://acme.example.test/": httpx2.Response(200, text="<html>Welcome</html>"),
+            "https://acme.example.test/careers": AssertionError("careers must not be fetched"),
+            "https://acme.example.test/jobs": httpx2.Response(200, text="<html>Openings</html>"),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(fetcher, "acme", company("Acme", website_url="https://acme.example.test/"))
+    )
+
+    assert result is None
+
+
+def test_a_500_home_page_contributes_nothing() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(500),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(
+        corroborate(fetcher, "acme", company("Acme", website_url="https://acme.example.test/"))
+    )
+
+    assert result is None
+
+
+def test_more_than_three_redirects_is_none() -> None:
+    origin = "https://acme.example.test"
+    fetcher = url_client(
+        {
+            f"{origin}/": httpx2.Response(302, headers={"location": f"{origin}/r1"}),
+            f"{origin}/r1": httpx2.Response(302, headers={"location": f"{origin}/r2"}),
+            f"{origin}/r2": httpx2.Response(302, headers={"location": f"{origin}/r3"}),
+            f"{origin}/r3": httpx2.Response(302, headers={"location": f"{origin}/r4"}),
+            f"{origin}/careers": httpx2.Response(404),
+            f"{origin}/jobs": httpx2.Response(404),
+        }
+    )
+
+    result = asyncio.run(corroborate(fetcher, "acme", company("Acme", website_url=f"{origin}/")))
+
+    assert result is None
+
+
 # --- verify -----------------------------------------------------------------
 
 
@@ -157,3 +287,40 @@ def test_verify_falls_through_to_unverifiable() -> None:
 
     assert result.outcome is DiscoveryOutcome.UNVERIFIABLE
     assert result.evidence["kind"] == "unverified"
+
+
+def test_verify_prefers_corroboration_over_identity_when_both_apply() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(
+                200, text='<a href="https://acme.boards.example.test/">Careers</a>'
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        verify(fetcher, "acme", company("Acme", website_url="https://acme.example.test/"))
+    )
+
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.evidence["kind"] == "website_link"
+
+
+def test_verify_falls_back_to_identity_when_the_website_has_no_evidence() -> None:
+    fetcher = url_client(
+        {
+            "https://acme.example.test/": httpx2.Response(404),
+            "https://acme.example.test/careers": httpx2.Response(404),
+            "https://acme.example.test/jobs": httpx2.Response(404),
+            "https://acme.boards.example.test/": httpx2.Response(
+                200, text="<title>Acme Careers</title>"
+            ),
+        }
+    )
+
+    result = asyncio.run(
+        verify(fetcher, "acme", company("Acme", website_url="https://acme.example.test/"))
+    )
+
+    assert result.outcome is DiscoveryOutcome.NAMED
+    assert result.evidence["kind"] == "site_title"
