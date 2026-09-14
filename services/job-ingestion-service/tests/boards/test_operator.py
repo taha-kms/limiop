@@ -167,6 +167,9 @@ def test_list_returns_every_row(database_url: PostgresDsn) -> None:
         assert acme["pinned"] is True
         assert acme["company"] is None
         assert acme["consecutive_failures"] == 0
+        # An operator's own pin does not probe anything, so nothing was
+        # checked yet; a discovery run is what sets this.
+        assert acme["last_checked_at"] is None
 
     run_database_test(database_url, exercise)
 

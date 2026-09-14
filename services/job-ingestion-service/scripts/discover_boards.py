@@ -1,113 +1,76 @@
-"""Report which stored companies have a findable board on one provider.
+"""Run one discovery pass against the registry and report what it wrote.
 
-A discovery report, not a configuration change. It says what was found, what
-resolved to somebody else, and what could not be found at all — and adding a
-board to the polled list stays a deliberate act, because the cost of polling one
-that belongs to another company is filing their postings under the wrong
-employer.
-
-The catalogue is not committed, so companies are read from a database holding it.
+This registers; nothing is polled that was not verified. A guess that answers
+for somebody else, or answers nothing at all, is stored as what it was rather
+than tried again next run, and the report below shows every row this pass
+touched — including the negatives — so the gap discovery could not close
+stays visible instead of vanishing.
 """
 
 import argparse
 import asyncio
 import json
-import os
-import subprocess
 import sys
-from collections import Counter
 from dataclasses import asdict
-from urllib.parse import unquote, urlparse
+from datetime import UTC, datetime
 
-from job_ingestion.boards.client import BoardClient, BoardConfig
-from job_ingestion.boards.discovery import DiscoveryOutcome, discover
-from job_ingestion.boards.pipeline import configured_base_url
+from pydantic import PostgresDsn
+
+from job_ingestion.boards.discovery_run import DiscoveryConfig, discover_boards
+from job_ingestion.boards.operator import list_boards
 from job_ingestion.boards.registry import provider_for
-from job_ingestion.config import get_settings
+from job_ingestion.config import Settings
+from job_ingestion.database import Database
 
-# Boards are polled by a scheduler and guessed one at a time. A limit keeps a
-# report from becoming an unannounced crawl of somebody's API.
+# A discovery run is guessing, not polling on a schedule; a limit keeps one
+# invocation from becoming an unannounced crawl of somebody's API.
 DEFAULT_LIMIT = 25
-
-COMPANIES = """
-select c.display_name
-from companies c
-join jobs j on j.company_id = c.id
-group by c.id, c.display_name
-order by count(*) desc, c.display_name
-limit {limit}
-"""
+DEFAULT_POLITENESS = 0.5
 
 
-def companies(database_url: str, limit: int) -> list[str]:
-    parsed = urlparse(database_url)
-    if parsed.scheme not in {"postgresql", "postgresql+psycopg"}:
-        raise ValueError("database URL must use postgresql or postgresql+psycopg")
-    if parsed.hostname is None or parsed.username is None or not parsed.path.strip("/"):
-        raise ValueError("database URL must include host, user, and database")
-
-    environment = dict(os.environ)
-    if parsed.password is not None:
-        environment["PGPASSWORD"] = unquote(parsed.password)
-    result = subprocess.run(
-        [
-            "psql",
-            "-X",
-            "--host",
-            parsed.hostname,
-            "--port",
-            str(parsed.port or 5432),
-            "--username",
-            unquote(parsed.username),
-            "--dbname",
-            unquote(parsed.path.strip("/")),
-            "--no-align",
-            "--tuples-only",
-            "--set",
-            "ON_ERROR_STOP=1",
-            "--command",
-            COMPANIES.format(limit=limit),
-        ],
-        check=True,
-        capture_output=True,
-        text=True,
-        env=environment,
-    )
-    return [line for line in result.stdout.splitlines() if line.strip()]
-
-
-async def report(names: list[str], source_key: str) -> dict[str, object]:
+async def run(
+    database_url: str, source_key: str, limit: int, politeness: float
+) -> dict[str, object]:
     provider = provider_for(source_key)
-    config = BoardConfig(boards=(), base_url=configured_base_url(provider, get_settings()))
-    async with BoardClient(provider, config) as client:
-        results = [await discover(client, name) for name in names]
+    settings = Settings(database_url=PostgresDsn(database_url))
+    config = DiscoveryConfig(budget=limit, politeness_seconds=politeness)
+    started = datetime.now(UTC)
 
-    counts = Counter(result.outcome.value for result in results)
-    return {
-        "source": source_key,
-        "checked": len(results),
-        "outcomes": dict(sorted(counts.items())),
-        # Everything is listed, including what was not found. A report that
-        # only showed successes would make the gap invisible, which is the
-        # thing a hand-written list already does.
-        "results": [asdict(result) for result in results],
-        "confirmed": sorted(
-            result.slug
-            for result in results
-            if result.outcome is DiscoveryOutcome.CONFIRMED and result.slug
-        ),
-    }
+    summary = await discover_boards(provider, config=config, settings=settings)
+
+    database = Database(settings.database_url)
+    try:
+        async with database.session() as session:
+            rows = await list_boards(session, provider)
+    finally:
+        await database.dispose()
+
+    written = [
+        row
+        for row in rows
+        if row["last_checked_at"] is not None
+        and datetime.fromisoformat(str(row["last_checked_at"])) >= started
+    ]
+
+    return {"summary": asdict(summary), "written": written}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--database-url", required=True)
-    parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--source", default="greenhouse", help="registered board provider key")
+    parser.add_argument(
+        "--limit", type=int, default=DEFAULT_LIMIT, help="probe budget for this run"
+    )
+    parser.add_argument(
+        "--politeness", type=float, default=DEFAULT_POLITENESS, help="seconds between companies"
+    )
     arguments = parser.parse_args()
 
-    names = companies(arguments.database_url, arguments.limit)
-    json.dump(asyncio.run(report(names, arguments.source)), sys.stdout, indent=2)
+    result = asyncio.run(
+        run(arguments.database_url, arguments.source, arguments.limit, arguments.politeness)
+    )
+    json.dump(result, sys.stdout, indent=2)
     sys.stdout.write("\n")
 
 

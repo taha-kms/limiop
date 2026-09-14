@@ -39,6 +39,7 @@ def as_row(board: JobBoard) -> dict[str, object]:
         "pinned": board.pinned,
         "company": board.company.display_name if board.company is not None else None,
         "evidence": board.evidence,
+        "last_checked_at": board.last_checked_at.isoformat() if board.last_checked_at else None,
         "last_polled_at": board.last_polled_at.isoformat() if board.last_polled_at else None,
         "consecutive_failures": board.consecutive_failures,
     }
