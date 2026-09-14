@@ -325,6 +325,118 @@ def test_register_does_not_overwrite_a_pinned_row_for_the_same_slug(
     run_database_test(database_url, exercise)
 
 
+@pytest.mark.integration
+def test_a_not_found_result_is_keyed_on_a_candidate_that_was_actually_tried(
+    database_url: PostgresDsn,
+) -> None:
+    """`Acme Health Group`'s *first* candidate, `acmehealthgroup`, is already
+    `wrong_company` for a different company and so is skipped, not requested.
+    A `NOT_FOUND` result carries no slug of its own; the row this company
+    gets must be keyed on a candidate that was actually tried (the second
+    one), not on the skipped first one — keying it there would find the
+    settled row, refuse to touch it, and leave this company with no row at
+    all, forever due for another probe that never lands anywhere."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
+            )
+            other = await make_company(session, "Somebody Else")
+            session.add(
+                JobBoard(
+                    source_id=source.id,
+                    slug="acmehealthgroup",
+                    status=BoardStatus.WRONG_COMPANY,
+                    company_id=other.id,
+                )
+            )
+            await session.commit()
+
+            company = await make_company(session, "Acme Health Group")
+            await session.commit()
+
+            result = DiscoveryResult(
+                company=company.display_name, outcome=DiscoveryOutcome.NOT_FOUND
+            )
+            now = datetime.now(UTC)
+            outcome = await register(
+                session,
+                source=source,
+                company=company,
+                result=result,
+                now=now,
+                skip={"acmehealthgroup"},
+            )
+            await session.commit()
+
+        assert outcome == "not_found"
+
+        async with database.session() as session:
+            row = (
+                await session.scalars(select(JobBoard).where(JobBoard.slug == "acme-health-group"))
+            ).one()
+
+        assert row.company_id == company.id
+        assert row.status is BoardStatus.NOT_FOUND
+        assert row.evidence is not None
+        assert row.evidence["tried"] == ["acme-health-group", "acme"]
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_not_found_result_with_every_candidate_skipped_is_left_unchanged(
+    database_url: PostgresDsn,
+) -> None:
+    """`Single`'s only candidate, `single`, is already `wrong_company` for a
+    different company. There is no other slug left to key a row on for this
+    company — the registry's key is the slug alone — so nothing is written."""
+
+    async def exercise(database: Database) -> None:
+        async with database.session() as session:
+            source = await ensure_source(
+                session,
+                SourceRegistration(key="fake", display_name="Fake Boards", base_url=FAKE_BASE_URL),
+            )
+            other = await make_company(session, "Somebody Else")
+            session.add(
+                JobBoard(
+                    source_id=source.id,
+                    slug="single",
+                    status=BoardStatus.WRONG_COMPANY,
+                    company_id=other.id,
+                )
+            )
+            await session.commit()
+
+            company = await make_company(session, "Single")
+            await session.commit()
+
+            result = DiscoveryResult(
+                company=company.display_name, outcome=DiscoveryOutcome.NOT_FOUND
+            )
+            outcome = await register(
+                session,
+                source=source,
+                company=company,
+                result=result,
+                now=datetime.now(UTC),
+                skip={"single"},
+            )
+            await session.commit()
+
+        assert outcome == "unchanged"
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "single"))).one()
+
+        assert row.company_id == other.id
+
+    run_database_test(database_url, exercise)
+
+
 # --- run_discovery -----------------------------------------------------------
 
 

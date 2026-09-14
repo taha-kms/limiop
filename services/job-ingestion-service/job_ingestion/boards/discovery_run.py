@@ -9,7 +9,7 @@ guess costs one request and is stored as what it was, not silently retried.
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -185,6 +185,7 @@ async def register(
     company: Company,
     result: DiscoveryResult,
     now: datetime,
+    skip: Collection[str] = (),
 ) -> str:
     """Write one probe's outcome onto the registry. Returns what happened:
     confirmed, wrong_company, unverifiable, not_found, unreachable,
@@ -193,8 +194,25 @@ async def register(
     Never modifies a row that is pinned, blocked, or already `wrong_company`:
     a decision an operator or an earlier probe already made outranks a fresh
     guess, whatever this company's name happens to produce.
+
+    `skip` should be the same set `discover` was called with. A `NOT_FOUND`
+    result carries no slug of its own, so one has to be picked to key the
+    row on; it is the first candidate that was actually requested, not one
+    that was skipped because it already belongs to somebody else — keying on
+    a skipped slug would find that settled row, refuse to touch it, and
+    leave this company with no row at all to show it was checked.
     """
-    slug = result.slug if result.slug is not None else candidate_slugs(company.display_name)[0]
+    tried = [
+        candidate for candidate in candidate_slugs(company.display_name) if candidate not in skip
+    ]
+    if result.slug is not None:
+        slug = result.slug
+    elif tried:
+        slug = tried[0]
+    else:
+        # Every candidate was skipped: nothing was requested, and there is no
+        # slug left to key a row on that isn't already somebody else's.
+        slug = candidate_slugs(company.display_name)[0]
     board = await _existing_board(session, source.id, slug)
     if board is not None and (board.pinned or board.status in _SETTLED_STATUSES):
         logger.info(
@@ -237,10 +255,7 @@ async def register(
         outcome = "unverifiable"
     elif result.outcome is DiscoveryOutcome.NOT_FOUND:
         board.status = BoardStatus.NOT_FOUND
-        board.evidence = {
-            "kind": "not_found",
-            "tried": list(candidate_slugs(company.display_name)),
-        }
+        board.evidence = {"kind": "not_found", "tried": tried or [slug]}
         outcome = "not_found"
     else:
         board.status = BoardStatus.UNREACHABLE
@@ -300,7 +315,7 @@ async def run_discovery(
                 result = await discover(client, company.display_name, skip=skip)
                 probed += 1
                 outcome = await register(
-                    session, source=source, company=company, result=result, now=moment
+                    session, source=source, company=company, result=result, now=moment, skip=skip
                 )
                 if outcome in tallies:
                     tallies[outcome] += 1
