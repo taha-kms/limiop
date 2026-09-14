@@ -64,6 +64,9 @@ _TALLIED_OUTCOMES = (
     "unreachable",
     "reactivated",
     "unchanged",
+    "reverified",
+    "demoted",
+    "pinned_reported",
 )
 
 
@@ -98,8 +101,14 @@ class DiscoverySummary:
     not_found: int = 0
     unreachable: int = 0
     reactivated: int = 0
-    unchanged: int = 0  # a settled row, owned by another company, left alone
+    # A settled row left alone: owned by another company, or a previously
+    # verified row whose recheck came back not_found/unreachable, which is
+    # not evidence the board moved.
+    unchanged: int = 0
     named: int = 0  # a board states a matching name with no outside evidence
+    reverified: int = 0  # a previously verified row confirmed or named again
+    demoted: int = 0  # a previously verified row's recheck came back weaker
+    pinned_reported: int = 0  # a pinned row's recheck, written but never acted on
     skipped_nameless: int = 0  # companies whose name yields no candidate slug
     stopped_at_budget: bool = False
 
@@ -121,7 +130,10 @@ def _cadence(status: BoardStatus, config: DiscoveryConfig) -> timedelta | None:
 
 
 def _row_is_due(board: JobBoard, config: DiscoveryConfig, now: datetime) -> bool:
-    cadence = _cadence(board.status, config)
+    # A pinned row is never re-guessed and never demoted, but it is still
+    # worth a monthly recheck so its evidence does not go stale silently;
+    # `register` reports what that recheck found without acting on it.
+    cadence = config.recheck_verified if board.pinned else _cadence(board.status, config)
     if cadence is None or board.last_checked_at is None:
         return True
     return board.last_checked_at + cadence <= now
@@ -130,7 +142,7 @@ def _row_is_due(board: JobBoard, config: DiscoveryConfig, now: datetime) -> bool
 def _company_is_due(boards: Sequence[JobBoard], config: DiscoveryConfig, now: datetime) -> bool:
     if not boards:
         return True
-    if any(board.pinned or board.status in _NEVER_DUE for board in boards):
+    if any(board.status in _NEVER_DUE for board in boards):
         return False
     return all(_row_is_due(board, config, now) for board in boards)
 
@@ -142,8 +154,11 @@ async def due_companies(
 
     A company with no row for this provider is always due. A company whose
     rows are all past their cadence is due for a recheck. A company with any
-    pinned, blocked, or wrong-company row is excluded entirely. No limit is
-    applied here; the budget is the run's job.
+    blocked or wrong-company row is excluded entirely: nothing here can add
+    to a decision already settled. A pinned row is never excluded this
+    way; it is due on `recheck_verified` like a confirmed row, so its own
+    monthly recheck still runs, even though `register` will only report
+    what it found. No limit is applied here; the budget is the run's job.
     """
     job_counts = (
         select(Job.company_id, func.count(Job.id).label("job_count"))
@@ -201,8 +216,9 @@ async def register(
 ) -> str:
     """Write one probe's outcome onto the registry. Returns what happened:
     confirmed, named, wrong_company, unverifiable, not_found, unreachable,
-    reactivated, unchanged when an already-settled row was left alone, or
-    named_reactivated for the one case that is both at once (below).
+    reactivated, unchanged when an already-settled row was left alone,
+    named_reactivated for the one case that is both at once (below),
+    reverified, demoted, or pinned_reported (also below).
 
     A feed that states nothing (`result.outcome` is `UNVERIFIABLE`) gets one
     more chance: when `client` is given and its provider has a `verify`
@@ -216,7 +232,7 @@ async def register(
     the run tallies it under both `reactivated` and `named` rather than
     picking one and undercounting the other.
 
-    Never modifies a row that is pinned, blocked, already `wrong_company`, or
+    Never modifies a row that is blocked, already `wrong_company`, or
     `confirmed`/`named` for a *different* company: a decision an operator, an
     earlier probe, or an earlier confirmation already made outranks a fresh
     guess, whatever this company's name happens to produce. Without this, two
@@ -225,6 +241,36 @@ async def register(
     both. A row that is `not_found`, `unreachable`, `candidate`, or `inactive`
     for another company is unproven rather than settled, and may still be
     re-keyed to whoever a later probe actually confirms.
+
+    A row that is `confirmed` or `named` for *this same* company has already
+    been trusted once; this probe is a recheck of that trust, not a first
+    guess, and is written differently from either of the paragraphs above:
+    a fresh `confirmed` or `named` answer keeps or upgrades the status
+    (`named` becomes `confirmed` when the new evidence is stronger, never
+    the reverse), replaces the evidence, advances `verified_at`, leaves
+    `consecutive_failures` alone, and is `reverified`. A `wrong_company`
+    answer is believed immediately and `demoted`, `company_id` kept rather
+    than cleared: a board answering for somebody else is the one outcome
+    the registry exists to catch, however settled the row looked a moment
+    ago. A `not_found` or `unreachable` answer is not believed on one
+    recheck — a single silent
+    probe is not evidence the board moved, and the poll lifecycle is what
+    retires a board that actually stops answering — so the row's status is
+    left exactly as it was, only `evidence["last_recheck"]` (`kind` and
+    `checked_at`) records that the attempt happened, and it is tallied
+    `unchanged`, the same bucket a settled row owned by someone else falls
+    into. An `unverifiable` answer (the feed, and a provider's own `verify`,
+    both came up empty this time) is `demoted`: to `named` when the
+    evidence that earned the row its current status was itself just a
+    stated name (`site_title` or `provider_name`), or to `candidate`
+    otherwise — either way, back to a status this probe is prepared to
+    earn again.
+
+    A pinned row is reported, never written to beyond `last_checked_at` and
+    `evidence["last_recheck"]`: an operator's decision outranks any probe's
+    answer, confirming or not, so its status, `company_id`, and
+    `verified_at` are never touched, whatever the row's own company match.
+    `pinned_reported` lets a run count that the check still happened.
 
     A company whose only candidate is owned by a different, settled company
     has no row of its own to become not-due, so `due_companies` marks it due
@@ -260,19 +306,24 @@ async def register(
         and board.company_id != company.id
         and board.status in _OWNED_STATUSES
     )
-    if board is not None and (
-        board.pinned or board.status in _SETTLED_STATUSES or owned_by_someone_else
-    ):
-        if board.pinned:
-            reason = "pinned"
-        elif owned_by_someone_else:
-            reason = f"{board.status.value} for a different company"
-        else:
-            reason = board.status.value
+    if board is not None and (board.status in _SETTLED_STATUSES or owned_by_someone_else):
+        reason = (
+            f"{board.status.value} for a different company"
+            if owned_by_someone_else
+            else board.status.value
+        )
         logger.info(
             "not writing over board %s for %s: row is %s", slug, company.display_name, reason
         )
         return "unchanged"
+
+    pinned = board is not None and board.pinned
+    previously_verified = (
+        board is not None
+        and not pinned
+        and board.company_id == company.id
+        and board.status in _OWNED_STATUSES
+    )
 
     verification: Verification | None = None
     outcome_kind = result.outcome
@@ -288,11 +339,98 @@ async def register(
         board = JobBoard(source_id=source.id, slug=slug)
         session.add(board)
 
-    board.company_id = company.id
     board.last_checked_at = now
+
+    if pinned:
+        # An operator's decision outranks any probe's answer, confirming or
+        # not: only the attempt is recorded, never acted on.
+        evidence = dict(board.evidence) if board.evidence else {}
+        evidence["last_recheck"] = {"kind": outcome_kind.value, "checked_at": now.isoformat()}
+        board.evidence = evidence
+        await session.flush()
+        return "pinned_reported"
+
+    board.company_id = company.id
     was_inactive = board.status is BoardStatus.INACTIVE
 
-    if outcome_kind is DiscoveryOutcome.CONFIRMED:
+    if previously_verified and outcome_kind in (
+        DiscoveryOutcome.CONFIRMED,
+        DiscoveryOutcome.NAMED,
+        DiscoveryOutcome.WRONG_COMPANY,
+        DiscoveryOutcome.NOT_FOUND,
+        DiscoveryOutcome.UNREACHABLE,
+        DiscoveryOutcome.UNVERIFIABLE,
+    ):
+        # This row was already trusted, for this same company; a recheck of
+        # that trust is written differently from a first guess (below).
+        prior_status = board.status  # read before any branch here writes it
+        if outcome_kind is DiscoveryOutcome.CONFIRMED:
+            board.evidence = (
+                dict(verification.evidence)
+                if verification is not None
+                else {
+                    "kind": "provider_name",
+                    "found_company": result.found_company,
+                    "checked_at": now.isoformat(),
+                }
+            )
+            board.status = BoardStatus.CONFIRMED
+            board.verified_at = now
+            outcome = "reverified"
+        elif outcome_kind is DiscoveryOutcome.NAMED:
+            if verification is None:
+                raise AssertionError("NAMED can only come from a provider's verify()")
+            board.evidence = dict(verification.evidence)
+            # Keep confirmed, never downgrade it to named on weaker evidence;
+            # a named row still becomes named again.
+            board.status = (
+                BoardStatus.CONFIRMED
+                if prior_status is BoardStatus.CONFIRMED
+                else BoardStatus.NAMED
+            )
+            board.verified_at = now
+            outcome = "reverified"
+        elif outcome_kind is DiscoveryOutcome.WRONG_COMPANY:
+            # Believed immediately, unlike a silent recheck below: a board
+            # answering for somebody else is the one outcome the registry
+            # exists to catch. `company_id` is kept, not cleared — it
+            # records who we thought it was.
+            board.status = BoardStatus.WRONG_COMPANY
+            board.evidence = (
+                dict(verification.evidence)
+                if verification is not None
+                else {"kind": "provider_name", "found_company": result.found_company}
+            )
+            outcome = "demoted"
+        elif outcome_kind in (DiscoveryOutcome.NOT_FOUND, DiscoveryOutcome.UNREACHABLE):
+            # One silent recheck is not evidence the board moved; the poll
+            # lifecycle (not discovery) is what retires a board that stops
+            # answering. The row's status stands; only the attempt is noted.
+            evidence = dict(board.evidence) if board.evidence else {}
+            evidence["last_recheck"] = {"kind": outcome_kind.value, "checked_at": now.isoformat()}
+            board.evidence = evidence
+            outcome = "unchanged"
+        elif outcome_kind is DiscoveryOutcome.UNVERIFIABLE:
+            prior_kind = (board.evidence or {}).get("kind")
+            board.status = (
+                BoardStatus.NAMED
+                if prior_kind in ("site_title", "provider_name")
+                else BoardStatus.CANDIDATE
+            )
+            board.evidence = (
+                dict(verification.evidence)
+                if verification is not None
+                else {"kind": "unverified", "checked_at": now.isoformat()}
+            )
+            outcome = "demoted"
+        else:
+            # The outer `if` only lets outcomes in through that one of the
+            # branches above names explicitly. An explicit guard, not a bare
+            # `assert`, so a new `DiscoveryOutcome` member added to that
+            # tuple without a matching branch here fails loudly instead of
+            # silently falling through with `outcome` unset.
+            raise AssertionError(f"unhandled previously-verified outcome: {outcome_kind!r}")
+    elif outcome_kind is DiscoveryOutcome.CONFIRMED:
         board.evidence = (
             dict(verification.evidence)
             if verification is not None
@@ -444,6 +582,9 @@ async def run_discovery(
         reactivated=tallies["reactivated"],
         unchanged=tallies["unchanged"],
         named=tallies["named"],
+        reverified=tallies["reverified"],
+        demoted=tallies["demoted"],
+        pinned_reported=tallies["pinned_reported"],
         skipped_nameless=skipped_nameless,
         stopped_at_budget=stopped_at_budget,
     )

@@ -169,7 +169,12 @@ def test_an_unreachable_row_from_yesterday_is_due(database_url: PostgresDsn) -> 
 
 
 @pytest.mark.integration
-def test_a_pinned_row_is_never_due(database_url: PostgresDsn) -> None:
+def test_a_freshly_checked_pinned_row_is_not_due(database_url: PostgresDsn) -> None:
+    """A pinned row follows `recheck_verified` like a confirmed row, not the
+    open-ended cadence its own (possibly stale) status would otherwise get:
+    it is still worth a monthly recheck (see `test_reverification.py`), but
+    not on every run."""
+
     async def exercise(database: Database) -> None:
         now = datetime.now(UTC)
         async with database.session() as session:
@@ -180,7 +185,7 @@ def test_a_pinned_row_is_never_due(database_url: PostgresDsn) -> None:
                 company_id=company.id,
                 status=BoardStatus.NOT_FOUND,
                 pinned=True,
-                last_checked_at=now - timedelta(days=365),
+                last_checked_at=now,
             )
             await session.commit()
 
@@ -297,6 +302,11 @@ def test_due_companies_are_ordered_by_job_count_then_name(database_url: Postgres
 def test_register_does_not_overwrite_a_pinned_row_for_the_same_slug(
     database_url: PostgresDsn,
 ) -> None:
+    """A pinned row is reported, not overwritten: its own `company_id`,
+    `status`, and `verified_at` stay exactly as the operator left them,
+    whatever this probe found. See `test_reverification.py` for the
+    `evidence["last_recheck"]` this still writes."""
+
     async def exercise(database: Database) -> None:
         async with database.session() as session:
             source = await ensure_source(
@@ -324,13 +334,14 @@ def test_register_does_not_overwrite_a_pinned_row_for_the_same_slug(
             )
             await session.commit()
 
-        assert outcome == "unchanged"
+        assert outcome == "pinned_reported"
 
         async with database.session() as session:
             row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
 
         assert row.company_id is None
         assert row.pinned is True
+        assert row.verified_at is None
 
     run_database_test(database_url, exercise)
 

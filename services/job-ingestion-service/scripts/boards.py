@@ -22,7 +22,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from platform_db.models import JobSource
-from platform_db.models.boards import JobBoard
+from platform_db.models.boards import BoardStatus, JobBoard
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
@@ -33,10 +33,12 @@ from job_ingestion.config import get_settings
 from job_ingestion.database import Database
 
 
-async def run_list(database: Database, source_key: str) -> object:
+async def run_list(database: Database, source_key: str, status: str | None = None) -> object:
     provider = provider_for(source_key)
     async with database.session() as session:
-        return await list_boards(session, provider)
+        return await list_boards(
+            session, provider, status=BoardStatus(status) if status is not None else None
+        )
 
 
 async def run_add(database: Database, source_key: str, slug: str) -> object:
@@ -91,7 +93,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     for name in ("list", "add", "block", "unblock", "reactivate"):
         subparser = subparsers.add_parser(name)
         subparser.add_argument("--source", required=True, help="registered board provider key")
-        if name != "list":
+        if name == "list":
+            subparser.add_argument(
+                "--status",
+                choices=[status.value for status in BoardStatus],
+                default=None,
+                help="only rows at this status",
+            )
+        else:
             subparser.add_argument("slug")
 
     return parser.parse_args(argv)
@@ -110,7 +119,7 @@ def main() -> None:
     database = Database(arguments.database_url)
     try:
         if arguments.command == "list":
-            result = asyncio.run(run_list(database, arguments.source))
+            result = asyncio.run(run_list(database, arguments.source, arguments.status))
         else:
             result = asyncio.run(
                 COMMANDS[arguments.command](database, arguments.source, arguments.slug)
