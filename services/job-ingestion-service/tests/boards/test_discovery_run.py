@@ -10,6 +10,7 @@ from pydantic import PostgresDsn
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from job_ingestion.boards.client import BoardClient
 from job_ingestion.boards.discovery import DiscoveryOutcome, DiscoveryResult
 from job_ingestion.boards.discovery_run import (
     DiscoveryConfig,
@@ -18,11 +19,20 @@ from job_ingestion.boards.discovery_run import (
     register,
     run_discovery,
 )
+from job_ingestion.boards.provider import Verification
 from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
 from job_ingestion.persistence import SourceRegistration, ensure_source
-from tests.boards.fakes import FAKE_BASE_URL, json_provider, never_sleeps, ok, routing, xml_provider
+from tests.boards.fakes import (
+    FAKE_BASE_URL,
+    json_provider,
+    never_sleeps,
+    never_states,
+    ok,
+    routing,
+    xml_provider,
+)
 from tests.support.catalog import with_empty_catalog
 
 
@@ -736,6 +746,194 @@ def test_an_unverifiable_provider_is_stored_as_candidate_and_not_polled(
         assert row.evidence is not None
         assert row.evidence["kind"] == "unverified"
         assert slugs == ()
+
+    run_database_test(database_url, exercise)
+
+
+def verifying_provider(verify: Any) -> Any:
+    """A JSON board provider whose feed states nothing, so every guess that
+    answers reaches `verify` instead of confirming on its own."""
+    return json_provider(stated_company=never_states, verify=verify)
+
+
+@pytest.mark.integration
+def test_a_verify_hook_returning_named_registers_a_named_row(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            await make_company(session, "Acme")
+            await session.commit()
+
+        async def verify(_client: BoardClient, slug: str, company: Company) -> Verification:
+            assert slug == "acme"
+            assert company.display_name == "Acme"
+            return Verification(
+                outcome=DiscoveryOutcome.NAMED,
+                found_company="Acme",
+                evidence={
+                    "kind": "site_title",
+                    "found_company": "Acme",
+                    "source": "title",
+                    "checked_at": "2026-09-14T00:00:00+00:00",
+                },
+            )
+
+        transport = routing({"/acme/jobs": board("")})
+        summary = await run_discovery(
+            database,
+            verifying_provider(verify),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.named == 1
+        assert summary.confirmed == 0
+        assert summary.unverifiable == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+            slugs = await polled_slugs(session, "fake")
+
+        assert row.status is BoardStatus.NAMED
+        assert row.evidence == {
+            "kind": "site_title",
+            "found_company": "Acme",
+            "source": "title",
+            "checked_at": "2026-09-14T00:00:00+00:00",
+        }
+        assert row.verified_at is not None
+        assert slugs == ("acme",)
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_verify_hook_returning_confirmed_registers_confirmed_with_its_evidence(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            await make_company(session, "Acme")
+            await session.commit()
+
+        async def verify(_client: BoardClient, slug: str, _company: Company) -> Verification:
+            return Verification(
+                outcome=DiscoveryOutcome.CONFIRMED,
+                found_company=None,
+                evidence={
+                    "kind": "website_link",
+                    "website": "https://acme.example.test/careers",
+                    "checked_at": "2026-09-14T00:00:00+00:00",
+                },
+            )
+
+        moment = datetime.now(UTC)
+        transport = routing({"/acme/jobs": board("")})
+        summary = await run_discovery(
+            database,
+            verifying_provider(verify),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: moment,
+        )
+
+        assert summary.confirmed == 1
+        assert summary.named == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.evidence == {
+            "kind": "website_link",
+            "website": "https://acme.example.test/careers",
+            "checked_at": "2026-09-14T00:00:00+00:00",
+        }
+        assert row.verified_at == moment
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_verify_hook_returning_wrong_company_registers_wrong_company(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            await make_company(session, "Acme")
+            await session.commit()
+
+        async def verify(_client: BoardClient, _slug: str, _company: Company) -> Verification:
+            return Verification(
+                outcome=DiscoveryOutcome.WRONG_COMPANY,
+                found_company="Globex",
+                evidence={"kind": "site_title", "found_company": "Globex", "source": "title"},
+            )
+
+        transport = routing({"/acme/jobs": board("")})
+        summary = await run_discovery(
+            database,
+            verifying_provider(verify),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.wrong_company == 1
+        assert summary.named == 0
+        assert summary.confirmed == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.status is BoardStatus.WRONG_COMPANY
+        assert row.evidence == {
+            "kind": "site_title",
+            "found_company": "Globex",
+            "source": "title",
+        }
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_provider_without_verify_still_registers_a_candidate(database_url: PostgresDsn) -> None:
+    """The same feed-states-nothing shape as the verifying tests above, but
+    with no `verify` hook configured: unverifiable stays unverifiable."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            await make_company(session, "Acme")
+            await session.commit()
+
+        transport = routing({"/acme/jobs": board("")})
+        summary = await run_discovery(
+            database,
+            verifying_provider(None),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.unverifiable == 1
+        assert summary.named == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.status is BoardStatus.CANDIDATE
 
     run_database_test(database_url, exercise)
 

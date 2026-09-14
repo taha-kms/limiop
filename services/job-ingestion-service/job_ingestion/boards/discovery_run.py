@@ -30,7 +30,7 @@ from job_ingestion.boards.discovery import (
 )
 from job_ingestion.boards.lifecycle import _revived_status
 from job_ingestion.boards.pipeline import configured_base_url
-from job_ingestion.boards.provider import BoardProvider
+from job_ingestion.boards.provider import BoardProvider, Verification
 from job_ingestion.config import Settings, get_settings
 from job_ingestion.database import Database
 from job_ingestion.persistence import SourceRegistration, ensure_source
@@ -57,6 +57,7 @@ _OWNED_STATUSES = frozenset({BoardStatus.CONFIRMED, BoardStatus.NAMED})
 # `register`'s return values that a run tallies into its summary.
 _TALLIED_OUTCOMES = (
     "confirmed",
+    "named",
     "wrong_company",
     "unverifiable",
     "not_found",
@@ -92,6 +93,7 @@ class DiscoverySummary:
     seeded: int  # companies that were due
     probed: int = 0
     confirmed: int = 0
+    named: int = 0  # a board states a matching name with no outside evidence
     wrong_company: int = 0
     unverifiable: int = 0
     not_found: int = 0
@@ -195,10 +197,19 @@ async def register(
     result: DiscoveryResult,
     now: datetime,
     skip: Collection[str] = (),
+    client: BoardClient | None = None,
 ) -> str:
     """Write one probe's outcome onto the registry. Returns what happened:
-    confirmed, wrong_company, unverifiable, not_found, unreachable,
+    confirmed, named, wrong_company, unverifiable, not_found, unreachable,
     reactivated, or unchanged when an already-settled row was left alone.
+
+    A feed that states nothing (`result.outcome` is `UNVERIFIABLE`) gets one
+    more chance: when `client` is given and its provider has a `verify`
+    hook, that is called with the slug this probe would otherwise register,
+    and its answer — `CONFIRMED`, `NAMED`, `WRONG_COMPANY`, or still
+    `UNVERIFIABLE` — is written instead, evidence and all. Without a
+    `client`, or a provider that cannot verify beyond its feed, this behaves
+    exactly as before.
 
     Never modifies a row that is pinned, blocked, already `wrong_company`, or
     `confirmed`/`named` for a *different* company: a decision an operator, an
@@ -258,6 +269,16 @@ async def register(
         )
         return "unchanged"
 
+    verification: Verification | None = None
+    outcome_kind = result.outcome
+    if (
+        result.outcome is DiscoveryOutcome.UNVERIFIABLE
+        and client is not None
+        and client.provider.verify is not None
+    ):
+        verification = await client.provider.verify(client, slug, company)
+        outcome_kind = verification.outcome
+
     if board is None:
         board = JobBoard(source_id=source.id, slug=slug)
         session.add(board)
@@ -265,13 +286,17 @@ async def register(
     board.company_id = company.id
     board.last_checked_at = now
 
-    if result.outcome is DiscoveryOutcome.CONFIRMED:
+    if outcome_kind is DiscoveryOutcome.CONFIRMED:
         was_inactive = board.status is BoardStatus.INACTIVE
-        board.evidence = {
-            "kind": "provider_name",
-            "found_company": result.found_company,
-            "checked_at": now.isoformat(),
-        }
+        board.evidence = (
+            dict(verification.evidence)
+            if verification is not None
+            else {
+                "kind": "provider_name",
+                "found_company": result.found_company,
+                "checked_at": now.isoformat(),
+            }
+        )
         board.verified_at = now
         if was_inactive:
             board.status = _revived_status(board)
@@ -280,15 +305,29 @@ async def register(
         else:
             board.status = BoardStatus.CONFIRMED
             outcome = "confirmed"
-    elif result.outcome is DiscoveryOutcome.WRONG_COMPANY:
+    elif outcome_kind is DiscoveryOutcome.NAMED:
+        assert verification is not None  # only a provider's verify() reports NAMED
+        board.status = BoardStatus.NAMED
+        board.evidence = dict(verification.evidence)
+        board.verified_at = now
+        outcome = "named"
+    elif outcome_kind is DiscoveryOutcome.WRONG_COMPANY:
         board.status = BoardStatus.WRONG_COMPANY
-        board.evidence = {"kind": "provider_name", "found_company": result.found_company}
+        board.evidence = (
+            dict(verification.evidence)
+            if verification is not None
+            else {"kind": "provider_name", "found_company": result.found_company}
+        )
         outcome = "wrong_company"
-    elif result.outcome is DiscoveryOutcome.UNVERIFIABLE:
+    elif outcome_kind is DiscoveryOutcome.UNVERIFIABLE:
         board.status = BoardStatus.CANDIDATE
-        board.evidence = {"kind": "unverified", "checked_at": now.isoformat()}
+        board.evidence = (
+            dict(verification.evidence)
+            if verification is not None
+            else {"kind": "unverified", "checked_at": now.isoformat()}
+        )
         outcome = "unverifiable"
-    elif result.outcome is DiscoveryOutcome.NOT_FOUND:
+    elif outcome_kind is DiscoveryOutcome.NOT_FOUND:
         board.status = BoardStatus.NOT_FOUND
         board.evidence = {"kind": "not_found", "tried": tried or [slug]}
         outcome = "not_found"
@@ -356,7 +395,13 @@ async def run_discovery(
                 result = await discover(client, company.display_name, skip=skip)
                 probed += 1
                 outcome = await register(
-                    session, source=source, company=company, result=result, now=moment, skip=skip
+                    session,
+                    source=source,
+                    company=company,
+                    result=result,
+                    now=moment,
+                    skip=skip,
+                    client=client,
                 )
                 if outcome in tallies:
                     tallies[outcome] += 1
@@ -368,6 +413,7 @@ async def run_discovery(
         seeded=seeded,
         probed=probed,
         confirmed=tallies["confirmed"],
+        named=tallies["named"],
         wrong_company=tallies["wrong_company"],
         unverifiable=tallies["unverifiable"],
         not_found=tallies["not_found"],
