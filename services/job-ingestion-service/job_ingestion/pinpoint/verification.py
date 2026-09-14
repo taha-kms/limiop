@@ -22,7 +22,7 @@ company, never more, and never posting extraction. See
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from html import unescape
 from typing import TYPE_CHECKING
@@ -37,6 +37,7 @@ from platform_db.models import Company
 
 from job_ingestion.boards.discovery import DiscoveryOutcome, belongs_to
 from job_ingestion.boards.provider import Request, Verification
+from job_ingestion.boards.safe_fetch import default_resolver, is_public_http_url
 from job_ingestion.boards.websites import USER_AGENT
 from job_ingestion.boards.xml import local_name
 from job_ingestion.errors import SourceUnavailableError
@@ -132,10 +133,25 @@ def _slug_host(client: "BoardClient", slug: str) -> str:
 
 
 async def _get(
-    client: "BoardClient", slug: str, url: str, *, headers: Mapping[str, str] | None = None
+    client: "BoardClient",
+    slug: str,
+    url: str,
+    *,
+    headers: Mapping[str, str] | None = None,
+    resolve: Callable[[str], list[str]] = default_resolver,
 ) -> httpx2.Response | None:
     """One GET that never raises: an unreachable page is evidence of
-    nothing, not a reason to stop verifying."""
+    nothing, not a reason to stop verifying.
+
+    Every URL this module ever fetches — the careers site, its RSS feed,
+    robots.txt, a company's website, and every redirect hop off any of
+    those — passes through here, and here refuses first, before any request
+    is made, when `url` does not resolve to the public internet. A redirect
+    that lands on a private address is treated the same as an unreachable
+    page: refused, not followed.
+    """
+    if not is_public_http_url(url, resolve=resolve):
+        return None
     try:
         return await client.request(slug, Request(url=url, headers=headers or {}))
     except SourceUnavailableError:
@@ -164,7 +180,13 @@ def _identity_verification(name: str, company: Company, *, source: str) -> Verif
     )
 
 
-async def identity(client: "BoardClient", slug: str, company: Company) -> Verification | None:
+async def identity(
+    client: "BoardClient",
+    slug: str,
+    company: Company,
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
+) -> Verification | None:
     """What the careers site itself states, checked against `company`.
 
     The page title is checked first; the RSS channel title only when the
@@ -175,7 +197,9 @@ async def identity(client: "BoardClient", slug: str, company: Company) -> Verifi
     scheme, _, _ = client.base_url.rstrip("/").partition("://")
     base = f"{scheme}://{_slug_host(client, slug)}"
 
-    title_response = await _get(client, slug, f"{base}/", headers={"User-Agent": USER_AGENT})
+    title_response = await _get(
+        client, slug, f"{base}/", headers={"User-Agent": USER_AGENT}, resolve=resolve
+    )
     if title_response is not None and title_response.status_code == httpx2.codes.OK:
         html_title = careers_site_name(title_response.text)
         if html_title is not None:
@@ -183,7 +207,9 @@ async def identity(client: "BoardClient", slug: str, company: Company) -> Verifi
             if name is not None:
                 return _identity_verification(name, company, source="title")
 
-    rss_response = await _get(client, slug, f"{base}/jobs.rss", headers={"User-Agent": USER_AGENT})
+    rss_response = await _get(
+        client, slug, f"{base}/jobs.rss", headers={"User-Agent": USER_AGENT}, resolve=resolve
+    )
     if rss_response is not None and rss_response.status_code == httpx2.codes.OK:
         rss_title = _rss_channel_title(rss_response.content)
         if rss_title is not None:
@@ -200,7 +226,12 @@ def _origin(url: str) -> str:
 
 
 async def _robots(
-    client: "BoardClient", slug: str, origin: str, cache: dict[str, RobotFileParser]
+    client: "BoardClient",
+    slug: str,
+    origin: str,
+    cache: dict[str, RobotFileParser],
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
 ) -> RobotFileParser:
     """`origin`'s robots.txt, fetched once per `corroborate` call and cached.
 
@@ -215,7 +246,13 @@ async def _robots(
     if origin in cache:
         return cache[origin]
     parser = RobotFileParser()
-    response = await _get(client, slug, f"{origin}/robots.txt", headers={"User-Agent": USER_AGENT})
+    response = await _get(
+        client,
+        slug,
+        f"{origin}/robots.txt",
+        headers={"User-Agent": USER_AGENT},
+        resolve=resolve,
+    )
     if response is not None and response.status_code == httpx2.codes.OK:
         parser.parse(response.text.splitlines())
     elif response is not None and response.status_code in (
@@ -230,23 +267,39 @@ async def _robots(
 
 
 async def _disallowed(
-    client: "BoardClient", slug: str, url: str, cache: dict[str, RobotFileParser]
+    client: "BoardClient",
+    slug: str,
+    url: str,
+    cache: dict[str, RobotFileParser],
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
 ) -> bool:
     """Whether `robots.txt` refuses `url` to `*` or to `SkillSync` by name."""
-    parser = await _robots(client, slug, _origin(url), cache)
+    parser = await _robots(client, slug, _origin(url), cache, resolve=resolve)
     return not (parser.can_fetch("*", url) and parser.can_fetch("SkillSync", url))
 
 
-async def _follow(client: "BoardClient", slug: str, url: str) -> tuple[httpx2.Response, str] | None:
+async def _follow(
+    client: "BoardClient",
+    slug: str,
+    url: str,
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
+) -> tuple[httpx2.Response, str] | None:
     """GET `url`, following up to `_MAX_REDIRECTS` redirects by hand.
 
     Returns the final response together with the URL it actually answered
-    at, or `None` when the page could not be reached, or redirected more
-    times than the cap allows.
+    at, or `None` when the page could not be reached, redirected more times
+    than the cap allows, or a hop landed on a URL that does not resolve to
+    the public internet — `_get` refuses that the same way it refuses the
+    first request, so a redirect into a private network is treated as
+    unreachable rather than followed.
     """
     current = url
     for _ in range(_MAX_REDIRECTS + 1):
-        response = await _get(client, slug, current, headers={"User-Agent": USER_AGENT})
+        response = await _get(
+            client, slug, current, headers={"User-Agent": USER_AGENT}, resolve=resolve
+        )
         if response is None:
             return None
         if response.status_code not in _REDIRECT_STATUSES:
@@ -272,15 +325,30 @@ def _website_evidence(*, kind: str, website: str) -> Verification:
     )
 
 
-async def corroborate(client: "BoardClient", slug: str, company: Company) -> Verification | None:
+async def corroborate(
+    client: "BoardClient",
+    slug: str,
+    company: Company,
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
+) -> Verification | None:
     """A link to the board on the company's own website, if one exists.
 
     Tried only when `company.website_url` is known — nothing here guesses at
     a website. At most three pages (the site's home, `/careers`, `/jobs`),
     stopping at the first one that says anything; a path `robots.txt`
     disallows is skipped outright, never fetched anyway to see.
+
+    `company.website_url` came from a posting payload or Wikidata, neither
+    trustworthy, so it is checked against the public internet before
+    anything is fetched from it at all — not left to `_get`'s own check on
+    the first page, which would still refuse the request but only after
+    computing an origin and a robots-cache entry for a URL already known to
+    be no good.
     """
     if not company.website_url:
+        return None
+    if not is_public_http_url(company.website_url, resolve=resolve):
         return None
 
     target_host = _slug_host(client, slug).lower()
@@ -289,9 +357,9 @@ async def corroborate(client: "BoardClient", slug: str, company: Company) -> Ver
 
     for path in _WEBSITE_PATHS:
         page_url = urljoin(base, path)
-        if await _disallowed(client, slug, page_url, robots_cache):
+        if await _disallowed(client, slug, page_url, robots_cache, resolve=resolve):
             continue
-        fetched = await _follow(client, slug, page_url)
+        fetched = await _follow(client, slug, page_url, resolve=resolve)
         if fetched is None:
             continue
         response, final_url = fetched
@@ -303,7 +371,13 @@ async def corroborate(client: "BoardClient", slug: str, company: Company) -> Ver
     return None
 
 
-async def verify(client: "BoardClient", slug: str, company: Company) -> Verification:
+async def verify(
+    client: "BoardClient",
+    slug: str,
+    company: Company,
+    *,
+    resolve: Callable[[str], list[str]] = default_resolver,
+) -> Verification:
     """Everything this module can learn about one board beyond its feed.
 
     Corroboration is tried first, and wins, whenever the company's website
@@ -315,11 +389,11 @@ async def verify(client: "BoardClient", slug: str, company: Company) -> Verifica
     verifier looked and found nothing, not that nothing was tried.
     """
     if company.website_url:
-        corroborated = await corroborate(client, slug, company)
+        corroborated = await corroborate(client, slug, company, resolve=resolve)
         if corroborated is not None:
             return corroborated
 
-    result = await identity(client, slug, company)
+    result = await identity(client, slug, company, resolve=resolve)
     if result is not None:
         return result
     return Verification(
