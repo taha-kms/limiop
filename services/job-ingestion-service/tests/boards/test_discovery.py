@@ -8,7 +8,7 @@ from job_ingestion.boards.client import BoardClient, BoardConfig
 from job_ingestion.boards.discovery import DiscoveryOutcome, discover
 from job_ingestion.boards.provider import BoardProvider
 from job_ingestion.contracts import RawRecord
-from tests.boards.fakes import json_provider, never_sleeps, ok, responding, xml_provider
+from tests.boards.fakes import json_provider, never_sleeps, ok, responding, routing, xml_provider
 
 
 def board(company: str, count: int = 1) -> httpx2.Response:
@@ -74,6 +74,24 @@ def test_an_empty_board_confirms_nothing() -> None:
     result = run(client(ok({"jobs": []}), ok({"jobs": []}), ok({"jobs": []})), "Acme Health Group")
 
     assert result.outcome is DiscoveryOutcome.NOT_FOUND
+
+
+def test_a_skipped_slug_is_not_probed_and_the_search_falls_through() -> None:
+    """`acmehealthgroup` is already known to belong to somebody else, so the
+    first candidate must never be requested (a route that does not answer for
+    it would raise if it were); the search moves on to the next one and
+    confirms it."""
+    fetcher = BoardClient(
+        json_provider(),
+        BoardConfig(boards=(), retry_backoff_seconds=0.0),
+        http_client=routing({"/acme-health-group/jobs": board("Acme Health Group")}),
+        sleeper=never_sleeps,
+    )
+
+    result = asyncio.run(discover(fetcher, "Acme Health Group", skip={"acmehealthgroup"}))
+
+    assert result.outcome is DiscoveryOutcome.CONFIRMED
+    assert result.slug == "acme-health-group"
 
 
 def test_a_wrong_company_outranks_a_later_slugs_silence() -> None:

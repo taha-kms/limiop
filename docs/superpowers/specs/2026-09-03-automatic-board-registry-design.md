@@ -47,7 +47,7 @@ Table `job_boards` in `platform/db`, migration `0004_job_boards`.
 | --- | --- |
 | `source_id` | the provider (`job_sources`) |
 | `slug` | board name, unique per source |
-| `company_id` | set once verified; null for candidates and negatives |
+| `company_id` | the company the probe was made for; set on every row discovery writes, so a recheck can regenerate the guess; null only for rows an operator added |
 | `status` | `candidate`, `confirmed`, `named`, `wrong_company`, `not_found`, `unreachable`, `inactive`, `blocked` |
 | `evidence` | jsonb: `kind`, `found_company`, `website`, `checked_at`, and whatever the kind needs |
 | `discovered_at`, `verified_at`, `last_checked_at`, `last_polled_at` | timestamps of the obvious events |
