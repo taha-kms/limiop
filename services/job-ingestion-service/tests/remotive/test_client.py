@@ -6,6 +6,7 @@ from pathlib import Path
 import httpx2
 import pytest
 
+from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
 from job_ingestion.remotive.client import (
     DEFAULT_BASE_URL,
@@ -157,7 +158,7 @@ def test_the_request_carries_the_skillsync_user_agent() -> None:
 def test_fetch_pages_yields_the_one_page_and_reaches_the_end() -> None:
     client, _ = client_for(responding(json_response(jobs_body([job_record()]))))
 
-    async def collect() -> list[dict[str, object]]:
+    async def collect() -> list[RawRecord]:
         pages = [page async for page in client.fetch_pages()]
         return [record for page in pages for record in page.records]
 
