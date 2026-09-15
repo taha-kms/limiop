@@ -27,9 +27,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from job_ingestion.contracts import IngestionStage, RecordFailure, RecordOutcome
-from job_ingestion.deduplication import DeduplicationOutcome, decide
+from job_ingestion.deduplication import PARTIAL_DESCRIPTION_KEY, DeduplicationOutcome, decide
 from job_ingestion.matching import match_key_of
-from job_ingestion.schemas import NormalizedJob
+from job_ingestion.schemas import NormalizedJob, NormalizedProvenance
+
+
+def stored_payload(provenance: NormalizedProvenance) -> dict[str, object] | None:
+    """The payload a provenance row keeps, with the partial flag folded in.
+
+    A partial description is recorded inside `raw_payload` rather than in a
+    column of its own. The flag exists so that deduplication can refuse to
+    text-match the record later, and the payload is already the one place a
+    row keeps what is known about the record it came from; a column would be
+    a schema change for one bit that only ever travels with that payload. A
+    record that is not partial stores its payload untouched, so nothing that
+    was written before the flag existed reads any differently.
+    """
+    if not provenance.partial_description:
+        return provenance.raw_payload
+    return {**(provenance.raw_payload or {}), PARTIAL_DESCRIPTION_KEY: True}
 
 
 async def observe_job_provenance(
@@ -367,7 +383,7 @@ async def write(
         source_job_id=incoming.provenance.source_job_id,
         source_url=str(incoming.provenance.source_url),
         seen_at=seen_at,
-        raw_payload=incoming.provenance.raw_payload,
+        raw_payload=stored_payload(incoming.provenance),
     )
     # A source listing it again contradicts the conclusion that nobody did.
     # Expiry is left alone: a stated date does not stop having passed because

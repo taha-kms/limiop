@@ -38,6 +38,13 @@ do, and their confirmed duplicates overlap by no less than `0.966`. A source
 that wrote its own summaries would fail this and its duplicates would be missed,
 so this is an assumption about how a source obtains its text, not a constant.
 
+A source that delivers an excerpt rather than the posting cannot make that
+assumption hold, and says so: its records carry
+`NormalizedProvenance.partial_description`, and `deduplication` never consults
+the text for them. Such a record stands as its own job even beside a full-text
+posting of the same role, because a snippet cannot tell two Dublin openings
+apart and a missed duplicate is visible where a wrong merge is not.
+
 Versioning
 ----------
 

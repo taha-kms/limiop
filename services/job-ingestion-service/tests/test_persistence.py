@@ -402,6 +402,57 @@ def test_the_raw_payload_is_preserved_for_reproducing_transformations(
     run_database_test(database_url, exercise)
 
 
+@pytest.mark.integration
+def test_a_partial_description_is_flagged_inside_the_stored_payload(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest(
+            database,
+            incoming_job(
+                provenance={
+                    "source_key": "arbeitnow",
+                    "source_job_id": "external-42",
+                    "source_url": "https://arbeitnow.example.com/jobs/42",
+                    "raw_payload": {"slug": "external-42"},
+                    "partial_description": True,
+                }
+            ),
+        )
+
+        async with database.session() as session:
+            provenance = (await session.scalars(select(JobProvenance))).one()
+
+        assert provenance.raw_payload == {"slug": "external-42", "_partial_description": True}
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_partial_description_is_stored_even_without_a_payload(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest(
+            database,
+            incoming_job(
+                provenance={
+                    "source_key": "arbeitnow",
+                    "source_job_id": "external-42",
+                    "source_url": "https://arbeitnow.example.com/jobs/42",
+                    "partial_description": True,
+                }
+            ),
+        )
+
+        async with database.session() as session:
+            provenance = (await session.scalars(select(JobProvenance))).one()
+
+        assert provenance.raw_payload == {"_partial_description": True}
+
+    run_database_test(database_url, exercise)
+
+
 # Two sources describing one job. The aggregator ranks below the employer's own
 # board, matching the ordering the second-source evaluation settled on.
 #

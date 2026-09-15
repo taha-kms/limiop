@@ -11,8 +11,18 @@ Two match paths are tried in order:
    already have arrived from somewhere else. The match key blocks candidates by
    employer and role; place and text decide among them. Neither stage is
    sufficient alone, and `jobs.matching` explains why.
+
+The text stage assumes both sides carry the posting's own words. A record whose
+description is a provider's excerpt says so through
+`NormalizedProvenance.partial_description`, and persistence keeps that inside
+the provenance row's `raw_payload` under `PARTIAL_DESCRIPTION_KEY`. Such a
+record is never compared by text from either side: not when it arrives, and
+not once it is stored and a full posting arrives later. The alternative,
+matching on a snippet, would merge two different openings whose first
+sentences agree, and a wrong merge deletes a job silently.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from uuid import UUID
@@ -23,6 +33,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.matching import match_key, reads_the_same, same_place
 from job_ingestion.schemas import NormalizedJob
+
+# The key under which persistence records a partial description inside a
+# provenance row's `raw_payload`. Prefixed so it can never collide with a
+# field the provider itself sent.
+PARTIAL_DESCRIPTION_KEY = "_partial_description"
 
 
 class MatchBasis(StrEnum):
@@ -110,16 +125,40 @@ async def find_by_match_key(session: AsyncSession, value: str) -> list[Job]:
     return list(await session.scalars(statement))
 
 
-def describes_the_same_posting(stored: Job, incoming: NormalizedJob) -> bool:
+async def partially_described(session: AsyncSession, jobs: Sequence[Job]) -> set[UUID]:
+    """Which of `jobs` were stored from a record carrying only a snippet.
+
+    Asked of every provenance row the job has: a job that any source described
+    partially holds a description nobody should compare against.
+    """
+    if not jobs:
+        return set()
+    statement = select(JobProvenance.job_id).where(
+        JobProvenance.job_id.in_([job.id for job in jobs]),
+        JobProvenance.raw_payload.contains({PARTIAL_DESCRIPTION_KEY: True}),
+    )
+    return set(await session.scalars(statement))
+
+
+def describes_the_same_posting(
+    stored: Job, incoming: NormalizedJob, *, stored_is_partial: bool = False
+) -> bool:
     """Whether a candidate is this posting rather than a sibling of it.
 
     The key groups an employer's openings by role, and one employer runs the
     same role in several cities and sometimes several times in one city. The
     place separates the first case and the text separates the second.
+
+    The text can only separate the second when both sides carry it. A snippet
+    on either side is not consulted, and the answer is then no: the record is
+    allowed to duplicate a full-text posting of the same role rather than risk
+    merging two different jobs on the strength of a shared opening sentence.
     """
-    return same_place(stored.location, incoming.location) and reads_the_same(
-        stored.description, incoming.description
-    )
+    if not same_place(stored.location, incoming.location):
+        return False
+    if stored_is_partial or incoming.provenance.partial_description:
+        return False
+    return reads_the_same(stored.description, incoming.description)
 
 
 async def decide(session: AsyncSession, incoming: NormalizedJob) -> DeduplicationDecision:
@@ -133,7 +172,12 @@ async def decide(session: AsyncSession, incoming: NormalizedJob) -> Deduplicatio
         return compare(known, incoming, MatchBasis.PROVENANCE, value)
 
     blocked = await find_by_match_key(session, value)
-    candidates = [job for job in blocked if describes_the_same_posting(job, incoming)]
+    partial = await partially_described(session, blocked)
+    candidates = [
+        job
+        for job in blocked
+        if describes_the_same_posting(job, incoming, stored_is_partial=job.id in partial)
+    ]
 
     if not candidates:
         return DeduplicationDecision(outcome=DeduplicationOutcome.NEW, match_key=value)

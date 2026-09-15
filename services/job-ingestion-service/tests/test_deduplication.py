@@ -15,7 +15,7 @@ from job_ingestion.deduplication import (
     decide,
     has_material_change,
 )
-from job_ingestion.matching import match_key
+from job_ingestion.matching import match_key, reads_the_same
 from job_ingestion.schemas import NormalizedJob
 
 SOURCE_KEY = "arbeitnow"
@@ -320,3 +320,98 @@ def test_provenance_alone_does_not_count_as_a_change() -> None:
     )
 
     assert has_material_change(stored_job(original), from_elsewhere) is False
+
+
+# A full posting and the excerpt an aggregator serves of it. The excerpt is a
+# prefix missing only the last word, so it shares well over the vocabulary
+# threshold with the posting: without the partial flag, the two would merge.
+FULL_DESCRIPTION = (
+    "Build reliable data pipelines with Kafka, Airflow, and dbt on Kubernetes "
+    "for analysts across every product team and three regions."
+)
+SNIPPET = FULL_DESCRIPTION.rsplit(" ", 1)[0]
+
+
+def snippet_job(**overrides: Any) -> NormalizedJob:
+    """The same posting as `incoming_job`, as an aggregator excerpt from Adzuna."""
+    return incoming_job(
+        description=SNIPPET,
+        provenance={
+            "source_key": "adzuna",
+            "source_job_id": "gb:5001",
+            "source_url": "https://adzuna.example.com/jobs/5001",
+            "partial_description": True,
+        },
+        **overrides,
+    )
+
+
+def test_the_snippet_would_read_the_same_without_the_partial_flag() -> None:
+    assert reads_the_same(FULL_DESCRIPTION, SNIPPET) is True
+
+
+@pytest.mark.integration
+def test_a_snippet_never_merges_into_a_full_posting_by_text(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        await store(database, stored_job(incoming_job(description=FULL_DESCRIPTION)))
+
+        async with database.session() as session:
+            decision = await decide(session, snippet_job())
+
+        assert decision.outcome is DeduplicationOutcome.NEW
+        assert decision.job_id is None
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_full_posting_never_merges_into_a_stored_snippet(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        excerpt = snippet_job()
+        source = JobSource(key="adzuna", display_name="Adzuna", base_url="https://a.example")
+        await store(
+            database,
+            JobProvenance(
+                job=stored_job(excerpt),
+                source=source,
+                source_job_id=excerpt.provenance.source_job_id,
+                source_url=str(excerpt.provenance.source_url),
+                raw_payload={"_partial_description": True},
+            ),
+        )
+
+        async with database.session() as session:
+            decision = await decide(session, incoming_job(description=FULL_DESCRIPTION))
+
+        assert decision.outcome is DeduplicationOutcome.NEW
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_repeated_snippet_record_is_still_recognized_by_provenance(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        excerpt = snippet_job()
+        job = stored_job(excerpt)
+        source = JobSource(key="adzuna", display_name="Adzuna", base_url="https://a.example")
+        await store(
+            database,
+            JobProvenance(
+                job=job,
+                source=source,
+                source_job_id=excerpt.provenance.source_job_id,
+                source_url=str(excerpt.provenance.source_url),
+                raw_payload={"_partial_description": True},
+            ),
+        )
+
+        async with database.session() as session:
+            decision = await decide(session, snippet_job())
+
+        assert decision.outcome is DeduplicationOutcome.UNCHANGED
+        assert decision.matched_by is MatchBasis.PROVENANCE
+        assert decision.job_id == job.id
+
+    run_database_test(database_url, exercise)
