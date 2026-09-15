@@ -16,13 +16,18 @@ from job_ingestion.contracts import RawPage
 from job_ingestion.database import Database
 from job_ingestion.errors import QuotaExceeded, SourceResponseError, SourceUnavailableError
 from job_ingestion.quota import Quota, reserve, used_today
-from tests.adzuna.support import page_body, recording, run_database_test, search_page
+from tests.adzuna.support import (
+    APP_ID,
+    APP_KEY,
+    CREDENTIALS,
+    never_opened,
+    page_body,
+    recording,
+    run_database_test,
+    search_page,
+)
 from tests.boards.fakes import never_sleeps, ok
 from tests.support.logs import capturing_logs
-
-APP_ID = "app-id-0123"
-APP_KEY = "app-key-SECRET-0123456789abcdef"
-CREDENTIALS = {"SKILLSYNC_ADZUNA_APP_ID": APP_ID, "SKILLSYNC_ADZUNA_APP_KEY": APP_KEY}
 
 # Two countries, two pages each, three results to a full page: the fixture
 # pages are then exactly full, so a walk continues past them until the page
@@ -67,10 +72,6 @@ async def spend(database: Database, calls: int) -> None:
     async with database.session() as session:
         assert await reserve(session, SOURCE_KEY, calls=calls, quota=Quota(per_day=calls))
         await session.commit()
-
-
-def never_opened() -> None:
-    raise AssertionError("no session should be opened without a fetch")
 
 
 def test_config_defaults_bound_every_loop() -> None:

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from os import environ as os_environ
 
-from job_ingestion.contracts import IngestionSummary
+from job_ingestion.contracts import IngestionStage, IngestionSummary
 from job_ingestion.database import Database
 from job_ingestion.logging_support import install_secret_filter, register_secrets
 from job_ingestion.runs import record_unconfigured_run
@@ -47,7 +47,25 @@ class Unconfigured:
 
     @property
     def reason(self) -> str:
-        return "source unconfigured: " + ", ".join(self.missing)
+        return UNCONFIGURED_PREFIX + ", ".join(self.missing)
+
+
+UNCONFIGURED_PREFIX = "source unconfigured: "
+
+
+def is_unconfigured(summary: IngestionSummary) -> bool:
+    """Whether `summary` is the run `require` records for an unconfigured source.
+
+    A scheduler task that wants to warn about this rather than fail asks
+    here instead of reading the failure text itself: the shape -- exactly one
+    failure, at fetch, whose reason opens the way `Unconfigured.reason` does
+    -- is this module's to know, and a real fetch failure must never pass
+    for it.
+    """
+    if len(summary.failures) != 1:
+        return False
+    failure = summary.failures[0]
+    return failure.stage is IngestionStage.FETCH and failure.reason.startswith(UNCONFIGURED_PREFIX)
 
 
 def resolve(

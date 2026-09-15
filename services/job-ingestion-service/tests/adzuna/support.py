@@ -23,6 +23,15 @@ from tests.support.catalog import with_empty_catalog
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
+APP_ID = "app-id-0123"
+APP_KEY = "app-key-SECRET-0123456789abcdef"
+CREDENTIALS = {"SKILLSYNC_ADZUNA_APP_ID": APP_ID, "SKILLSYNC_ADZUNA_APP_KEY": APP_KEY}
+
+
+def never_opened() -> None:
+    """A session factory for a client that must not fetch."""
+    raise AssertionError("no session should be opened without a fetch")
+
 
 def page_body(country: str = "gb") -> dict[str, Any]:
     """One documented search response for `country`, as the API would send it."""

@@ -2,6 +2,7 @@
 
 from job_ingestion.adzuna.client import AdzunaClient, AdzunaConfig
 from job_ingestion.adzuna.normalizer import AdzunaNormalizer
+from job_ingestion.adzuna.pipeline import ingest_adzuna
 from job_ingestion.adzuna.records import AdzunaJobRecord, AdzunaValidator
 from job_ingestion.adzuna.source import (
     CREDENTIALS,
@@ -26,4 +27,5 @@ __all__ = [
     "AdzunaJobRecord",
     "AdzunaNormalizer",
     "AdzunaValidator",
+    "ingest_adzuna",
 ]
