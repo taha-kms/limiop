@@ -144,9 +144,8 @@ into `SKILLSYNC_SOURCE_CONFIG`, which is a JSON blob and gets logged whole in
 diagnostics. An unset credential leaves that source unconfigured: the source's
 run still happens and is recorded like any other, with a failure that names
 the missing variable rather than its value, instead of raising or blocking
-anything else the deployment does. No keyed source exists yet, so no real
-variable is listed here; each one is named in that source's own row of
-`docs/job-source-policy.md` once it does.
+anything else the deployment does. No variable is listed here; each keyed
+source's own row in `docs/job-source-policy.md` names the ones it needs.
 
 The same handling already covers the two secrets in production today,
 `SKILLSYNC_SESSION_SECRET` and the password inside `SKILLSYNC_DATABASE_URL`.
