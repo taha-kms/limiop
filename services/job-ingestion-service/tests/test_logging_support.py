@@ -99,6 +99,42 @@ def test_an_exception_argument_without_a_secret_passes_through_untouched() -> No
     assert messages == ["request failed: connection refused"]
 
 
+def test_a_purely_numeric_argument_is_never_redacted_and_formats_with_percent_d() -> None:
+    numeric_secret = "12345678"
+    assert len(numeric_secret) >= MINIMUM_SECRET_LENGTH
+    register_secrets([numeric_secret])
+    install_secret_filter()
+
+    with capturing_logs(LOGGER_NAME) as messages:
+        logging.getLogger(f"{LOGGER_NAME}.child").info("count is %d", int(numeric_secret))
+
+    assert messages == [f"count is {numeric_secret}"]
+
+
+def test_an_argument_whose_str_raises_is_passed_through_unchanged() -> None:
+    register_secrets(["abcdef1234-irrelevant-to-this-test"])
+
+    class Explodes:
+        def __str__(self) -> str:
+            raise ValueError("boom")
+
+    explodes = Explodes()
+    record = logging.LogRecord(
+        name=LOGGER_NAME,
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=0,
+        msg="value: %s",
+        args=(explodes,),
+        exc_info=None,
+    )
+
+    kept = SecretFilter().filter(record)
+
+    assert kept is True
+    assert record.args == (explodes,)
+
+
 def test_a_short_value_is_never_registered() -> None:
     short_secret = "1234567"
     assert len(short_secret) < MINIMUM_SECRET_LENGTH

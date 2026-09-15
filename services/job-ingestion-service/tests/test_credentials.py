@@ -2,7 +2,7 @@
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 
 import pytest
@@ -10,11 +10,10 @@ from platform_db.models import IngestionRun
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
-from job_ingestion import logging_support
+from job_ingestion import credentials, logging_support
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.credentials import Credential, Unconfigured, require, resolve
 from job_ingestion.database import Database
-from tests.support.logs import capturing_logs
 
 APP_ID = Credential(env="SKILLSYNC_FAKE_APP_ID", secret=False)
 APP_KEY = Credential(env="SKILLSYNC_FAKE_APP_KEY")
@@ -109,6 +108,15 @@ def test_require_registers_a_resolved_secret_value_for_redaction(
     monkeypatch.setattr(logging_support, "_registered_secrets", set())
     monkeypatch.setenv("SKILLSYNC_FAKE_APP_ID", "id-not-secret-value")
     monkeypatch.setenv("SKILLSYNC_FAKE_APP_KEY", "key-is-a-secret-value")
+    # `require` installs the real filter as a side effect (see the test
+    # below). This test does not force `_installed` back to `False`, so it
+    # triggers at most the one legitimate, idempotent installation the rest of
+    # the suite already depends on staying in place -- but if it is the first
+    # test in the process to reach that point, it is also the first to touch
+    # process-global logging state, so the factory and the root logger's
+    # filters are snapshotted and restored to leave no trace either way.
+    original_factory = logging.getLogRecordFactory()
+    original_root_filters = list(logging.getLogger().filters)
 
     async def test() -> None:
         resolved = await require(
@@ -122,31 +130,47 @@ def test_require_registers_a_resolved_secret_value_for_redaction(
             "SKILLSYNC_FAKE_APP_KEY": "key-is-a-secret-value",
         }
 
-    asyncio.run(test())
+    try:
+        asyncio.run(test())
 
-    assert "key-is-a-secret-value" in logging_support._registered_secrets
-    assert "id-not-secret-value" not in logging_support._registered_secrets
+        assert "key-is-a-secret-value" in logging_support._registered_secrets
+        assert "id-not-secret-value" not in logging_support._registered_secrets
+    finally:
+        logging.setLogRecordFactory(original_factory)
+        logging.getLogger().filters = original_root_filters
 
 
-def test_require_installs_the_secret_filter_as_a_side_effect(
+def test_require_installs_the_secret_filter_before_registering(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`require` installs redaction itself rather than depending on some other
-    setup step having run first -- see `logging_support`'s module docstring
-    for why that has to be true by construction. Nothing in this test calls
-    `install_secret_filter` directly; the only thing that can have installed
-    it, by the time a fresh logger's record comes out redacted, is `require`.
+    """`require` must install redaction before any secret value exists in the
+    registry, so there is no window where a value is registered but nothing
+    is watching for it yet.
+
+    Proved independently of process-global state -- which test ran first,
+    whether the filter happens to be installed already from elsewhere -- by
+    replacing both calls with recording stubs and checking call count and
+    order, rather than an end-to-end log assertion: an earlier version of
+    this test asserted a fresh logger's output came out redacted, which
+    stayed green even with `install_secret_filter` stubbed to a no-op,
+    because an unrelated test defined above it had already installed the real
+    filter for the process. The end-to-end proof that redaction actually
+    works when installed explicitly lives in `test_logging_support.py`; this
+    test proves only that `require` is the one calling `install_secret_filter`,
+    exactly once, before it registers anything.
     """
-    monkeypatch.setattr(logging_support, "_registered_secrets", set())
-    monkeypatch.setattr(logging_support, "_installed", False)
-    monkeypatch.setenv("SKILLSYNC_FAKE_APP_KEY", "key-installed-by-require-itself")
-    # Forcing `_installed` back to False makes `install_secret_filter` redo its
-    # setup, which -- unlike the module-level flag -- leaves lasting marks on
-    # process-global state `monkeypatch` cannot undo: an extra `SecretFilter`
-    # on the root logger, and another link in the factory chain. Both are
-    # snapshotted here and restored, so this test cannot leak into any other.
-    original_factory = logging.getLogRecordFactory()
-    original_root_filters = list(logging.getLogger().filters)
+    call_order: list[str] = []
+
+    def fake_install() -> None:
+        call_order.append("install")
+
+    def fake_register(values: Iterable[str]) -> None:
+        call_order.append("register")
+        list(values)  # the real function is a generator consumer; mirror that
+
+    monkeypatch.setattr(credentials, "install_secret_filter", fake_install)
+    monkeypatch.setattr(credentials, "register_secrets", fake_register)
+    monkeypatch.setenv("SKILLSYNC_FAKE_APP_KEY", "irrelevant-to-this-test")
 
     async def test() -> None:
         resolved = await require(
@@ -155,20 +179,11 @@ def test_require_installs_the_secret_filter_as_a_side_effect(
             (APP_KEY,),
             started_at=datetime.now(UTC),
         )
-        assert resolved == {"SKILLSYNC_FAKE_APP_KEY": "key-installed-by-require-itself"}
+        assert resolved == {"SKILLSYNC_FAKE_APP_KEY": "irrelevant-to-this-test"}
 
-    try:
-        asyncio.run(test())
+    asyncio.run(test())
 
-        with capturing_logs("job_ingestion") as messages:
-            logging.getLogger("job_ingestion.some_other_module").info(
-                "value is %s", "key-installed-by-require-itself"
-            )
-
-        assert messages == ["value is [redacted]"]
-    finally:
-        logging.setLogRecordFactory(original_factory)
-        logging.getLogger().filters = original_root_filters
+    assert call_order == ["install", "register"]
 
 
 def _unreachable_database() -> Database:

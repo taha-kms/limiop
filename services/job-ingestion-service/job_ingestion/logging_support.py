@@ -70,15 +70,26 @@ def _redact(value: str) -> str:
 def _redact_arg(arg: object) -> object:
     """Redact one `%`-style argument, string or not.
 
-    A string argument is redacted directly. Anything else -- an exception, any
-    object with a `str()` that might carry a secret -- is redacted by its
-    string form only if a secret was actually found in it; an argument that
-    does not contain one is returned unchanged; `%d` and friends still see the
-    original value.
+    A string argument is redacted directly. A number is never inspected -- a
+    secret is not a bare `int`, `float`, `complex`, or `bool`, and stringifying
+    every formatted count and percentage for nothing would be needless work on
+    a path every ingestion log line runs through. Anything else -- an
+    exception, any object whose `str()` might carry a secret -- is redacted by
+    its string form only if a secret was actually found in it; an argument
+    that does not contain one is returned unchanged, so `%d` and friends still
+    see the original value. An argument whose `str()` itself raises is also
+    returned unchanged rather than propagating from inside this filter --
+    `%s`-formatting it later fails exactly as it always would have, which
+    `logging` already tolerates, instead of failing here first.
     """
     if isinstance(arg, str):
         return _redact(arg)
-    text = str(arg)
+    if isinstance(arg, int | float | complex | bool):
+        return arg
+    try:
+        text = str(arg)
+    except Exception:
+        return arg
     redacted = _redact(text)
     return redacted if redacted != text else arg
 
