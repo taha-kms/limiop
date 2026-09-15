@@ -3,6 +3,8 @@ import Link from "next/link";
 import type { JobSummary } from "@/lib/api/types";
 import { employmentLabel, publishedLabel, workplaceLabel } from "@/lib/format";
 
+import { SourceLine } from "./source-line";
+
 function Badge({ children }: { children: React.ReactNode }) {
   return (
     <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
@@ -40,6 +42,8 @@ export function JobCard({ job }: { job: JobSummary }) {
         {job.company.display_name}
         {job.location ? ` · ${job.location}` : ""}
       </p>
+
+      <SourceLine sources={job.sources} />
 
       {/*
         An unstated value gets no badge. Most postings say neither, so showing

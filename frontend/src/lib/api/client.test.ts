@@ -25,6 +25,7 @@ const summary: JobSummary = {
   employment_type: "full-time",
   application_url: "https://acme.example.com/jobs/1",
   published_at: "2026-08-01T12:00:00Z",
+  sources: [],
 };
 
 const detail: JobDetail = {

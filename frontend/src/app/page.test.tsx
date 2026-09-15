@@ -20,6 +20,7 @@ const JOB: JobSummary = {
   employment_type: "full-time",
   application_url: "https://example.com/apply",
   published_at: "2026-01-03T00:00:00Z",
+  sources: [],
 };
 
 function catalogue(items: JobSummary[]) {

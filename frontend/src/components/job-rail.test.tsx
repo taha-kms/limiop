@@ -16,6 +16,7 @@ function job(id: string, overrides: Partial<JobSummary> = {}): JobSummary {
     employment_type: "full-time",
     application_url: "https://example.com",
     published_at: null,
+    sources: [],
     ...overrides,
   };
 }

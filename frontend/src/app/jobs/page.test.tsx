@@ -22,6 +22,7 @@ function job(id: string): JobSummary {
     employment_type: "full-time",
     application_url: `https://acme.example.com/jobs/${id}`,
     published_at: "2026-08-01T12:00:00Z",
+    sources: [],
   };
 }
 
