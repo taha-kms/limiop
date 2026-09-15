@@ -14,7 +14,7 @@ DAG_IDS = [f"{provider.source_key}_discovery" for provider in PROVIDERS]
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
+    return DagBag(dag_folder=str(DAGS_DIR))
 
 
 @pytest.mark.parametrize("dag_id", DAG_IDS)
