@@ -9,7 +9,7 @@ could not be written would be a worse outcome than bookkeeping nobody wrote.
 """
 
 import logging
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -19,6 +19,7 @@ from sqlalchemy import Executable, insert, update
 
 from job_ingestion.contracts import IngestionSummary, RecordFailure
 from job_ingestion.database import Database
+from job_ingestion.reconciliation import reconcile
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,36 @@ async def complete_run(database: Database, run_id: UUID, summary: IngestionSumma
             failure_summary=failure_summary(summary.failures),
         ),
     )
+
+
+async def run_recorded_ingestion(
+    database: Database,
+    source_key: str,
+    build: Callable[[Database], Awaitable[IngestionSummary]],
+    *,
+    started_at: datetime,
+) -> IngestionSummary:
+    """Record one ingestion run around a caller-supplied execution.
+
+    `build` does whatever is provider-specific: opening a client, assembling
+    the stages, executing them against `database`. Everything on either side
+    of that is the same for every provider that writes to this catalogue --
+    open the run row, reconcile against what this run saw, and mark the row
+    terminal -- so it lives here once instead of being copied into every
+    `ingest_*` entry point.
+
+    The caller still owns `database` itself: constructing the engine and
+    disposing of it happens around this call, not inside it, because how a
+    provider's config resolves to a database URL is not this function's
+    business.
+    """
+    async with recorded_run(database, source_key) as run_id:
+        summary = await build(database)
+        async with database.session() as session:
+            await reconcile(session, summary, run_started_at=started_at)
+            await session.commit()
+    await complete_run(database, run_id, summary)
+    return summary
 
 
 async def _write(database: Database, statement: Executable) -> None:

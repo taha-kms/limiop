@@ -12,7 +12,7 @@ from sqlalchemy import delete, select
 
 from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFailure
 from job_ingestion.database import Database
-from job_ingestion.runs import complete_run, failure_summary, recorded_run
+from job_ingestion.runs import complete_run, failure_summary, recorded_run, run_recorded_ingestion
 
 SOURCE = "arbeitnow"
 
@@ -197,6 +197,47 @@ def test_bookkeeping_that_cannot_be_written_does_not_end_the_run(
             await complete_run(unreachable, run_id, summary())
         finally:
             await unreachable.dispose()
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_run_recorded_ingestion_returns_the_built_summary_and_completes_the_row(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        built = summary(fetched=3, created=3, reached_the_end=True)
+
+        async def build(_: Database) -> IngestionSummary:
+            return built
+
+        result = await run_recorded_ingestion(database, SOURCE, build, started_at=datetime.now(UTC))
+
+        assert result == built
+        row = await stored(database)
+        assert row.state == IngestionRunState.COMPLETED
+        assert (row.fetched, row.created) == (3, 3)
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_run_recorded_ingestion_lets_a_build_failure_propagate_and_marks_the_row_failed(
+    database_url: PostgresDsn,
+) -> None:
+    """The shared wrapper does not swallow what the provider-specific `build`
+    raises: the run row still records the failure, the same as a caller that
+    wrote this sequence out by hand."""
+
+    async def test(database: Database) -> None:
+        async def build(_: Database) -> IngestionSummary:
+            raise RuntimeError("provider unreachable")
+
+        with pytest.raises(RuntimeError):
+            await run_recorded_ingestion(database, SOURCE, build, started_at=datetime.now(UTC))
+
+        row = await stored(database)
+        assert row.state == IngestionRunState.FAILED
 
     run_database_test(database_url, test)
 

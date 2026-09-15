@@ -24,8 +24,8 @@ from typing import Any, Self
 import httpx2
 
 from job_ingestion.contracts import RawPage, RawRecord
-from job_ingestion.errors import SourceResponseError, SourceUnavailableError
-from job_ingestion.rate_limit import is_rate_limited, retry_delay
+from job_ingestion.errors import SourceResponseError
+from job_ingestion.transport import retrying_get
 
 SOURCE_KEY = "himalayas"
 DEFAULT_BASE_URL = "https://himalayas.app/jobs/api"
@@ -111,10 +111,10 @@ class HimalayasClient:
     async def fetch_page(self, cursor: str | None) -> tuple[tuple[RawRecord, ...], str | None]:
         """Return one page of untrusted records and the cursor for the next.
 
-        Retries transport failures and rate limits, at most `max_attempts`
-        times. A rate limit is transient by definition and is the most
-        predictable non-200 a public API returns, which made it the one
-        transient failure that used to end a run where it stood.
+        The retry loop -- transport failures and rate limits, at most
+        `max_attempts` times -- lives in `job_ingestion.transport.retrying_get`,
+        shared with every other client that walks a paginated JSON API. This
+        method only builds the request and reads the body.
 
         Exhausting the attempts still raises, so a truncated read reports
         `reached_the_end: false` and may not withdraw what it never saw.
@@ -124,35 +124,18 @@ class HimalayasClient:
         if cursor is not None:
             params["cursor"] = cursor
 
-        last_failure: SourceUnavailableError | None = None
-        for attempt in range(1, self.config.max_attempts + 1):
-            delay = self.config.retry_backoff_seconds
-            try:
-                response = await self._http_client.get(
-                    self.config.base_url,
-                    params=params,
-                    timeout=self.config.timeout_seconds,
-                )
-            except httpx2.TimeoutException as error:
-                last_failure = SourceUnavailableError(SOURCE_KEY, f"{label} timed out: {error}")
-            except httpx2.TransportError as error:
-                last_failure = SourceUnavailableError(
-                    SOURCE_KEY, f"{label} could not be reached: {error}"
-                )
-            else:
-                if not is_rate_limited(response):
-                    return self._read_page(label, response)
-                last_failure = SourceUnavailableError(SOURCE_KEY, f"{label} was rate limited")
-                delay = retry_delay(response, fallback=delay)
-
-            if attempt < self.config.max_attempts:
-                await self._sleeper(delay)
-
-        raise (
-            last_failure
-            if last_failure is not None
-            else SourceUnavailableError(SOURCE_KEY, f"{label} could not be fetched")
+        response = await retrying_get(
+            self._http_client,
+            self.config.base_url,
+            params=params,
+            timeout_seconds=self.config.timeout_seconds,
+            max_attempts=self.config.max_attempts,
+            retry_backoff_seconds=self.config.retry_backoff_seconds,
+            sleeper=self._sleeper,
+            source_key=SOURCE_KEY,
+            subject=label,
         )
+        return self._read_page(label, response)
 
     async def fetch_pages(self) -> AsyncIterator[RawPage]:
         """Yield pages in order, stopping at the end of the feed or `max_pages`.
