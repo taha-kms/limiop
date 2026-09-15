@@ -224,6 +224,35 @@ This answer changes only if the EURES helpdesk or the European Labour
 Authority states in writing a sanctioned access path for third parties and a
 permitted rate. A written request was prepared on 2026-09-15 (sent: not yet).
 
+### UK Find a job (DWP Work Hub) — blocked
+
+**Checked 2026-09-15.** `https://findajob.dwp.gov.uk/` answers 503. The
+Department for Work and Pensions retired it on 30 June 2026 and replaced it
+with [Work Hub](https://www.jobs.service.gov.uk), listed in the
+[GOV.UK services list](https://govuk-services-list.x-govuk.org/service/findajob)
+with the phase "Experimental". Neither site publishes a feed or an API. The
+old site's `/atom.xml`, `/feed/`, and `/feed.xml` were 404 in the
+[Wayback captures](http://web.archive.org/cdx/search/cdx?url=findajob.dwp.gov.uk/*).
+Work Hub's search pages carry no feed links, its
+[`robots.txt`](https://www.jobs.service.gov.uk/robots.txt) allows only
+`/jobs`, and its [sitemap](https://www.jobs.service.gov.uk/sitemap.xml) lists
+17 static pages. The [Work Hub terms of use](https://www.jobs.service.gov.uk/terms-of-use)
+(version 1, last updated May 2026) allow "reasonable use of computer tools to
+copy or scrape information" but say users must not "use the information for
+business or commercial purposes" and must not "harvest data for business or
+commercial purposes"; the footer's
+[Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
+applies "except where otherwise stated". Question one fails because the terms
+forbid commercial use, question two fails because no feed is documented, and
+question five fails because no credential is on offer.
+
+This answer changes only if DWP publishes a feed or API with terms that permit
+commercial reuse, or answers a written request. The old site's
+[employer terms](https://findajob.dwp.gov.uk/terms-and-conditions-employer.html)
+(archived capture, 2025-11-14) named Adzuna as the operator on DWP's behalf,
+and that site was retired on 30 June 2026, so UK coverage already arrives
+through the Adzuna `gb` country.
+
 ### JazzHR — blocked
 
 **Checked 2026-09-03.** No documented public access path exists. The XML feed
