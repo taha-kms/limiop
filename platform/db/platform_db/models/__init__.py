@@ -4,6 +4,7 @@ from platform_db.models.boards import BoardStatus, JobBoard
 from platform_db.models.catalog import Company, Job, JobProvenance, JobSource
 from platform_db.models.ingestion import IngestionRun, IngestionRunState
 from platform_db.models.job_skills import JobSkill, JobSkillMention
+from platform_db.models.quota import SourceQuotaUsage
 from platform_db.models.skills import SkillAliasVersion, SkillConcept, SkillSurfaceForm
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "SkillAliasVersion",
     "SkillConcept",
     "SkillSurfaceForm",
+    "SourceQuotaUsage",
 ]

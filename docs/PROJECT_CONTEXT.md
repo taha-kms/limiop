@@ -161,6 +161,7 @@ job_provenance
 skill_concepts
 skill_surface_forms
 skill_alias_versions
+source_quota_usage
 ```
 
 The backend-owned tables are:

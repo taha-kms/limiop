@@ -17,6 +17,7 @@ from platform_db.models import (  # noqa: F401
     SkillAliasVersion,
     SkillConcept,
     SkillSurfaceForm,
+    SourceQuotaUsage,
 )
 
 config = context.config
@@ -35,6 +36,7 @@ PLATFORM_TABLES = frozenset(
         "skill_alias_versions",
         "skill_concepts",
         "skill_surface_forms",
+        "source_quota_usage",
     }
 )
 
