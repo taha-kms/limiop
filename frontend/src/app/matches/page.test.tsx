@@ -31,6 +31,7 @@ function match(overrides: Partial<JobMatch> = {}): JobMatch {
       employment_type: "full-time",
       application_url: "https://acme.example.com/apply",
       published_at: null,
+      sources: [],
     },
     score: 0.75,
     matched_skills: [{ concept_id: "s1", preferred_label: "Python" }],
@@ -56,6 +57,41 @@ describe("MatchesPage", () => {
     expect(screen.getByText("Python")).toBeVisible();
     expect(screen.getByText("This role also asks for")).toBeVisible();
     expect(screen.getByText("SQL")).toBeVisible();
+  });
+
+  it("shows the job's source", async () => {
+    getMatches.mockResolvedValue({
+      matches: [
+        match({
+          job: {
+            id: "job-1",
+            company: { id: "c1", display_name: "Acme GmbH", website_url: null },
+            title: "Backend Engineer",
+            excerpt: "Work.",
+            location: "Berlin",
+            workplace_type: "remote",
+            employment_type: "full-time",
+            application_url: "https://acme.example.com/apply",
+            published_at: null,
+            sources: [
+              {
+                key: "arbeitnow",
+                display_name: "Arbeitnow",
+                url: "https://arbeitnow.example.com/jobs/1",
+              },
+            ],
+          },
+        }),
+      ],
+      ranked: 1,
+    });
+
+    render(await MatchesPage());
+
+    expect(screen.getByRole("link", { name: /^Arbeitnow/ })).toHaveAttribute(
+      "href",
+      "https://arbeitnow.example.com/jobs/1",
+    );
   });
 
   it("keeps applying a link to the employer", async () => {

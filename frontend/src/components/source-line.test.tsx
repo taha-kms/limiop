@@ -24,14 +24,22 @@ describe("SourceLine", () => {
   it("links a generic source by its display name", () => {
     render(<SourceLine sources={[source()]} />);
 
-    const link = screen.getByRole("link", { name: "Arbeitnow" });
+    const link = screen.getByRole("link", { name: /^Arbeitnow/ });
     expect(link).toHaveAttribute("href", "https://arbeitnow.example.com/jobs/1");
+  });
+
+  it("names the original posting in the link, for a screen reader", () => {
+    render(<SourceLine sources={[source()]} />);
+
+    expect(
+      screen.getByRole("link", { name: "Arbeitnow, original posting, opens in a new tab" }),
+    ).toBeInTheDocument();
   });
 
   it("does not mark a generic source's link nofollow", () => {
     render(<SourceLine sources={[source()]} />);
 
-    const link = screen.getByRole("link", { name: "Arbeitnow" });
+    const link = screen.getByRole("link", { name: /^Arbeitnow/ });
     expect(link.getAttribute("rel")).not.toContain("nofollow");
   });
 
@@ -42,8 +50,8 @@ describe("SourceLine", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Arbeitnow" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Jobicy" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Arbeitnow/ })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /^Jobicy/ })).toBeInTheDocument();
     expect(screen.getByText(/·/)).toBeInTheDocument();
   });
 
@@ -68,6 +76,24 @@ describe("SourceLine", () => {
     expect(logo.closest("a")).toHaveAttribute("href", "https://www.adzuna.co.uk/land/ad/12345");
 
     expect(screen.getByText(/by/)).toBeInTheDocument();
+  });
+
+  it("names the original posting in Adzuna's logo link too", () => {
+    render(
+      <SourceLine
+        sources={[
+          source({
+            key: "adzuna",
+            display_name: "Adzuna",
+            url: "https://www.adzuna.co.uk/land/ad/12345",
+          }),
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByRole("link", { name: "Adzuna, original posting, opens in a new tab" }),
+    ).toBeInTheDocument();
   });
 
   it("does not mark Adzuna's links nofollow", () => {

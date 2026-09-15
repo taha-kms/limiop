@@ -41,4 +41,23 @@ describe("JobRail", () => {
     expect(screen.getByRole("link", { name: /Job 1/ })).toHaveTextContent("Meridian Software");
     expect(screen.queryByText(/·/)).toBeNull();
   });
+
+  it("shows a posting's source, without nesting it inside the card's own link", () => {
+    render(
+      <JobRail
+        jobs={[
+          job("1", {
+            sources: [
+              { key: "arbeitnow", display_name: "Arbeitnow", url: "https://arbeitnow.example.com/jobs/1" },
+            ],
+          }),
+        ]}
+      />,
+    );
+
+    const sourceLink = screen.getByRole("link", { name: /^Arbeitnow/ });
+    expect(sourceLink).toHaveAttribute("href", "https://arbeitnow.example.com/jobs/1");
+    // Nesting an anchor inside the card's own anchor would be invalid HTML.
+    expect(sourceLink.closest('a[href="/jobs/1"]')).toBeNull();
+  });
 });

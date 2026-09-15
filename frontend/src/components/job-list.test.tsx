@@ -74,7 +74,7 @@ describe("JobList", () => {
       />,
     );
 
-    expect(screen.getByRole("link", { name: "Arbeitnow" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^Arbeitnow/ })).toHaveAttribute(
       "href",
       "https://arbeitnow.example.com/jobs/2",
     );

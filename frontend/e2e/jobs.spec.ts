@@ -36,7 +36,7 @@ test("the listing shows where each job was found", async ({ page }) => {
   await page.goto("/jobs");
 
   const card = page.getByRole("article").filter({ hasText: SEEDED.remote });
-  await expect(card.getByRole("link", { name: "Seeded catalogue" })).toHaveAttribute(
+  await expect(card.getByRole("link", { name: /^Seeded catalogue/ })).toHaveAttribute(
     "href",
     "https://seed.example.com/postings/3",
   );

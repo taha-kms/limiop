@@ -15,6 +15,7 @@ function DefaultSource({ source }: { source: SourceAttribution }) {
       via{" "}
       <a href={source.url} rel="noopener" target="_blank">
         {source.display_name}
+        <span className="sr-only">, original posting, opens in a new tab</span>
       </a>
     </>
   );
@@ -37,7 +38,10 @@ function AdzunaSource({ source }: { source: SourceAttribution }) {
       </a>{" "}
       by{" "}
       <a href={source.url} rel="noopener" target="_blank">
+        {/* eslint-disable-next-line @next/next/no-img-element -- the terms
+            require this exact logo image, not an optimised next/image */}
         <img src="/sources/adzuna.svg" alt="Adzuna" height={16} />
+        <span className="sr-only">, original posting, opens in a new tab</span>
       </a>
     </>
   );

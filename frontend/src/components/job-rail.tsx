@@ -3,6 +3,8 @@ import Link from "next/link";
 import type { JobSummary } from "@/lib/api/types";
 import { workplaceLabel } from "@/lib/format";
 
+import { SourceLine } from "./source-line";
+
 /**
  * Real postings from the catalogue, in a rail that scrolls sideways.
  *
@@ -18,6 +20,10 @@ export function JobRail({ jobs }: { jobs: JobSummary[] }) {
     <ul className="rail" aria-label="Recent postings">
       {jobs.map((job) => (
         <li key={job.id} className="w-[17rem] shrink-0 sm:w-[19rem]">
+          {/*
+            The source link has to sit outside this Link: nesting an anchor
+            inside another anchor is invalid, and this whole card is one.
+          */}
           <Link
             href={`/jobs/${job.id}`}
             className="flex h-full flex-col gap-2 rounded-xl border border-line bg-background p-4 transition-colors hover:border-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
@@ -31,6 +37,7 @@ export function JobRail({ jobs }: { jobs: JobSummary[] }) {
               {job.location ? ` · ${job.location}` : ""}
             </span>
           </Link>
+          <SourceLine sources={job.sources} />
         </li>
       ))}
     </ul>
