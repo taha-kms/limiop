@@ -66,7 +66,7 @@ cannot be normalized without recording where it came from.
 | `source_job_id` | yes | The provider's own identifier for the record |
 | `source_url` | yes | Where the record was read from |
 | `raw_payload` | no | Untrusted provider JSON, preserved for reproducing transformations |
-| `partial_description` | no | `true` when `description` is the provider's excerpt rather than the posting. Defaults to `false`. Stored inside `raw_payload` as `_partial_description` |
+| `partial_description` | no | `true` when `description` is the provider's excerpt rather than the posting. Defaults to `false`. When true, stored inside `raw_payload` as `_partial_description: true`; absent otherwise |
 
 `(source_key, source_job_id)` identifies an external record. One canonical job
 may carry provenance from several sources when the same posting is advertised in

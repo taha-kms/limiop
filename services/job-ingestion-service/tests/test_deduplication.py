@@ -10,12 +10,14 @@ from sqlalchemy import delete
 
 from job_ingestion.database import Database
 from job_ingestion.deduplication import (
+    PARTIAL_DESCRIPTION_KEY,
     DeduplicationOutcome,
     MatchBasis,
     decide,
     has_material_change,
 )
 from job_ingestion.matching import match_key, reads_the_same
+from job_ingestion.persistence import SourceRegistration, persist_job
 from job_ingestion.schemas import NormalizedJob
 
 SOURCE_KEY = "arbeitnow"
@@ -366,19 +368,17 @@ def test_a_snippet_never_merges_into_a_full_posting_by_text(database_url: Postgr
 
 @pytest.mark.integration
 def test_a_full_posting_never_merges_into_a_stored_snippet(database_url: PostgresDsn) -> None:
+    """The snippet is stored through persistence rather than written by hand,
+    so the key this decision reads is the one persistence actually writes."""
+
     async def exercise(database: Database) -> None:
-        excerpt = snippet_job()
-        source = JobSource(key="adzuna", display_name="Adzuna", base_url="https://a.example")
-        await store(
-            database,
-            JobProvenance(
-                job=stored_job(excerpt),
-                source=source,
-                source_job_id=excerpt.provenance.source_job_id,
-                source_url=str(excerpt.provenance.source_url),
-                raw_payload={"_partial_description": True},
-            ),
+        adzuna = SourceRegistration(
+            key="adzuna", display_name="Adzuna", base_url="https://a.example"
         )
+        async with database.session() as session:
+            stored = await persist_job(session, snippet_job(), source=adzuna, seen_at=PUBLISHED_AT)
+            await session.commit()
+        assert stored.job_id is not None
 
         async with database.session() as session:
             decision = await decide(session, incoming_job(description=FULL_DESCRIPTION))
@@ -403,7 +403,7 @@ def test_a_repeated_snippet_record_is_still_recognized_by_provenance(
                 source=source,
                 source_job_id=excerpt.provenance.source_job_id,
                 source_url=str(excerpt.provenance.source_url),
-                raw_payload={"_partial_description": True},
+                raw_payload={PARTIAL_DESCRIPTION_KEY: True},
             ),
         )
 

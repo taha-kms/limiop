@@ -15,6 +15,7 @@ from typing import Annotated, Self
 from pydantic import (
     AwareDatetime,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     HttpUrl,
     StringConstraints,
@@ -28,6 +29,20 @@ from job_ingestion.errors import RecordValidationError
 
 Required = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 Trimmed = Annotated[str, StringConstraints(strip_whitespace=True)]
+
+
+def _coerce_identifier(value: object) -> object:
+    """Accept an id sent as an integer as the string it is documented to be.
+
+    Only an integer is coerced: `str(None)` would turn a missing id into the
+    usable-looking "None", and a bool is not an identifier.
+    """
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return value
+
+
+Identifier = Annotated[Required, BeforeValidator(_coerce_identifier)]
 
 
 def provenance_id(country: str, identifier: str) -> str:
@@ -62,7 +77,7 @@ class AdzunaJobRecord(BaseModel):
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    id: Required
+    id: Identifier
     country: Required
     title: Required
     description: Required
@@ -102,7 +117,7 @@ def readable_identifier(record: RawRecord) -> str | None:
     Country and id when the record has been stamped, the bare id when it has
     not, and nothing when the id itself is not a usable string.
     """
-    identifier = record.get("id")
+    identifier = _coerce_identifier(record.get("id"))
     if not isinstance(identifier, str) or not identifier.strip():
         return None
     country = record.get("country")

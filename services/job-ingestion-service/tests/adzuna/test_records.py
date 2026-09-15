@@ -105,7 +105,7 @@ def test_a_blank_required_field_is_rejected(field: str) -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("id", 5312407781),
+        ("id", ["5312407781"]),
         ("redirect_url", "not-a-url"),
         ("created", "2026-09-14T08:15:22"),
         ("created", "whenever"),
@@ -141,7 +141,20 @@ def test_a_failure_before_stamping_names_the_bare_id() -> None:
     assert error.value.source_job_id == "5312407781"
 
 
-@pytest.mark.parametrize("identifier", [None, "", "   ", 42])
+def test_a_numeric_id_is_read_as_the_string_it_is_documented_to_be() -> None:
+    record = AdzunaValidator().validate(posting(id=5312407781))
+
+    assert record.id == "5312407781"
+
+
+def test_a_failure_still_names_a_record_whose_id_is_numeric() -> None:
+    with pytest.raises(RecordValidationError) as error:
+        AdzunaValidator().validate(posting(id=5312407781, title=""))
+
+    assert error.value.source_job_id == "gb:5312407781"
+
+
+@pytest.mark.parametrize("identifier", [None, "", "   ", True, ["42"]])
 def test_a_failure_tolerates_an_unusable_id(identifier: object) -> None:
     with pytest.raises(RecordValidationError) as error:
         AdzunaValidator().validate(posting(id=identifier, title=""))
