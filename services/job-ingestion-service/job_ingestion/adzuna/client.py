@@ -53,7 +53,7 @@ from job_ingestion.adzuna.source import (
     SOURCE_KEY,
 )
 from job_ingestion.contracts import RawPage, RawRecord
-from job_ingestion.errors import SourceResponseError, SourceUnavailableError
+from job_ingestion.errors import SourceResponseError
 from job_ingestion.logging_support import install_secret_filter, register_secrets
 from job_ingestion.transport import reserving_get
 
@@ -192,11 +192,13 @@ class AdzunaClient:
         """Reserve one call, make it, and return the page's stamped records.
 
         The session lives exactly as long as the call: opened for the
-        reservation and committed as soon as the provider has been asked. A
-        provider that never answered was still asked, up to the attempt
-        budget, so that failure commits the reservation before it propagates
-        rather than rolling it back; a refused reservation wrote nothing and
-        propagates as it is.
+        reservation and committed however the call ends. Once the reservation
+        is written the provider is asked, so whatever interrupts the request
+        after that -- a transport failure, a cancellation, any error at all --
+        finds a call that was served and must stay counted; the commit runs
+        unconditionally rather than only on the failures this code can
+        foresee. A refused reservation wrote nothing, so committing after
+        `QuotaExceeded` is a no-op and it propagates as it is.
         """
         label = subject(country, page)
         async with self._open_session() as session:
@@ -214,10 +216,8 @@ class AdzunaClient:
                     sleeper=self._sleeper,
                     subject=label,
                 )
-            except SourceUnavailableError:
+            finally:
                 await session.commit()
-                raise
-            await session.commit()
 
         logger.info("%s returned status %d", label, response.status_code)
         if response.status_code != httpx2.codes.OK:

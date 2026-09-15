@@ -304,6 +304,25 @@ def test_a_provider_that_never_answers_still_spends_the_call(database_url: Postg
 
 
 @pytest.mark.integration
+def test_a_request_ended_by_any_error_still_spends_the_call(database_url: PostgresDsn) -> None:
+    """A transport failure is not the only thing that can end a request in
+    flight: a cancellation or an unexpected error finds the same served call.
+    The reservation is committed whatever the exception, or a flapping worker
+    would under-count what the provider already served."""
+
+    async def exercise(database: Database) -> None:
+        fetcher, requests = client(database, RuntimeError("connection pool torn down"))
+
+        with pytest.raises(RuntimeError, match="torn down"):
+            await collect(fetcher)
+
+        assert len(requests) == 1
+        assert await spent(database) == 1
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
 def test_a_rate_limit_that_lifts_costs_one_reservation(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
         fetcher, requests = client(
