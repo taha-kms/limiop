@@ -60,6 +60,21 @@ change the answer. A blocked verification is not a prohibition: several of
 these systems say nothing either way, and a written statement from the
 provider would reopen the review.
 
+## Tier two — licensed and keyed sources
+
+Tier-two sources need a credential to call, and their terms go beyond
+attribution: a trial period, a licence, a published call budget, or an
+obligation to remove data on termination. They run on the same ingestion
+boundary as tier one with two things the framework adds. Credentials are read
+one environment variable each and never logged, and every call is reserved
+against the source's daily quota before it is made, so a misconfigured
+schedule cannot burn an account. The design is in
+[the keyed sources spec](superpowers/specs/2026-09-15-keyed-sources-design.md).
+
+| Source | Access, terms, and schema | Credential | Quota | Checked |
+| --- | --- | --- | --- | --- |
+| Adzuna | The [API documentation](https://developer.adzuna.com/overview) and the [interactive reference](https://developer.adzuna.com/activedocs) document `/v1/api/jobs/{country}/search/{page}` and its response fields. `description` is a snippet of the posting, so every record is stored with `partial_description` and is never merged with another source's posting by text. The [terms](https://developer.adzuna.com/docs/terms_of_service) say organisations are "subject to a 14 day trial period" and that "After the trial period ends, a licence agreement may be required"; they require "Label each displayed advert with 'Jobs by Adzuna'", which the listing must render before the source is enabled in production (#367); and termination requires removing acquired data. Trial start date: not yet started. The search is windowed to the last two days, so no run can claim to have seen the whole source and Adzuna postings are not retired by reconciliation yet (#376). | `SKILLSYNC_ADZUNA_APP_ID`, `SKILLSYNC_ADZUNA_APP_KEY` | Adzuna publishes "25 hits per minute, 250 hits per day, 1000 hits per week, 2500 hits per month". The monthly ceiling binds: 2500 over a 31-day month is 80 a day. SkillSync's ledger counts days, so it reserves every call against 80 a day (80 × 31 = 2480, 80 × 7 = 560, both under the published ceilings) and schedules two runs of at most 36 calls, 72 a day, with at most three transport attempts per call that share one reservation. A retried run is cut short by the reservation rather than absorbed by the eight calls of headroom. | 2026-09-15 |
+
 ## Blocked sources
 
 ### LinkedIn — blocked

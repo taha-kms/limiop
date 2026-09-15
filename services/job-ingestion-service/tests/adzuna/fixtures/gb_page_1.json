@@ -1,0 +1,95 @@
+{
+  "count": 4817,
+  "mean": 61240.37,
+  "results": [
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "5312407781",
+      "adref": "eyJhbGciOiJIUzI1NiJ9.eyJzIjoiZ2JfcGFnZV8xXzEifQ.k1",
+      "title": "Senior Data Engineer",
+      "description": "We are looking for a Senior Data Engineer to join our platform team in London. You will design streaming pipelines with Kafka and Flink, own the warehouse model in dbt, and mentor two engineers …",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "Northwind Analytics"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "London, UK",
+        "area": ["UK", "London"]
+      },
+      "category": {
+        "__CLASS__": "Adzuna::API::Response::Category",
+        "label": "IT Jobs",
+        "tag": "it-jobs"
+      },
+      "redirect_url": "https://www.adzuna.co.uk/jobs/land/ad/5312407781?se=k1x9pQ&utm_medium=api&v=A1B2C3",
+      "created": "2026-09-14T08:15:22Z",
+      "salary_min": 85000,
+      "salary_max": 105000,
+      "salary_is_predicted": "0",
+      "contract_type": "permanent",
+      "contract_time": "full_time",
+      "latitude": 51.5074,
+      "longitude": -0.1278
+    },
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "5312398104",
+      "adref": "eyJhbGciOiJIUzI1NiJ9.eyJzIjoiZ2JfcGFnZV8xXzIifQ.k2",
+      "title": "Frontend Developer (React)",
+      "description": "Fenwick & Blake is hiring a part-time Frontend Developer for its Manchester studio. Three days a week, TypeScript and React, working with a small design team on client sites …",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "Fenwick & Blake"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Manchester, Greater Manchester",
+        "area": ["UK", "North West England", "Greater Manchester", "Manchester"]
+      },
+      "category": {
+        "__CLASS__": "Adzuna::API::Response::Category",
+        "label": "IT Jobs",
+        "tag": "it-jobs"
+      },
+      "redirect_url": "https://www.adzuna.co.uk/jobs/land/ad/5312398104?se=m4rTz8&utm_medium=api&v=A1B2C3",
+      "created": "2026-09-14T06:40:03Z",
+      "salary_min": 32000,
+      "salary_max": 38000,
+      "salary_is_predicted": "1",
+      "contract_time": "part_time",
+      "latitude": 53.4808,
+      "longitude": -2.2426
+    },
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "5312355290",
+      "adref": "eyJhbGciOiJIUzI1NiJ9.eyJzIjoiZ2JfcGFnZV8xXzMifQ.k3",
+      "title": "Embedded Software Engineer - 6 month contract",
+      "description": "Harbour Robotics needs an Embedded Software Engineer for a six month contract in Bristol. C and Rust on ARM Cortex-M, CAN bus, and bring-up of a new controller board …",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "Harbour Robotics"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Bristol, South West England",
+        "area": ["UK", "South West England", "Bristol"]
+      },
+      "category": {
+        "__CLASS__": "Adzuna::API::Response::Category",
+        "label": "Engineering Jobs",
+        "tag": "engineering-jobs"
+      },
+      "redirect_url": "https://www.adzuna.co.uk/jobs/land/ad/5312355290?se=q7wLb2&utm_medium=api&v=A1B2C3",
+      "created": "2026-09-13T17:02:48Z",
+      "salary_min": null,
+      "salary_max": null,
+      "salary_is_predicted": "0",
+      "contract_type": "contract",
+      "contract_time": "full_time",
+      "latitude": 51.4545,
+      "longitude": -2.5879
+    }
+  ]
+}

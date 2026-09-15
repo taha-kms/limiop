@@ -66,6 +66,7 @@ cannot be normalized without recording where it came from.
 | `source_job_id` | yes | The provider's own identifier for the record |
 | `source_url` | yes | Where the record was read from |
 | `raw_payload` | no | Untrusted provider JSON, preserved for reproducing transformations |
+| `partial_description` | no | `true` when `description` is the provider's excerpt rather than the posting. Defaults to `false`. When true, stored inside `raw_payload` as `_partial_description: true`; absent otherwise |
 
 `(source_key, source_job_id)` identifies an external record. One canonical job
 may carry provenance from several sources when the same posting is advertised in
@@ -193,6 +194,18 @@ do. A source that wrote its own summaries would fail this check on every record,
 and its duplicates would be missed silently. That makes it an assumption about
 how a source obtains its text, not a constant.
 
+A source that delivers a snippet rather than the posting cannot make that
+assumption hold, and says so: its records are stored with
+`partial_description`, and the text check is never consulted for them, from
+either side. A snippet arriving beside a stored full-text posting of the same
+role and place is stored as a second job, and a full-text posting arriving
+beside a stored snippet is too. The record is therefore allowed to duplicate
+another source's posting rather than risk merging two different jobs on the
+strength of a shared opening sentence, for the same reason the subset rule
+below was rejected: a missed duplicate shows a job twice and is visible, while
+a wrong merge deletes a job silently. Provenance still recognises the same
+snippet record when its own source sends it again.
+
 ### Measured
 
 Against a real corpus of 400 aggregator postings and 10,279 employer-board
@@ -240,6 +253,13 @@ would have withdrawn twenty-four open jobs.
 
 Reconciliation refuses to run at all without exhaustion, and says why rather
 than doing nothing quietly.
+
+A source that is read through a window can never claim exhaustion. Adzuna is
+asked only for the last few days of postings, so a walk that runs every
+country short has still seen nothing older than the window, and its client
+reports `reached_the_end` as false on every run. Adzuna postings are therefore
+not retired by reconciliation yet; the rule for windowed sources, whether a
+maximum age or an expiry derived from the posting date, is #376.
 
 ### The conclusion is drawn twice
 

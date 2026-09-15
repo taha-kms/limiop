@@ -10,8 +10,14 @@ from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
 from job_ingestion import credentials, logging_support
-from job_ingestion.contracts import IngestionSummary
-from job_ingestion.credentials import Credential, Unconfigured, require, resolve
+from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFailure
+from job_ingestion.credentials import (
+    Credential,
+    Unconfigured,
+    is_unconfigured,
+    require,
+    resolve,
+)
 from job_ingestion.database import Database
 from tests.support.logs import preserving_secret_filter
 
@@ -74,6 +80,28 @@ def test_unconfigured_reason_names_the_missing_variables() -> None:
     assert unconfigured.reason == (
         "source unconfigured: SKILLSYNC_FAKE_APP_ID, SKILLSYNC_FAKE_APP_KEY"
     )
+
+
+UNCONFIGURED = RecordFailure(
+    stage=IngestionStage.FETCH, reason=Unconfigured(missing=("SKILLSYNC_FAKE_APP_KEY",)).reason
+)
+TIMED_OUT = RecordFailure(stage=IngestionStage.FETCH, reason="the first page timed out")
+
+
+@pytest.mark.parametrize(
+    ("failures", "expected"),
+    [
+        ((UNCONFIGURED,), True),
+        ((), False),
+        ((TIMED_OUT,), False),
+        ((UNCONFIGURED, TIMED_OUT), False),
+        ((RecordFailure(stage=IngestionStage.VALIDATE, reason=UNCONFIGURED.reason),), False),
+    ],
+)
+def test_is_unconfigured_recognizes_only_the_run_require_records(
+    failures: tuple[RecordFailure, ...], expected: bool
+) -> None:
+    assert is_unconfigured(IngestionSummary(source_key="fake", failures=failures)) is expected
 
 
 def test_resolve_reads_os_environ_when_none_is_given(monkeypatch: pytest.MonkeyPatch) -> None:

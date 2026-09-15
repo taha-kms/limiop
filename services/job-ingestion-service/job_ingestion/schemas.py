@@ -55,6 +55,11 @@ class NormalizedProvenance(BaseModel):
     source_job_id: Name
     source_url: Url
     raw_payload: dict[str, Any] | None = None
+    # True when `description` is the provider's excerpt of the posting rather
+    # than the posting itself. A snippet can neither confirm nor deny that two
+    # records read the same way, so deduplication never compares one by text;
+    # `matching` says why that check exists and `deduplication` applies this.
+    partial_description: bool = False
 
 
 class NormalizedJob(BaseModel):
