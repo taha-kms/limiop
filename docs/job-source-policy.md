@@ -199,6 +199,31 @@ limit is published.
 This answer changes only if the terms can be read and permit this use, or
 Personio states that the feed is intended for job boards.
 
+### Bundesagentur für Arbeit — blocked pending a written answer
+
+**Checked 2026-09-15.** The Jobsuche API
+(`rest.arbeitsagentur.de/jobboerse/jobsuche-service`) answers requests that
+carry the client identifier used by the agency's own Jobsuche app. No
+third-party terms, licence, or developer registration is published; the
+community bundesAPI documentation of the endpoint says so. Question one fails
+because no permission is published, and question five fails because no
+credential is obtainable on published terms.
+
+This answer changes only if the agency states in writing a client identifier
+or licence for third parties and a permitted rate. A written request was
+prepared on 2026-09-15 (sent: not yet).
+
+### EURES — blocked pending a written answer
+
+**Checked 2026-09-15.** The portal's search endpoint answers programmatic
+requests, but no API documentation, licence, or third-party terms were found.
+Question one fails because no permission is published, and question five
+fails because no credential is obtainable on published terms.
+
+This answer changes only if the EURES helpdesk or the European Labour
+Authority states in writing a sanctioned access path for third parties and a
+permitted rate. A written request was prepared on 2026-09-15 (sent: not yet).
+
 ### JazzHR — blocked
 
 **Checked 2026-09-03.** No documented public access path exists. The XML feed
