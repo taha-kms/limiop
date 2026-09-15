@@ -35,7 +35,10 @@ def test_normalization_is_deterministic() -> None:
     record = AdzunaValidator().validate(raw)
     normalizer = AdzunaNormalizer()
 
-    assert normalizer.normalize(record, raw) == normalizer.normalize(record, raw)
+    first = normalizer.normalize(record, raw)
+    second = normalizer.normalize(record, raw)
+
+    assert first == second
 
 
 def test_provenance_identifies_the_record_within_its_country() -> None:
