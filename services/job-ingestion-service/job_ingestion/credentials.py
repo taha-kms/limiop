@@ -16,7 +16,12 @@ use `require`, in `runs.py`.
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from os import environ as os_environ
+
+from job_ingestion.contracts import IngestionSummary
+from job_ingestion.database import Database
+from job_ingestion.runs import record_unconfigured_run
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,3 +71,28 @@ def resolve(
     if missing:
         return Unconfigured(missing=tuple(missing))
     return values
+
+
+async def require(
+    database: Database,
+    source_key: str,
+    required: Sequence[Credential],
+    *,
+    started_at: datetime,
+) -> Mapping[str, str] | IngestionSummary:
+    """Resolve `required`, recording a run if the source is not configured.
+
+    A keyed `ingest_*` entry point opens with:
+
+        resolved = await require(database, SOURCE_KEY, REQUIRED, started_at=started_at)
+        if isinstance(resolved, IngestionSummary):
+            return resolved
+
+    so the unconfigured path returns the same type the entry point already
+    returns on every other path, and the caller never branches on `Unconfigured`
+    itself.
+    """
+    resolved = resolve(required)
+    if isinstance(resolved, Unconfigured):
+        return await record_unconfigured_run(database, source_key, resolved, started_at=started_at)
+    return resolved

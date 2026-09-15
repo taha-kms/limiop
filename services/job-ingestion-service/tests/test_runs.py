@@ -11,8 +11,15 @@ from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
 from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFailure
+from job_ingestion.credentials import Unconfigured
 from job_ingestion.database import Database
-from job_ingestion.runs import complete_run, failure_summary, recorded_run, run_recorded_ingestion
+from job_ingestion.runs import (
+    complete_run,
+    failure_summary,
+    record_unconfigured_run,
+    recorded_run,
+    run_recorded_ingestion,
+)
 
 SOURCE = "arbeitnow"
 
@@ -238,6 +245,34 @@ def test_run_recorded_ingestion_lets_a_build_failure_propagate_and_marks_the_row
 
         row = await stored(database)
         assert row.state == IngestionRunState.FAILED
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_record_unconfigured_run_completes_a_run_naming_the_missing_variable(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        unconfigured = Unconfigured(missing=("SKILLSYNC_FAKE_APP_KEY",))
+
+        result = await record_unconfigured_run(
+            database, SOURCE, unconfigured, started_at=datetime.now(UTC)
+        )
+
+        assert result.source_key == SOURCE
+        assert result.fetched == 0
+        assert result.processing_complete is False
+        assert result.failed == 1
+
+        row = await stored(database)
+        assert row.state == IngestionRunState.COMPLETED
+        assert row.failed == 1
+        assert row.failure_summary == {
+            "total": 1,
+            "by_stage": {"fetch": 1},
+            "reasons": ["source unconfigured: SKILLSYNC_FAKE_APP_KEY"],
+        }
 
     run_database_test(database_url, test)
 
