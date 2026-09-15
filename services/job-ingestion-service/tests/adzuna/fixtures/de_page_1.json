@@ -1,0 +1,95 @@
+{
+  "count": 2963,
+  "mean": 58910.5,
+  "results": [
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "5311980427",
+      "adref": "eyJhbGciOiJIUzI1NiJ9.eyJzIjoiZGVfcGFnZV8xXzEifQ.d1",
+      "title": "Data Engineer (m/w/d)",
+      "description": "Die Bergmann Software GmbH sucht eine:n Data Engineer (m/w/d) in Berlin. Du baust Datenpipelines mit Airflow und Spark, betreust unser Lakehouse und arbeitest eng mit dem Analytics-Team …",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "Bergmann Software GmbH"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Berlin, Berlin",
+        "area": ["Deutschland", "Berlin", "Berlin"]
+      },
+      "category": {
+        "__CLASS__": "Adzuna::API::Response::Category",
+        "label": "IT Jobs",
+        "tag": "it-jobs"
+      },
+      "redirect_url": "https://www.adzuna.de/jobs/land/ad/5311980427?se=b8nVc3&utm_medium=api&v=A1B2C3",
+      "created": "2026-09-14T09:31:10Z",
+      "salary_min": 62000,
+      "salary_max": 78000,
+      "salary_is_predicted": "1",
+      "contract_type": "permanent",
+      "contract_time": "full_time",
+      "latitude": 52.52,
+      "longitude": 13.405
+    },
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "5311942115",
+      "adref": "eyJhbGciOiJIUzI1NiJ9.eyJzIjoiZGVfcGFnZV8xXzIifQ.d2",
+      "title": "Sachbearbeiter Logistik (m/w/d)",
+      "description": "Rhein Logistik AG in Köln stellt ein: Sachbearbeiter Logistik (m/w/d). Auftragsabwicklung, Zolldokumente und Abstimmung mit unseren Speditionspartnern in SAP …",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "Rhein Logistik AG"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Köln, Nordrhein-Westfalen",
+        "area": ["Deutschland", "Nordrhein-Westfalen", "Köln"]
+      },
+      "category": {
+        "__CLASS__": "Adzuna::API::Response::Category",
+        "label": "Logistics & Warehouse Jobs",
+        "tag": "logistics-warehouse-jobs"
+      },
+      "redirect_url": "https://www.adzuna.de/jobs/land/ad/5311942115?se=r2kPd7&utm_medium=api&v=A1B2C3",
+      "created": "2026-09-13T14:20:55Z",
+      "salary_min": 38000,
+      "salary_max": 44000,
+      "salary_is_predicted": "1",
+      "contract_type": "permanent",
+      "latitude": 50.9375,
+      "longitude": 6.9603
+    },
+    {
+      "__CLASS__": "Adzuna::API::Response::Job",
+      "id": "5311901776",
+      "adref": "eyJhbGciOiJIUzI1NiJ9.eyJzIjoiZGVfcGFnZV8xXzMifQ.d3",
+      "title": "Werkstudent:in Energiedatenanalyse",
+      "description": "Nordlicht Energie sucht eine:n Werkstudent:in in Hamburg für 20 Stunden pro Woche. Du wertest Einspeisedaten unserer Windparks in Python aus und unterstützt das Reporting …",
+      "company": {
+        "__CLASS__": "Adzuna::API::Response::Company",
+        "display_name": "Nordlicht Energie"
+      },
+      "location": {
+        "__CLASS__": "Adzuna::API::Response::Location",
+        "display_name": "Hamburg, Hamburg",
+        "area": ["Deutschland", "Hamburg", "Hamburg"]
+      },
+      "category": {
+        "__CLASS__": "Adzuna::API::Response::Category",
+        "label": "Energy, Oil & Gas Jobs",
+        "tag": "energy-oil-gas-jobs"
+      },
+      "redirect_url": "https://www.adzuna.de/jobs/land/ad/5311901776?se=n5hGf1&utm_medium=api&v=A1B2C3",
+      "created": "2026-09-13T11:05:37Z",
+      "salary_min": null,
+      "salary_max": null,
+      "salary_is_predicted": "0",
+      "contract_type": "contract",
+      "contract_time": "part_time",
+      "latitude": 53.5511,
+      "longitude": 9.9937
+    }
+  ]
+}
