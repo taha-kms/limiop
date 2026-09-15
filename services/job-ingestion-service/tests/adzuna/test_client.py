@@ -229,9 +229,11 @@ def test_a_spent_budget_makes_no_request_at_all(database_url: PostgresDsn) -> No
 def test_credentials_travel_in_the_query_and_never_in_a_log_record(
     database_url: PostgresDsn,
 ) -> None:
-    """Nothing here relies on the redaction filter: the key is not registered
-    for it, so what this proves is that the client itself never logs a URL
-    or its parameters, only the country, the page, and the status."""
+    """The client registers its key for redaction, so the key's absence alone
+    would prove little. What proves the client itself never logs a URL or its
+    parameters is that neither the parameter name nor the path appears in any
+    of its lines, and that its one line per page carries only the country, the
+    page, and the status."""
 
     async def exercise(database: Database) -> None:
         fetcher, requests = client(database, short_page("gb"), short_page("de"))
@@ -254,6 +256,29 @@ def test_credentials_travel_in_the_query_and_never_in_a_log_record(
         assert APP_ID not in logged
         assert "app_key" not in logged
         assert "/search/" not in logged
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_directly_built_client_still_redacts_the_transports_request_line(
+    database_url: PostgresDsn,
+) -> None:
+    """httpx2 logs the full URL, key included, at INFO. A client built without
+    going through `require` -- as this one is -- installs the redaction and
+    registers its own key, so that line comes out redacted all the same."""
+
+    async def exercise(database: Database) -> None:
+        fetcher, _ = client(database, short_page("gb"), short_page("de"))
+
+        with capturing_logs("httpx2") as messages:
+            await collect(fetcher)
+
+        request_lines = [message for message in messages if "HTTP Request" in message]
+        assert len(request_lines) == 2
+        assert all("app_key=[redacted]" in line for line in request_lines)
+        assert all(f"app_id={APP_ID}" in line for line in request_lines)
+        assert APP_KEY not in "\n".join(messages)
 
     run_database_test(database_url, exercise)
 

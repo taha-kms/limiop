@@ -26,6 +26,10 @@ stop rather than a failure.
 
 The credentials travel in the query string, so no log line here may carry a
 URL or the parameters. Only the country, the page, and the status are logged.
+The transport is not so careful: httpx2 logs every request line, URL and
+query included, at INFO. The process-wide redaction is what keeps the key out
+of that line, and this client installs it and registers its key itself, so it
+is protected however it was built.
 """
 
 import asyncio
@@ -50,6 +54,7 @@ from job_ingestion.adzuna.source import (
 )
 from job_ingestion.contracts import RawPage, RawRecord
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
+from job_ingestion.logging_support import install_secret_filter, register_secrets
 from job_ingestion.transport import reserving_get
 
 logger = logging.getLogger(__name__)
@@ -154,6 +159,12 @@ class AdzunaClient:
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self.config = config
+        # `require` already did both of these on the entry point's path, but a
+        # client built anywhere else -- a command, a notebook, a test -- would
+        # otherwise let httpx2 log the key in its request line. Both calls are
+        # idempotent, so repeating them here costs nothing.
+        install_secret_filter()
+        register_secrets([credentials[APP_KEY.env]])
         # Held as query parameters from the start, so the only place the key
         # ever appears is the request that needs it.
         self._query = {

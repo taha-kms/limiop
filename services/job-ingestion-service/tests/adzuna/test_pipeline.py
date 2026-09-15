@@ -1,13 +1,8 @@
 """The Adzuna entry point end to end, with only the outbound transport replaced.
 
-Every configured test runs inside `preserving_secret_filter`, because
-`require` installs the process-wide redaction filter as a side effect of a
-successful resolve, and starts from an empty secret registry so the key it
-registers cannot leak into another test.
+`require` installs the process-wide redaction filter and registers the key on
+every configured run; `conftest` here undoes both after each test.
 """
-
-import logging
-from collections.abc import Awaitable, Callable
 
 import httpx2
 import pytest
@@ -15,7 +10,6 @@ from platform_db.models import IngestionRun, IngestionRunState, JobProvenance
 from pydantic import PostgresDsn
 from sqlalchemy import select
 
-from job_ingestion import logging_support
 from job_ingestion.adzuna.client import AdzunaClient, AdzunaConfig
 from job_ingestion.adzuna.pipeline import build_run, ingest_adzuna
 from job_ingestion.adzuna.source import DAILY_QUOTA
@@ -33,7 +27,7 @@ from tests.adzuna.support import (
     run_database_test,
 )
 from tests.boards.fakes import ok
-from tests.support.logs import capturing_logs, preserving_secret_filter
+from tests.support.logs import capturing_logs
 
 # One full page per country: two calls, six records, and neither country read
 # to its end.
@@ -44,7 +38,6 @@ CONFIG = AdzunaConfig(
 
 @pytest.fixture
 def configured(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(logging_support, "_registered_secrets", set())
     monkeypatch.setenv("SKILLSYNC_ADZUNA_APP_ID", APP_ID)
     monkeypatch.setenv("SKILLSYNC_ADZUNA_APP_KEY", APP_KEY)
 
@@ -53,14 +46,6 @@ def configured(monkeypatch: pytest.MonkeyPatch) -> None:
 def unconfigured(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLSYNC_ADZUNA_APP_ID", APP_ID)
     monkeypatch.delenv("SKILLSYNC_ADZUNA_APP_KEY", raising=False)
-
-
-def run_entry_point_test(
-    database_url: PostgresDsn,
-    test: Callable[[Database], Awaitable[None]],
-) -> None:
-    with preserving_secret_filter():
-        run_database_test(database_url, test)
 
 
 async def ingest(
@@ -147,28 +132,29 @@ def test_a_configured_source_stores_every_snippet_flagged_partial(
         assert all(payload["_partial_description"] is True for payload in payloads)
         assert {payload["country"] for payload in payloads} == {"gb", "de"}
 
-    run_entry_point_test(database_url, exercise)
+    run_database_test(database_url, exercise)
 
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("configured")
-def test_the_resolved_key_is_redacted_from_every_later_log_line(
+def test_the_key_is_redacted_from_the_transports_own_request_line(
     database_url: PostgresDsn,
 ) -> None:
-    """`require` registers the key before the client exists; anything in the
-    process that logs it afterwards, by mistake, comes out redacted."""
+    """httpx2 logs every request line, query string included, at INFO. That
+    line is the one place the key is written out by something other than
+    this service, and `require` registers the key before the client exists
+    precisely so it comes out redacted there."""
 
     async def exercise(database: Database) -> None:
-        await ingest(database_url, ok(page_body("gb")), ok(page_body("de")))
+        with capturing_logs("httpx2") as messages:
+            await ingest(database_url, ok(page_body("gb")), ok(page_body("de")))
 
-        with capturing_logs("job_ingestion") as messages:
-            logging.getLogger("job_ingestion.adzuna.somewhere").info(
-                "key %s id %s", APP_KEY, APP_ID
-            )
+        request_lines = [message for message in messages if "HTTP Request" in message]
+        assert len(request_lines) == 2
+        assert all("app_key=[redacted]" in line for line in request_lines)
+        assert APP_KEY not in "\n".join(messages)
 
-        assert messages == [f"key [redacted] id {APP_ID}"]
-
-    run_entry_point_test(database_url, exercise)
+    run_database_test(database_url, exercise)
 
 
 @pytest.mark.integration
@@ -192,7 +178,7 @@ def test_a_spent_quota_stops_the_run_cleanly_before_any_request(
         assert row.stopped_at_budget is True
         assert row.failed == 0
 
-    run_entry_point_test(database_url, exercise)
+    run_database_test(database_url, exercise)
 
 
 @pytest.mark.integration
@@ -209,7 +195,7 @@ def test_a_quota_hit_mid_walk_keeps_what_was_already_fetched(database_url: Postg
         assert summary.stopped_at_budget is True
         assert summary.failures == ()
 
-    run_entry_point_test(database_url, exercise)
+    run_database_test(database_url, exercise)
 
 
 def test_the_run_registers_the_configured_source() -> None:
