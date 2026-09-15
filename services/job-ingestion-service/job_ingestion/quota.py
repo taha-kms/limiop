@@ -65,6 +65,9 @@ async def reserve(
     Returns True and stores the increment when today's total, including this
     reservation, fits the budget. Returns False and writes nothing otherwise.
     """
+    if calls < 1:
+        raise ValueError("calls must be at least 1")
+
     result = await session.execute(
         _RESERVE_SQL,
         {

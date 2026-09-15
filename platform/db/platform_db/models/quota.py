@@ -27,7 +27,7 @@ class SourceQuotaUsage(Base):
 
     source_key: Mapped[str] = mapped_column(String(SOURCE_KEY_LENGTH), nullable=False)
     day: Mapped[date] = mapped_column(Date, nullable=False)
-    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

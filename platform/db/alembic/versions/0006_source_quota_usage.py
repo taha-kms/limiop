@@ -25,7 +25,7 @@ def upgrade() -> None:
         "source_quota_usage",
         sa.Column("source_key", sa.String(length=64), nullable=False),
         sa.Column("day", sa.Date(), nullable=False),
-        sa.Column("calls", sa.Integer(), nullable=False),
+        sa.Column("calls", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
