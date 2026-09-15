@@ -11,6 +11,12 @@ back short, which is the only sign the API gives that it has nothing more to
 say there. A result's `id` is unique only within its country, so every record
 leaves here stamped with the country it was searched in.
 
+Every request is windowed by `max_days_old`, so a short page means "nothing
+more from the last few days", never "nothing more on the source". This client
+therefore never reports `reached_the_end`: a walk that came up short in every
+country still has not seen any posting older than the window, and the
+lifecycle rule must not retire what a run never looked at.
+
 Every page is one call against a licensed daily budget. The reservation is
 made through `reserving_get` in a session of this client's own, committed the
 moment the provider has been asked -- whether or not it answered -- so a crash
@@ -166,7 +172,6 @@ class AdzunaClient:
             else httpx2.AsyncClient(timeout=config.timeout_seconds)
         )
         self._sleeper = sleeper
-        self._reached_the_end = False
 
     @property
     def source_key(self) -> str:
@@ -215,26 +220,31 @@ class AdzunaClient:
     async def fetch_pages(self) -> AsyncIterator[RawPage]:
         """Yield every country's pages in order, within the page budget.
 
-        A short page is the end of that country and the walk moves to the
-        next. A country whose last budgeted page was still full has not been
-        read to the end, so only a walk in which every country came up short
-        reports the end; a walk cut off by the quota reports it for none.
+        A short page is the end of that country's window and the walk moves
+        to the next country. Nothing is recorded about whether every country
+        came up short, because it would not mean the source was read to the
+        end; see `reached_the_end`.
         """
-        self._reached_the_end = False
-        exhausted = 0
         for country in self.config.countries:
             for page in range(1, self.config.pages_per_country + 1):
                 records = await self.fetch_page(country, page)
                 yield RawPage(records=records)
                 if len(records) < self.config.results_per_page:
-                    exhausted += 1
                     break
-        self._reached_the_end = exhausted == len(self.config.countries)
 
     @property
     def reached_the_end(self) -> bool:
-        """Whether the last walk ran every country out of pages rather than out of allowance."""
-        return self._reached_the_end
+        """Always False: a windowed walk cannot claim to have seen the source.
+
+        `reached_the_end` licenses reconciliation to retire every posting a run
+        did not see. Every page here is limited to `max_days_old`, so a run
+        that ran every country short has still seen nothing older than the
+        window, and claiming the end would retire every Adzuna posting older
+        than a few days while it is still live there. Adzuna postings are
+        therefore not retired by reconciliation yet; a rule for windowed
+        sources is #376.
+        """
+        return False
 
     async def aclose(self) -> None:
         """Close the HTTP client if this client created it."""

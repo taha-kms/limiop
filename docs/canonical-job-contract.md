@@ -254,6 +254,13 @@ would have withdrawn twenty-four open jobs.
 Reconciliation refuses to run at all without exhaustion, and says why rather
 than doing nothing quietly.
 
+A source that is read through a window can never claim exhaustion. Adzuna is
+asked only for the last few days of postings, so a walk that runs every
+country short has still seen nothing older than the window, and its client
+reports `reached_the_end` as false on every run. Adzuna postings are therefore
+not retired by reconciliation yet; the rule for windowed sources, whether a
+maximum age or an expiry derived from the posting date, is #376.
+
 ### The conclusion is drawn twice
 
 **Per source.** A provenance record an exhausted run did not see is retired.

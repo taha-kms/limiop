@@ -169,14 +169,22 @@ def test_a_short_page_ends_that_country_and_the_walk_moves_on(database_url: Post
 
 
 @pytest.mark.integration
-def test_the_end_is_reached_only_when_every_country_runs_out(database_url: PostgresDsn) -> None:
+def test_the_end_is_never_claimed_even_when_every_country_runs_out(
+    database_url: PostgresDsn,
+) -> None:
+    """Every request is windowed by `max_days_old`, so a walk that came up
+    short in every country has still seen no posting older than the window.
+    Claiming the end here would license reconciliation to retire every older
+    Adzuna posting as gone while it is still live on Adzuna; the client must
+    never claim it, whatever the pages say."""
+
     async def exercise(database: Database) -> None:
         fetcher, _ = client(database, short_page("gb"), short_page("de", results=0))
 
         pages = await collect(fetcher)
 
         assert [len(page.records) for page in pages] == [2, 0]
-        assert fetcher.reached_the_end is True
+        assert fetcher.reached_the_end is False
 
     run_database_test(database_url, exercise)
 
