@@ -13,7 +13,7 @@ DAG_ID = "company_websites"
 
 @pytest.fixture(scope="session")
 def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
+    return DagBag(dag_folder=str(DAGS_DIR))
 
 
 def test_the_dag_is_registered(dagbag: DagBag) -> None:
