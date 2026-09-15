@@ -7,6 +7,7 @@ from typing import Any
 import httpx2
 import pytest
 
+from job_ingestion.contracts import RawPage
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
 from job_ingestion.jobicy.client import (
     DEFAULT_BASE_URL,
@@ -146,8 +147,10 @@ def test_fetch_pages_yields_exactly_one_page_and_reaches_the_end() -> None:
 def test_reached_the_end_stays_false_until_the_generator_is_exhausted() -> None:
     client, _ = client_for(responding(json_response(feed_body())))
 
-    generator = client.fetch_pages()
-    asyncio.run(generator.__anext__())
+    async def take_one() -> RawPage:
+        return await client.fetch_pages().__anext__()
+
+    asyncio.run(take_one())
 
     assert client.reached_the_end is False
 
