@@ -8,10 +8,11 @@ here stamp it the same way before a record reaches validation.
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+import httpx2
 from platform_db.models import IngestionRun, SourceQuotaUsage
 from pydantic import PostgresDsn
 from sqlalchemy import delete
@@ -86,3 +87,25 @@ def run_database_test(
             await database.dispose()
 
     asyncio.run(run())
+
+
+def recording(
+    *replies: httpx2.Response | Exception,
+) -> tuple[httpx2.AsyncClient, list[httpx2.Request]]:
+    """A client answering each request with the next reply, keeping every request.
+
+    The requests are kept because the test that matters most here asks what
+    the client sent, not only what it got back: the credentials must be in
+    the query and nowhere else.
+    """
+    remaining: Iterator[httpx2.Response | Exception] = iter(replies)
+    requests: list[httpx2.Request] = []
+
+    def handle(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        reply = next(remaining)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    return httpx2.AsyncClient(transport=httpx2.MockTransport(handle)), requests
