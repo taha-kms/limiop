@@ -46,4 +46,45 @@ describe("SourceLine", () => {
     expect(screen.getByRole("link", { name: "Jobicy" })).toBeInTheDocument();
     expect(screen.getByText(/·/)).toBeInTheDocument();
   });
+
+  it("renders the exact label Adzuna's terms require", () => {
+    render(
+      <SourceLine
+        sources={[
+          source({
+            key: "adzuna",
+            display_name: "Adzuna",
+            url: "https://www.adzuna.co.uk/land/ad/12345",
+          }),
+        ]}
+      />,
+    );
+
+    const jobsLink = screen.getByRole("link", { name: "Jobs" });
+    expect(jobsLink).toHaveAttribute("href", "https://www.adzuna.co.uk");
+
+    const logo = screen.getByRole("img", { name: "Adzuna" });
+    expect(logo).toHaveAttribute("src", "/sources/adzuna.svg");
+    expect(logo.closest("a")).toHaveAttribute("href", "https://www.adzuna.co.uk/land/ad/12345");
+
+    expect(screen.getByText(/by/)).toBeInTheDocument();
+  });
+
+  it("does not mark Adzuna's links nofollow", () => {
+    render(
+      <SourceLine
+        sources={[
+          source({
+            key: "adzuna",
+            display_name: "Adzuna",
+            url: "https://www.adzuna.co.uk/land/ad/12345",
+          }),
+        ]}
+      />,
+    );
+
+    for (const link of screen.getAllByRole("link")) {
+      expect(link.getAttribute("rel")).not.toContain("nofollow");
+    }
+  });
 });
