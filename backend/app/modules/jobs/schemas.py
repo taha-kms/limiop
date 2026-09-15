@@ -176,6 +176,7 @@ class JobSummary(BaseModel):
     employment_type: EmploymentType
     application_url: HttpUrl
     published_at: datetime | None
+    sources: list["SourceAttribution"]
 
     @classmethod
     def of(cls, job: Any) -> "JobSummary":
@@ -189,6 +190,7 @@ class JobSummary(BaseModel):
             employment_type=job.employment_type,
             application_url=HttpUrl(job.application_url),
             published_at=job.published_at,
+            sources=[SourceAttribution.of(record) for record in job.provenance_records],
         )
 
 

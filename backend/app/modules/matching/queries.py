@@ -7,11 +7,11 @@ that would be a table scan whose answer is always the same.
 
 from uuid import UUID
 
-from platform_db.models import Job, SkillConcept
+from platform_db.models import Job, JobProvenance, SkillConcept
 from platform_db.models.catalog import JobStatus
 from platform_db.models.job_skills import JobSkill
 from sqlalchemy import Select, select
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.modules.profiles.models import CandidateProfile, CandidateProfileSkill
 
@@ -34,7 +34,10 @@ def scorable_jobs(concepts: set[UUID]) -> Select[tuple[Job]]:
     sharing = select(JobSkill.job_id).where(JobSkill.concept_id.in_(concepts)).distinct()
     return (
         select(Job)
-        .options(joinedload(Job.company))
+        .options(
+            joinedload(Job.company),
+            selectinload(Job.provenance_records).selectinload(JobProvenance.source),
+        )
         .where(Job.status == JobStatus.ACTIVE, Job.id.in_(sharing))
     )
 

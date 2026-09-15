@@ -55,6 +55,13 @@ def test_a_listed_job_carries_what_a_card_needs(
             "application_url": "https://acme.example.com/jobs/1",
             "description": "Build reliable data pipelines.\nAnd a second paragraph.",
             "published_at": at(1),
+            "sources": [
+                {
+                    "key": "arbeitnow",
+                    "display_name": "Arbeitnow",
+                    "source_url": "https://arbeitnow.example.com/jobs/1",
+                }
+            ],
         }
     )
 
@@ -67,7 +74,41 @@ def test_a_listed_job_carries_what_a_card_needs(
     assert item["employment_type"] == "full-time"
     assert item["application_url"] == "https://acme.example.com/jobs/1"
     assert item["published_at"] is not None
-    assert item["excerpt"] == "Build reliable data pipelines. And a second paragraph."
+    assert item["sources"] == [
+        {
+            "key": "arbeitnow",
+            "display_name": "Arbeitnow",
+            "url": "https://arbeitnow.example.com/jobs/1",
+        }
+    ]
+
+
+def test_a_job_listed_on_several_boards_carries_all_of_them(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    seed_catalog(
+        {
+            "title": "Listed twice",
+            "published_at": at(1),
+            "sources": [board("arbeitnow"), board("jobicy")],
+        }
+    )
+
+    item = catalog_client.get("/jobs").json()["items"][0]
+
+    assert {source["key"] for source in item["sources"]} == {"arbeitnow", "jobicy"}
+
+
+def test_a_listed_job_with_no_recorded_source_carries_an_empty_list(
+    catalog_client: TestClient,
+    seed_catalog: Seed,
+) -> None:
+    seed_catalog({"title": "Unattributed", "published_at": at(1)})
+
+    item = catalog_client.get("/jobs").json()["items"][0]
+
+    assert item["sources"] == []
 
 
 def test_a_listing_never_carries_provenance_or_the_whole_posting(
@@ -494,6 +535,7 @@ def test_the_summary_schema_has_no_path_to_a_description(catalog_client: TestCli
                 "employment_type",
                 "application_url",
                 "published_at",
+                "sources",
             },
             id="job summary",
         ),

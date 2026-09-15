@@ -296,6 +296,35 @@ def test_each_job_carries_its_company_without_a_second_query(
 
 
 @pytest.mark.integration
+def test_each_job_carries_its_sources_without_a_second_query(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await seed(
+            database,
+            {
+                "title": "Listable",
+                "published_at": at(1),
+                "sources": [
+                    {
+                        "key": "arbeitnow",
+                        "display_name": "Arbeitnow",
+                        "source_url": "https://arbeitnow.example.com/jobs/1",
+                    }
+                ],
+            },
+        )
+
+        async with database.session() as session:
+            page = await list_jobs(session)
+
+        record = page.jobs[0].provenance_records[0]
+        assert record.source.display_name == "Arbeitnow"
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
 def test_the_company_filter_narrows_to_one_employer(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
         identifiers = await seed(

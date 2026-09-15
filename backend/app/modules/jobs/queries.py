@@ -236,7 +236,13 @@ async def list_jobs(
         raise UnknownSourceError(applied.source_key)
 
     size = min(page_size, MAX_PAGE_SIZE)
-    statement = apply_filters(select(Job).options(selectinload(Job.company)), applied)
+    statement = apply_filters(
+        select(Job).options(
+            selectinload(Job.company),
+            selectinload(Job.provenance_records).selectinload(JobProvenance.source),
+        ),
+        applied,
+    )
     if cursor is not None:
         statement = statement.where(after(decode_cursor(cursor)))
 
