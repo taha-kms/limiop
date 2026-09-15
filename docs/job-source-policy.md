@@ -5,7 +5,7 @@ evidence and the date it was checked, and must be rechecked before implementatio
 
 ## The gate
 
-Before writing an adapter, its issue must answer **yes** to all four questions:
+Before writing an adapter, its issue must answer **yes** to all five questions:
 
 1. **Documented access:** Is there an official, documented access path that the
    source permits SkillSync to use?
@@ -17,6 +17,16 @@ Before writing an adapter, its issue must answer **yes** to all four questions:
    down? Record the provider's published limit. If a public endpoint publishes
    no ceiling, state a conservative project limit instead and record that the
    provider limit is unpublished.
+5. **Obtainable credentials:** Can SkillSync obtain the required key or
+   agreement on published terms, at what cost, and does the agreement permit
+   storing the postings and displaying them with attribution? A source that
+   needs a key is admitted only when all three answers are on the record in
+   its row.
+
+The "terms silent" rule is unchanged by question five: a documented feed whose
+terms say nothing about third parties is blocked whether or not it needs a
+key; a key or a licence raises the evidence available, it never lowers the
+bar.
 
 The review must link the official access documentation and terms, state the
 answer to each question, and include an ISO check date. One "no" or an answer
@@ -62,18 +72,30 @@ provider would reopen the review.
 
 ## Tier two — licensed and keyed sources
 
-Tier-two sources need a credential to call, and their terms go beyond
-attribution: a trial period, a licence, a published call budget, or an
+Tier-two sources need a credential or an agreement to call, and their terms go
+beyond attribution: a trial period, a licence, a published call budget, or an
 obligation to remove data on termination. They run on the same ingestion
-boundary as tier one with two things the framework adds. Credentials are read
-one environment variable each and never logged, and every call is reserved
-against the source's daily quota before it is made, so a misconfigured
-schedule cannot burn an account. The design is in
+boundary as tier one with two things the framework adds. Each row names the
+environment variables the deployment must set, which are read one variable
+each and never logged, and the quota the code enforces through
+`source_quota_usage`: every call is reserved against the source's daily budget
+before it is made, so a misconfigured schedule cannot burn an account. The
+design is in
 [the keyed sources spec](superpowers/specs/2026-09-15-keyed-sources-design.md).
+
+A tier-two source is enabled by setting its variables from the platform secret
+store, as [the deployment baseline](deployment-baseline.md#secrets-by-handling)
+describes. While a variable is unset, the source's runs are recorded as
+unconfigured: one failure naming the variable, and no fetch.
+
+A source on a trial or a time-limited agreement records the start date and the
+date by which the operator must be asked to continue. The Adzuna row carries
+"trial not yet started" until the operator registers; when that happens, the
+row is updated in the same change that sets the variables.
 
 | Source | Access, terms, and schema | Credential | Quota | Checked |
 | --- | --- | --- | --- | --- |
-| Adzuna | The [API documentation](https://developer.adzuna.com/overview) and the [interactive reference](https://developer.adzuna.com/activedocs) document `/v1/api/jobs/{country}/search/{page}` and its response fields. `description` is a snippet of the posting, so every record is stored with `partial_description` and is never merged with another source's posting by text. The [terms](https://developer.adzuna.com/docs/terms_of_service) say organisations are "subject to a 14 day trial period" and that "After the trial period ends, a licence agreement may be required"; they require "Label each displayed advert with 'Jobs by Adzuna'", which the listing must render before the source is enabled in production (#367); and termination requires removing acquired data. Trial start date: not yet started. The search is windowed to the last two days, so no run can claim to have seen the whole source and Adzuna postings are not retired by reconciliation yet (#376). | `SKILLSYNC_ADZUNA_APP_ID`, `SKILLSYNC_ADZUNA_APP_KEY` | Adzuna publishes "25 hits per minute, 250 hits per day, 1000 hits per week, 2500 hits per month". The monthly ceiling binds: 2500 over a 31-day month is 80 a day. SkillSync's ledger counts days, so it reserves every call against 80 a day (80 × 31 = 2480, 80 × 7 = 560, both under the published ceilings) and schedules two runs of at most 36 calls, 72 a day, with at most three transport attempts per call that share one reservation. A retried run is cut short by the reservation rather than absorbed by the eight calls of headroom. | 2026-09-15 |
+| Adzuna | The [API documentation](https://developer.adzuna.com/overview) and the [interactive reference](https://developer.adzuna.com/activedocs) document `/v1/api/jobs/{country}/search/{page}` and its response fields. `description` is a snippet of the posting, so every record is stored with `partial_description` and is never merged with another source's posting by text. The [terms](https://developer.adzuna.com/docs/terms_of_service) say organisations are "subject to a 14 day trial period" and that "After the trial period ends, a licence agreement may be required"; they require "Label each displayed advert with 'Jobs by Adzuna'", which the listing must render before the source is enabled in production (#367); and termination requires removing acquired data. Frontend label: `SourceLine` renders "Jobs by Adzuna" exactly as the terms word it (#367); the logo asset in `frontend/public/sources/adzuna.svg` is a placeholder until the official file replaces it, and the source stays disabled until then. Trial not yet started. The search is windowed to the last two days, so no run can claim to have seen the whole source and Adzuna postings are not retired by reconciliation yet (#376). | `SKILLSYNC_ADZUNA_APP_ID`, `SKILLSYNC_ADZUNA_APP_KEY` | Adzuna publishes "25 hits per minute, 250 hits per day, 1000 hits per week, 2500 hits per month". The monthly ceiling binds: 2500 over a 31-day month is 80 a day. SkillSync's ledger counts days, so it reserves every call against 80 a day (80 × 31 = 2480, 80 × 7 = 560, both under the published ceilings) and schedules two runs of at most 36 calls, 72 a day, with at most three transport attempts per call that share one reservation. A retried run is cut short by the reservation rather than absorbed by the eight calls of headroom. | 2026-09-15 |
 
 ## Blocked sources
 
@@ -176,6 +198,60 @@ limit is published.
 
 This answer changes only if the terms can be read and permit this use, or
 Personio states that the feed is intended for job boards.
+
+### Bundesagentur für Arbeit — blocked pending a written answer
+
+**Checked 2026-09-15.** The Jobsuche API
+(`rest.arbeitsagentur.de/jobboerse/jobsuche-service`) answers requests that
+carry the client identifier used by the agency's own Jobsuche app. No
+third-party terms, licence, or developer registration is published; the
+community bundesAPI documentation of the endpoint says so. Question one fails
+because no permission is published, and question five fails because no
+credential is obtainable on published terms.
+
+This answer changes only if the agency states in writing a client identifier
+or licence for third parties and a permitted rate. A written request was
+prepared on 2026-09-15 (sent: not yet).
+
+### EURES — blocked pending a written answer
+
+**Checked 2026-09-15.** The portal's search endpoint answers programmatic
+requests, but no API documentation, licence, or third-party terms were found.
+Question one fails because no permission is published, and question five
+fails because no credential is obtainable on published terms.
+
+This answer changes only if the EURES helpdesk or the European Labour
+Authority states in writing a sanctioned access path for third parties and a
+permitted rate. A written request was prepared on 2026-09-15 (sent: not yet).
+
+### UK Find a job (DWP Work Hub) — blocked
+
+**Checked 2026-09-15.** `https://findajob.dwp.gov.uk/` answers 503. The
+Department for Work and Pensions retired it on 30 June 2026 and replaced it
+with [Work Hub](https://www.jobs.service.gov.uk), listed in the
+[GOV.UK services list](https://govuk-services-list.x-govuk.org/service/findajob)
+with the phase "Experimental". Neither site publishes a feed or an API. The
+old site's `/atom.xml`, `/feed/`, and `/feed.xml` were 404 in the
+[Wayback captures](http://web.archive.org/cdx/search/cdx?url=findajob.dwp.gov.uk/*).
+Work Hub's search pages carry no feed links, its
+[`robots.txt`](https://www.jobs.service.gov.uk/robots.txt) allows only
+`/jobs`, and its [sitemap](https://www.jobs.service.gov.uk/sitemap.xml) lists
+17 static pages. The [Work Hub terms of use](https://www.jobs.service.gov.uk/terms-of-use)
+(version 1, last updated May 2026) allow "reasonable use of computer tools to
+copy or scrape information" but say users must not "use the information for
+business or commercial purposes" and must not "harvest data for business or
+commercial purposes"; the footer's
+[Open Government Licence v3.0](https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/)
+applies "except where otherwise stated". Question one fails because the terms
+forbid commercial use, question two fails because no feed is documented, and
+question five fails because no credential is on offer.
+
+This answer changes only if DWP publishes a feed or API with terms that permit
+commercial reuse, or answers a written request. The old site's
+[employer terms](https://findajob.dwp.gov.uk/terms-and-conditions-employer.html)
+(archived capture, 2025-11-14) named Adzuna as the operator on DWP's behalf,
+and that site was retired on 30 June 2026, so UK coverage already arrives
+through the Adzuna `gb` country.
 
 ### JazzHR — blocked
 
