@@ -22,14 +22,24 @@ on `logging.Filter` composing with filters of its own and to keep the literal
 shape this module was specified with; that attachment is belt-and-braces; the
 factory wrap is what actually carries the guarantee, and redacting an
 already-redacted string a second time is a no-op.
+
+The wrap chains whatever factory was installed before it and must run last: if
+some other library calls `logging.setLogRecordFactory` again after this
+module's `install_secret_filter` has already run, that later call replaces the
+chain outright and every record built after it bypasses redaction silently.
+Nothing here can detect that; the ordering has to hold by construction, which
+is why `credentials.require` -- the first place a source's secret values
+exist in the process -- installs the filter itself rather than trusting some
+other setup step to have run first.
+
+A value shorter than eight characters (`MINIMUM_SECRET_LENGTH` below) is never
+registered: redacting a one- or two-character "secret" would blank out routine
+words and digits in every unrelated log line.
 """
 
 import logging
 from collections.abc import Iterable
 
-# Below this, a value matches too much of ordinary text to redact safely --
-# redacting a one- or two-character "secret" would blank out routine words
-# and digits in every unrelated log line.
 MINIMUM_SECRET_LENGTH = 8
 
 _registered_secrets: set[str] = set()
@@ -49,32 +59,50 @@ def register_secrets(values: Iterable[str]) -> None:
 
 def _redact(value: str) -> str:
     redacted = value
-    for secret in _registered_secrets:
+    # A snapshot, not the live set: `register_secrets` can run while this is
+    # formatting a record on another thread, and mutating the set mid-iteration
+    # would raise instead of redacting.
+    for secret in tuple(_registered_secrets):
         redacted = redacted.replace(secret, "[redacted]")
     return redacted
 
 
+def _redact_arg(arg: object) -> object:
+    """Redact one `%`-style argument, string or not.
+
+    A string argument is redacted directly. Anything else -- an exception, any
+    object with a `str()` that might carry a secret -- is redacted by its
+    string form only if a secret was actually found in it; an argument that
+    does not contain one is returned unchanged; `%d` and friends still see the
+    original value.
+    """
+    if isinstance(arg, str):
+        return _redact(arg)
+    text = str(arg)
+    redacted = _redact(text)
+    return redacted if redacted != text else arg
+
+
 def _redact_record(record: logging.LogRecord) -> logging.LogRecord:
-    """Redact a record's message and string arguments in place.
+    """Redact a record's message and arguments in place.
 
     Only `getMessage()`'s two inputs are touched: the format string in `msg`,
     for a caller that interpolated a secret before ever calling the logger,
-    and each string entry of `args`, for the ordinary `logger.info("...%s",
-    value)` shape. Anything else on the record -- `exc_info`, `exc_text` -- is
-    untouched; a traceback that carries a secret is a different problem than
-    this module solves.
+    and each entry of `args`, for the ordinary `logger.info("...%s", value)`
+    shape -- including a non-string argument such as an exception, whose
+    `str()` may itself carry a secret (a `SourceUnavailableError` built from a
+    provider's own error text, say). Anything else on the record --
+    `exc_info`, `exc_text` -- is untouched; a traceback that carries a secret
+    is a different problem than this module solves.
     """
     if not _registered_secrets:
         return record
     if isinstance(record.msg, str):
         record.msg = _redact(record.msg)
     if isinstance(record.args, tuple):
-        record.args = tuple(_redact(arg) if isinstance(arg, str) else arg for arg in record.args)
+        record.args = tuple(_redact_arg(arg) for arg in record.args)
     elif isinstance(record.args, dict):
-        record.args = {
-            key: (_redact(value) if isinstance(value, str) else value)
-            for key, value in record.args.items()
-        }
+        record.args = {key: _redact_arg(value) for key, value in record.args.items()}
     return record
 
 

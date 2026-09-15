@@ -1,6 +1,7 @@
 """Resolving source credentials from the environment."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
@@ -13,6 +14,7 @@ from job_ingestion import logging_support
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.credentials import Credential, Unconfigured, require, resolve
 from job_ingestion.database import Database
+from tests.support.logs import capturing_logs
 
 APP_ID = Credential(env="SKILLSYNC_FAKE_APP_ID", secret=False)
 APP_KEY = Credential(env="SKILLSYNC_FAKE_APP_KEY")
@@ -124,6 +126,49 @@ def test_require_registers_a_resolved_secret_value_for_redaction(
 
     assert "key-is-a-secret-value" in logging_support._registered_secrets
     assert "id-not-secret-value" not in logging_support._registered_secrets
+
+
+def test_require_installs_the_secret_filter_as_a_side_effect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`require` installs redaction itself rather than depending on some other
+    setup step having run first -- see `logging_support`'s module docstring
+    for why that has to be true by construction. Nothing in this test calls
+    `install_secret_filter` directly; the only thing that can have installed
+    it, by the time a fresh logger's record comes out redacted, is `require`.
+    """
+    monkeypatch.setattr(logging_support, "_registered_secrets", set())
+    monkeypatch.setattr(logging_support, "_installed", False)
+    monkeypatch.setenv("SKILLSYNC_FAKE_APP_KEY", "key-installed-by-require-itself")
+    # Forcing `_installed` back to False makes `install_secret_filter` redo its
+    # setup, which -- unlike the module-level flag -- leaves lasting marks on
+    # process-global state `monkeypatch` cannot undo: an extra `SecretFilter`
+    # on the root logger, and another link in the factory chain. Both are
+    # snapshotted here and restored, so this test cannot leak into any other.
+    original_factory = logging.getLogRecordFactory()
+    original_root_filters = list(logging.getLogger().filters)
+
+    async def test() -> None:
+        resolved = await require(
+            _unreachable_database(),
+            "fake",
+            (APP_KEY,),
+            started_at=datetime.now(UTC),
+        )
+        assert resolved == {"SKILLSYNC_FAKE_APP_KEY": "key-installed-by-require-itself"}
+
+    try:
+        asyncio.run(test())
+
+        with capturing_logs("job_ingestion") as messages:
+            logging.getLogger("job_ingestion.some_other_module").info(
+                "value is %s", "key-installed-by-require-itself"
+            )
+
+        assert messages == ["value is [redacted]"]
+    finally:
+        logging.setLogRecordFactory(original_factory)
+        logging.getLogger().filters = original_root_filters
 
 
 def _unreachable_database() -> Database:

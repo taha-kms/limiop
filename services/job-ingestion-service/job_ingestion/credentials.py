@@ -21,7 +21,7 @@ from os import environ as os_environ
 
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.database import Database
-from job_ingestion.logging_support import register_secrets
+from job_ingestion.logging_support import install_secret_filter, register_secrets
 from job_ingestion.runs import record_unconfigured_run
 
 
@@ -93,7 +93,12 @@ async def require(
     returns on every other path, and the caller never branches on `Unconfigured`
     itself.
 
-    A resolved `secret=True` value is registered for log redaction before this
+    This is the first place a source's secret values exist in the process, so
+    it installs the log redaction filter itself -- idempotent, so calling it
+    here costs nothing on the second and every later keyed source -- rather
+    than depending on some other startup step to have run first (see
+    `logging_support`'s module docstring for why that ordering matters). A
+    resolved `secret=True` value is then registered for redaction before this
     returns, so it is protected everywhere before the client that carries it
     can even be constructed. A `secret=False` value -- an app id published
     alongside a key -- is never registered: there is nothing in it to redact.
@@ -101,5 +106,6 @@ async def require(
     resolved = resolve(required)
     if isinstance(resolved, Unconfigured):
         return await record_unconfigured_run(database, source_key, resolved, started_at=started_at)
+    install_secret_filter()
     register_secrets(resolved[credential.env] for credential in required if credential.secret)
     return resolved

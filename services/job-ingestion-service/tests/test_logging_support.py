@@ -75,6 +75,30 @@ def test_a_non_string_argument_passes_through_untouched() -> None:
     assert messages == ["fetched 3 pages"]
 
 
+def test_an_exception_argument_is_redacted_when_its_text_carries_a_secret() -> None:
+    secret = "abcdef1234-inside-an-exception"
+    register_secrets([secret])
+    install_secret_filter()
+
+    error = RuntimeError(f"could not reach https://example.test/?key={secret}")
+    with capturing_logs(LOGGER_NAME) as messages:
+        logging.getLogger(f"{LOGGER_NAME}.child").info("request failed: %s", error)
+
+    assert messages == ["request failed: could not reach https://example.test/?key=[redacted]"]
+    assert secret not in "\n".join(messages)
+
+
+def test_an_exception_argument_without_a_secret_passes_through_untouched() -> None:
+    register_secrets(["abcdef1234-not-in-this-exception"])
+    install_secret_filter()
+
+    error = RuntimeError("connection refused")
+    with capturing_logs(LOGGER_NAME) as messages:
+        logging.getLogger(f"{LOGGER_NAME}.child").info("request failed: %s", error)
+
+    assert messages == ["request failed: connection refused"]
+
+
 def test_a_short_value_is_never_registered() -> None:
     short_secret = "1234567"
     assert len(short_secret) < MINIMUM_SECRET_LENGTH
