@@ -44,6 +44,16 @@ board framework:
 | Polymer | The [developer documentation](https://developer.polymer.co/) describes a keyless Public API that "provides unauthenticated access to job listings" and is "intended for job board integrations", which is SkillSync's use. The same page lists the job fields and the paging envelope. | The documentation says the endpoints are rate-limited and publishes no number. SkillSync makes one request per page per configured organisation per run, at most one hundred pages per organisation, with at most three transport attempts per request. | 2026-09-03 |
 | Pinpoint | The [job feeds overview](https://developers.pinpointhq.com/docs/job-feeds-overview) says the feeds exist "to help display your jobs on another website", and the [listing guide](https://help.pinpoint.support/en/articles/5878344-how-to-list-pinpoint-jobs-on-any-website) names job boards as a consumer of the public RSS feed. The [postings JSON reference](https://developers.pinpointhq.com/docs/jobs-json-endpoint) lists every attribute. | No provider ceiling is published. SkillSync makes one request per configured subdomain per run, with at most three transport attempts. | 2026-09-03 |
 
+Three remote-job aggregators pass the gate and run on the aggregator pattern.
+SkillSync's own product already satisfies what each requires: every listing
+links to the original posting and names its source.
+
+| Source | Access, terms, and schema | Rate limit | Checked |
+| --- | --- | --- | --- |
+| Jobicy | The [API documentation](https://jobi.cy/apidocs) describes a keyless JSON endpoint (`/api/v2/remote-jobs`) and states that listings may be used in other products without individual permission, provided Jobicy is credited with a direct link and the canonical job URL is preserved. The same page lists every field. | Jobicy asks for polling at most once an hour and for responses to be cached. SkillSync makes one request per hourly run, with at most three transport attempts. | 2026-09-15 |
+| Remotive | The [API documentation](https://remotive.com/api-documentation) and the legal notice embedded in every response permit sharing the jobs with a link back to the Remotive URL and a Remotive credit, forbid reposting to other job boards, and note that listings are delayed by a day. The response carries every field. | Remotive asks for at most four requests a day and blocks excessive traffic. SkillSync makes one request every six hours, with at most three transport attempts. | 2026-09-15 |
+| Himalayas | The [API documentation](https://himalayas.app/api) describes a keyless JSON endpoint (`/jobs/api`) with cursor pagination, permits use with a link back and Himalayas credited as the source, and forbids reposting to other job boards. The documentation lists every field. | No numeric ceiling is published; the API answers excessive traffic with 429. SkillSync walks at most twenty-five pages of twenty every three hours, honours `Retry-After`, and makes at most three transport attempts per page. | 2026-09-15 |
+
 The remaining tenant-board candidates were reviewed on the same date and did
 not pass. Their entries are under blocked sources below, each with what would
 change the answer. A blocked verification is not a prohibition: several of
