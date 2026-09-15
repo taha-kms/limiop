@@ -1,11 +1,10 @@
 import asyncio
-import json
-from collections.abc import Callable, Iterator
-from pathlib import Path
+from collections.abc import Callable
 
 import httpx2
 import pytest
 
+from job_ingestion.contracts import RawPage, RawRecord
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
 from job_ingestion.himalayas.client import (
     DEFAULT_BASE_URL,
@@ -13,71 +12,60 @@ from job_ingestion.himalayas.client import (
     HimalayasClient,
     HimalayasConfig,
 )
+from tests.boards.fakes import never_sleeps, ok, responding
+from tests.himalayas.support import feed_page, page_body, posting
 
-FIXTURES = Path(__file__).parent / "fixtures"
 FAST_CONFIG = HimalayasConfig(retry_backoff_seconds=0.0)
 
 
-def job_record(
-    guid: str = "https://himalayas.app/companies/acme/jobs/data-engineer",
-) -> dict[str, object]:
-    return {
-        "title": "Data Engineer",
-        "companyName": "Acme",
-        "description": "<p>Build reliable data pipelines.</p>",
-        "applicationLink": guid,
-        "employmentType": "Full Time",
-        "locationRestrictions": ["United States"],
-        "pubDate": 1755513600,
-        "expiryDate": 1794649007,
-        "guid": guid,
-    }
+def job_record(guid: str = "https://himalayas.app/jobs/a") -> dict[str, object]:
+    return posting(guid=guid, applicationLink=guid)
 
 
-def feed_page(
-    records: list[dict[str, object]], *, next_cursor: str | None = None
-) -> dict[str, object]:
-    return {
-        "comments": "cursor pagination",
-        "updatedAt": 1755513600,
-        "offset": 0,
-        "limit": 20,
-        "totalCount": len(records),
-        "nextCursor": next_cursor,
-        "jobs": records,
-    }
+def client(*replies: httpx2.Response | Exception, **overrides: object) -> HimalayasClient:
+    settings: dict[str, object] = {"retry_backoff_seconds": 0.0}
+    settings.update(overrides)
+    return HimalayasClient(
+        HimalayasConfig(**settings),  # type: ignore[arg-type]
+        http_client=responding(*replies),
+        sleeper=never_sleeps,
+    )
 
 
-def client_for(
-    handler: Callable[[httpx2.Request], httpx2.Response],
-    config: HimalayasConfig = FAST_CONFIG,
+def recording_client(
+    *replies: httpx2.Response | Exception, **overrides: object
 ) -> tuple[HimalayasClient, list[float]]:
     slept: list[float] = []
 
     async def sleeper(seconds: float) -> None:
         slept.append(seconds)
 
-    transport = httpx2.MockTransport(handler)
-    http_client = httpx2.AsyncClient(transport=transport)
-    return HimalayasClient(config, http_client=http_client, sleeper=sleeper), slept
+    settings: dict[str, object] = {"retry_backoff_seconds": 0.25}
+    settings.update(overrides)
+    return (
+        HimalayasClient(
+            HimalayasConfig(**settings),  # type: ignore[arg-type]
+            http_client=responding(*replies),
+            sleeper=sleeper,
+        ),
+        slept,
+    )
 
 
-def responding(
-    *responses: httpx2.Response | Exception,
-) -> Callable[[httpx2.Request], httpx2.Response]:
-    remaining: Iterator[httpx2.Response | Exception] = iter(responses)
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        outcome = next(remaining)
-        if isinstance(outcome, Exception):
-            raise outcome
-        return outcome
-
-    return handler
+def fetch(
+    fetcher: HimalayasClient, cursor: str | None = None
+) -> tuple[tuple[RawRecord, ...], str | None]:
+    """One call, so a raises block has a single thing that can throw."""
+    return asyncio.run(fetcher.fetch_page(cursor))
 
 
-def json_response(body: object, status_code: int = 200) -> httpx2.Response:
-    return httpx2.Response(status_code, json=body)
+def collect(fetcher: HimalayasClient) -> list[RawPage]:
+    """One call, so a raises block has a single thing that can throw."""
+
+    async def run() -> list[RawPage]:
+        return [page async for page in fetcher.fetch_pages()]
+
+    return asyncio.run(run())
 
 
 def test_config_defaults_bound_every_loop() -> None:
@@ -111,16 +99,13 @@ def test_config_rejects_unbounded_or_nonsense_limits(
 
 
 def test_client_reports_its_source_key() -> None:
-    client, _ = client_for(responding(json_response(feed_page([]))))
-
-    assert client.source_key == SOURCE_KEY
+    assert client().source_key == SOURCE_KEY
 
 
 def test_fetch_page_returns_untrusted_records_unchanged() -> None:
     record = job_record()
-    client, _ = client_for(responding(json_response(feed_page([record]))))
 
-    records, next_cursor = asyncio.run(client.fetch_page(None))
+    records, next_cursor = fetch(client(ok(feed_page([record]))))
 
     assert records == (record,)
     assert next_cursor is None
@@ -129,13 +114,15 @@ def test_fetch_page_returns_untrusted_records_unchanged() -> None:
 def test_fetch_page_requests_the_configured_limit_with_no_cursor_on_the_first_page() -> None:
     seen: list[httpx2.Request] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return json_response(feed_page([]))
+        return ok(feed_page([]))
 
-    client, _ = client_for(handler)
+    fetcher = HimalayasClient(
+        FAST_CONFIG, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle))
+    )
 
-    asyncio.run(client.fetch_page(None))
+    fetch(fetcher)
 
     assert str(seen[0].url.copy_with(query=None)) == DEFAULT_BASE_URL
     assert dict(seen[0].url.params) == {"limit": "20"}
@@ -144,13 +131,15 @@ def test_fetch_page_requests_the_configured_limit_with_no_cursor_on_the_first_pa
 def test_fetch_page_carries_the_given_cursor() -> None:
     seen: list[httpx2.Request] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return json_response(feed_page([]))
+        return ok(feed_page([]))
 
-    client, _ = client_for(handler)
+    fetcher = HimalayasClient(
+        FAST_CONFIG, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle))
+    )
 
-    asyncio.run(client.fetch_page("some-cursor-value"))
+    fetch(fetcher, "some-cursor-value")
 
     assert dict(seen[0].url.params) == {"limit": "20", "cursor": "some-cursor-value"}
 
@@ -158,116 +147,91 @@ def test_fetch_page_carries_the_given_cursor() -> None:
 def test_fetch_page_honors_the_configured_limit() -> None:
     seen: list[httpx2.Request] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
-        return json_response(feed_page([]))
+        return ok(feed_page([]))
 
-    client, _ = client_for(handler, HimalayasConfig(limit=5, retry_backoff_seconds=0.0))
+    fetcher = HimalayasClient(
+        HimalayasConfig(limit=5, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+    )
 
-    asyncio.run(client.fetch_page(None))
+    fetch(fetcher)
 
     assert dict(seen[0].url.params)["limit"] == "5"
 
 
 def test_fetch_page_reports_the_next_cursor() -> None:
-    client, _ = client_for(
-        responding(json_response(feed_page([job_record()], next_cursor="page-two")))
-    )
-
-    _, next_cursor = asyncio.run(client.fetch_page(None))
+    _, next_cursor = fetch(client(ok(feed_page([job_record()], next_cursor="page-two"))))
 
     assert next_cursor == "page-two"
 
 
 def test_fetch_pages_walks_until_the_feed_ends() -> None:
-    client, _ = client_for(
-        responding(
-            json_response(
-                feed_page([job_record("https://himalayas.app/jobs/a")], next_cursor="cursor-1")
-            ),
-            json_response(
-                feed_page([job_record("https://himalayas.app/jobs/b")], next_cursor=None)
-            ),
-        )
+    fetcher = client(
+        ok(feed_page([job_record("https://himalayas.app/jobs/a")], next_cursor="cursor-1")),
+        ok(feed_page([job_record("https://himalayas.app/jobs/b")], next_cursor=None)),
     )
 
-    async def collect() -> list[str]:
-        guids: list[str] = []
-        async for page in client.fetch_pages():
-            guids.extend(str(record["guid"]) for record in page.records)
-        return guids
+    pages = collect(fetcher)
 
-    assert asyncio.run(collect()) == [
+    assert [job["guid"] for page in pages for job in page.records] == [
         "https://himalayas.app/jobs/a",
         "https://himalayas.app/jobs/b",
     ]
-    assert client.reached_the_end is True
+    assert fetcher.reached_the_end is True
 
 
 def test_fetch_pages_the_second_request_carries_the_first_pages_cursor() -> None:
     seen: list[httpx2.Request] = []
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         seen.append(request)
         if len(seen) == 1:
-            return json_response(feed_page([job_record()], next_cursor="cursor-from-page-one"))
-        return json_response(feed_page([job_record()]))
+            return ok(feed_page([job_record()], next_cursor="cursor-from-page-one"))
+        return ok(feed_page([job_record()]))
 
-    client, _ = client_for(handler)
+    fetcher = HimalayasClient(
+        FAST_CONFIG, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle))
+    )
 
-    async def collect() -> None:
-        async for _ in client.fetch_pages():
-            pass
-
-    asyncio.run(collect())
+    collect(fetcher)
 
     assert "cursor" not in dict(seen[0].url.params)
     assert dict(seen[1].url.params)["cursor"] == "cursor-from-page-one"
 
 
 def test_fetch_pages_stops_at_the_page_limit() -> None:
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        return json_response(feed_page([job_record()], next_cursor="always-more"))
+    fetcher = client(ok(feed_page([job_record()], next_cursor="always-more")), max_pages=1)
 
-    client, _ = client_for(handler, HimalayasConfig(max_pages=1, retry_backoff_seconds=0.0))
+    pages = collect(fetcher)
 
-    async def count() -> int:
-        pages = 0
-        async for _ in client.fetch_pages():
-            pages += 1
-        return pages
-
-    assert asyncio.run(count()) == 1
-    assert client.reached_the_end is False
+    assert len(pages) == 1
+    assert fetcher.reached_the_end is False
 
 
 def test_timeout_becomes_a_transport_failure() -> None:
-    client, _ = client_for(
-        responding(*[httpx2.TimeoutException("read timed out")] * FAST_CONFIG.max_attempts)
-    )
+    fetcher = client(*[httpx2.TimeoutException("read timed out")] * FAST_CONFIG.max_attempts)
 
     with pytest.raises(SourceUnavailableError, match="timed out"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_connection_failure_becomes_a_transport_failure() -> None:
-    client, _ = client_for(
-        responding(*[httpx2.ConnectError("connection refused")] * FAST_CONFIG.max_attempts)
-    )
+    fetcher = client(*[httpx2.ConnectError("connection refused")] * FAST_CONFIG.max_attempts)
 
     with pytest.raises(SourceUnavailableError, match="could not be reached"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_a_transport_failure_is_retried_within_the_attempt_budget() -> None:
-    client, slept = client_for(
-        responding(
-            httpx2.TimeoutException("read timed out"),
-            json_response(feed_page([job_record()])),
-        )
+    fetcher, slept = recording_client(
+        httpx2.TimeoutException("read timed out"),
+        ok(feed_page([job_record()])),
+        retry_backoff_seconds=0.0,
     )
 
-    records, _ = asyncio.run(client.fetch_page(None))
+    records, _ = fetch(fetcher)
 
     assert len(records) == 1
     assert slept == [0.0]
@@ -276,28 +240,36 @@ def test_a_transport_failure_is_retried_within_the_attempt_budget() -> None:
 def test_retrying_stops_at_the_attempt_budget() -> None:
     attempts = 0
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         attempts += 1
         raise httpx2.TimeoutException("read timed out")
 
-    client, slept = client_for(handler, HimalayasConfig(max_attempts=2, retry_backoff_seconds=0.0))
+    slept: list[float] = []
+
+    async def sleeper(seconds: float) -> None:
+        slept.append(seconds)
+
+    fetcher = HimalayasClient(
+        HimalayasConfig(max_attempts=2, retry_backoff_seconds=0.0),
+        http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle)),
+        sleeper=sleeper,
+    )
 
     with pytest.raises(SourceUnavailableError):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
     assert attempts == 2
     assert slept == [0.0]
 
 
 def test_a_single_attempt_never_sleeps() -> None:
-    client, slept = client_for(
-        responding(httpx2.TimeoutException("read timed out")),
-        HimalayasConfig(max_attempts=1, retry_backoff_seconds=5.0),
+    fetcher, slept = recording_client(
+        httpx2.TimeoutException("read timed out"), max_attempts=1, retry_backoff_seconds=5.0
     )
 
     with pytest.raises(SourceUnavailableError):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
     assert slept == []
 
@@ -306,67 +278,64 @@ def test_a_single_attempt_never_sleeps() -> None:
 def test_non_success_status_is_not_retried_and_keeps_its_code(status_code: int) -> None:
     attempts = 0
 
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handle(request: httpx2.Request) -> httpx2.Response:
         nonlocal attempts
         attempts += 1
         return httpx2.Response(status_code, text="nope")
 
-    client, _ = client_for(handler)
+    fetcher = HimalayasClient(
+        FAST_CONFIG, http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handle))
+    )
 
     with pytest.raises(SourceResponseError) as error:
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
     assert error.value.status_code == status_code
     assert attempts == 1
 
 
 def test_a_body_that_is_not_json_is_rejected() -> None:
-    client, _ = client_for(responding(httpx2.Response(200, text="<html>maintenance</html>")))
+    fetcher = client(httpx2.Response(200, text="<html>maintenance</html>"))
 
     with pytest.raises(SourceResponseError, match="not valid JSON"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_a_body_that_is_not_an_object_is_rejected() -> None:
-    client, _ = client_for(responding(json_response([job_record()])))
+    fetcher = client(ok([job_record()]))
 
     with pytest.raises(SourceResponseError, match="not a JSON object"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_a_body_without_a_jobs_array_is_rejected() -> None:
-    client, _ = client_for(responding(json_response({"nextCursor": None})))
+    fetcher = client(ok({"nextCursor": None}))
 
     with pytest.raises(SourceResponseError, match="no jobs array"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_a_record_that_is_not_an_object_is_rejected() -> None:
-    client, _ = client_for(responding(json_response({"jobs": [job_record(), "surprise"]})))
+    fetcher = client(ok({"jobs": [job_record(), "surprise"]}))
 
     with pytest.raises(SourceResponseError, match="record 1 is not a JSON object"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_a_missing_next_cursor_ends_pagination() -> None:
-    client, _ = client_for(responding(json_response({"jobs": [job_record()]})))
-
-    _, next_cursor = asyncio.run(client.fetch_page(None))
+    _, next_cursor = fetch(client(ok({"jobs": [job_record()]})))
 
     assert next_cursor is None
 
 
 def test_an_unusable_next_cursor_ends_pagination() -> None:
-    client, _ = client_for(responding(json_response({"jobs": [], "nextCursor": 42})))
-
-    _, next_cursor = asyncio.run(client.fetch_page(None))
+    _, next_cursor = fetch(client(ok({"jobs": [], "nextCursor": 42})))
 
     assert next_cursor is None
 
 
 def test_an_injected_http_client_is_left_open() -> None:
-    transport = httpx2.MockTransport(lambda request: json_response(feed_page([])))
-    http_client = httpx2.AsyncClient(transport=transport)
+    http_client = responding(ok(feed_page([])))
 
     async def exercise() -> bool:
         async with HimalayasClient(FAST_CONFIG, http_client=http_client):
@@ -379,27 +348,26 @@ def test_an_injected_http_client_is_left_open() -> None:
 
 def test_an_owned_http_client_is_closed() -> None:
     async def exercise() -> HimalayasClient:
-        async with HimalayasClient(FAST_CONFIG) as client:
-            return client
+        async with HimalayasClient(FAST_CONFIG) as fetcher:
+            return fetcher
 
-    client = asyncio.run(exercise())
+    fetcher = asyncio.run(exercise())
 
-    assert client._http_client.is_closed is True
+    assert fetcher._http_client.is_closed is True
 
 
 def test_the_default_client_targets_the_public_feed() -> None:
     async def exercise() -> str:
-        async with HimalayasClient() as client:
-            return client.config.base_url
+        async with HimalayasClient() as fetcher:
+            return fetcher.config.base_url
 
     assert asyncio.run(exercise()) == DEFAULT_BASE_URL
 
 
 def test_a_real_feed_page_shape_is_accepted() -> None:
-    body = json.loads((FIXTURES / "page_one.json").read_text())
-    client, _ = client_for(responding(json_response(body)))
+    body = page_body("page_one.json")
 
-    records, next_cursor = asyncio.run(client.fetch_page(None))
+    records, next_cursor = fetch(client(ok(body)))
 
     assert records[0]["companyName"] == "abridge"
     assert next_cursor == body["nextCursor"]
@@ -411,47 +379,46 @@ def rate_limited(retry_after: str | None = None) -> httpx2.Response:
 
 
 def test_a_rate_limit_that_lifts_is_retried_and_the_page_is_read() -> None:
-    client, slept = client_for(responding(rate_limited(), json_response(feed_page([job_record()]))))
+    fetcher, slept = recording_client(
+        rate_limited(), ok(feed_page([job_record()])), retry_backoff_seconds=0.0
+    )
 
-    records, _ = asyncio.run(client.fetch_page(None))
+    records, _ = fetch(fetcher)
 
     assert len(records) == 1
-    assert slept == [FAST_CONFIG.retry_backoff_seconds]
+    assert slept == [0.0]
 
 
 def test_a_rate_limit_that_does_not_lift_still_fails_the_run() -> None:
-    client, _ = client_for(responding(*[rate_limited()] * FAST_CONFIG.max_attempts))
+    fetcher = client(*[rate_limited()] * FAST_CONFIG.max_attempts)
 
     with pytest.raises(SourceUnavailableError, match="rate limited"):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
 
 
 def test_retry_after_is_waited_rather_than_the_default_backoff() -> None:
-    client, slept = client_for(
-        responding(rate_limited("3"), json_response(feed_page([job_record()])))
-    )
+    fetcher, slept = recording_client(rate_limited("3"), ok(feed_page([job_record()])))
 
-    asyncio.run(client.fetch_page(None))
+    fetch(fetcher)
 
     assert slept == [3.0]
 
 
 def test_a_malformed_retry_after_falls_back_to_the_configured_backoff() -> None:
-    config = HimalayasConfig(retry_backoff_seconds=0.25)
-    client, slept = client_for(
-        responding(rate_limited("whenever"), json_response(feed_page([job_record()]))), config
+    fetcher, slept = recording_client(
+        rate_limited("whenever"), ok(feed_page([job_record()])), retry_backoff_seconds=0.25
     )
 
-    asyncio.run(client.fetch_page(None))
+    fetch(fetcher)
 
     assert slept == [0.25]
 
 
 def test_a_status_that_is_not_a_rate_limit_is_still_not_retried() -> None:
-    client, slept = client_for(responding(json_response({}, status_code=500)))
+    fetcher, slept = recording_client(httpx2.Response(500, json={}))
 
     with pytest.raises(SourceResponseError):
-        asyncio.run(client.fetch_page(None))
+        fetch(fetcher)
     assert slept == []
 
 
@@ -459,15 +426,10 @@ def test_a_rate_limit_part_way_through_pagination_is_retried_and_the_walk_contin
     """The rate limit lifts within the attempt budget, so it costs a retry
     rather than the run: the same behavior `fetch_page` already covers, now
     exercised across a page boundary."""
+    fetcher = client(
+        ok(feed_page([job_record()], next_cursor="cursor-1")),
+        rate_limited(),
+        ok(feed_page([job_record()])),
+    )
 
-    async def collect() -> int:
-        client, _ = client_for(
-            responding(
-                json_response(feed_page([job_record()], next_cursor="cursor-1")),
-                rate_limited(),
-                json_response(feed_page([job_record()])),
-            )
-        )
-        return len([page async for page in client.fetch_pages()])
-
-    assert asyncio.run(collect()) == 2
+    assert len(collect(fetcher)) == 2

@@ -31,12 +31,13 @@ def _coerce_location_restrictions(value: object) -> object:
     Most postings carry a list of country or region names. A blank feed sends
     `null` for a posting with no restriction on record, and a single
     restriction has been observed collapsed to a bare string rather than a
-    one-element list.
+    one-element list. Normalized to a single return so every path leaves this
+    function through the same statement.
     """
     if value is None:
-        return ()
-    if isinstance(value, str):
-        return (value,)
+        value = ()
+    elif isinstance(value, str):
+        value = (value,)
     return value
 
 

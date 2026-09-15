@@ -1,6 +1,4 @@
-import json
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,24 +8,11 @@ from job_ingestion.errors import RecordValidationError
 from job_ingestion.himalayas.normalizer import HimalayasNormalizer, to_employment_type
 from job_ingestion.himalayas.records import HimalayasValidator
 from job_ingestion.schemas import NormalizedJob
-
-FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def page_records(name: str = "page_one.json") -> list[dict[str, Any]]:
-    body = json.loads((FIXTURES / name).read_text())
-    records: list[dict[str, Any]] = body["jobs"]
-    return records
-
-
-def raw_record(**overrides: Any) -> dict[str, Any]:
-    record = page_records()[0].copy()
-    record.update(overrides)
-    return record
+from tests.himalayas.support import page_records, posting
 
 
 def normalize(**overrides: Any) -> NormalizedJob:
-    raw = raw_record(**overrides)
+    raw = posting(**overrides)
     return HimalayasNormalizer().normalize(HimalayasValidator().validate(raw), raw)
 
 
@@ -45,7 +30,7 @@ def test_a_representative_record_becomes_a_canonical_job() -> None:
 
 
 def test_normalization_is_deterministic() -> None:
-    raw = raw_record()
+    raw = posting()
     record = HimalayasValidator().validate(raw)
     normalizer = HimalayasNormalizer()
 
@@ -56,7 +41,7 @@ def test_normalization_is_deterministic() -> None:
 
 
 def test_provenance_identifies_the_external_record() -> None:
-    raw = raw_record()
+    raw = posting()
     job = normalize()
 
     assert job.provenance.source_key == "himalayas"
@@ -87,7 +72,7 @@ def test_a_rejected_record_is_still_identifiable() -> None:
     with pytest.raises(RecordValidationError) as error:
         normalize(description="<br>")
 
-    assert error.value.source_job_id == raw_record()["guid"]
+    assert error.value.source_job_id == posting()["guid"]
     assert error.value.source_key == "himalayas"
 
 
@@ -131,7 +116,7 @@ def test_no_location_restrictions_leaves_the_location_absent() -> None:
 
 
 def test_a_record_without_a_pub_date_has_no_publication_date() -> None:
-    record = raw_record()
+    record = posting()
     del record["pubDate"]
 
     job = HimalayasNormalizer().normalize(HimalayasValidator().validate(record), record)
@@ -140,7 +125,7 @@ def test_a_record_without_a_pub_date_has_no_publication_date() -> None:
 
 
 def test_a_record_without_an_expiry_date_has_no_expiration_date() -> None:
-    record = raw_record()
+    record = posting()
     del record["expiryDate"]
 
     job = HimalayasNormalizer().normalize(HimalayasValidator().validate(record), record)
@@ -158,7 +143,7 @@ def test_expiry_before_publication_drops_the_expiry_but_keeps_the_record() -> No
 
 
 def test_expiry_without_publication_is_kept() -> None:
-    record = raw_record(expiryDate=500)
+    record = posting(expiryDate=500)
     del record["pubDate"]
 
     job = HimalayasNormalizer().normalize(HimalayasValidator().validate(record), record)
