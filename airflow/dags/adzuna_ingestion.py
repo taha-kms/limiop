@@ -5,12 +5,16 @@ deduplication, and persistence live in `job_ingestion` and are called through
 one entry point, so the pipeline stays testable without Airflow and Airflow
 stays free of business logic.
 
-Adzuna licenses 250 calls a day, and the client reserves every call against
-that budget before making it, so nothing here can exceed it. What this file
-decides is whether the schedule fits: six runs a day at the client's default
-of four pages per country would make 6 x 12 x 4 = 288 calls, and the sixth run
-would be cut short every day. Three pages per country is 36 calls a run and
-216 a day, under the quota with room for the odd retried run.
+Adzuna publishes daily, weekly, and monthly ceilings, and the monthly one
+binds: the client reserves every call against a daily budget of 80 derived
+from it (`job_ingestion.adzuna.source`), so nothing here can exceed any of
+the three. What this file decides is whether the schedule fits under that
+budget: two runs a day at three pages per country over twelve countries is
+36 calls a run and 72 a day, eight under the budget. That headroom does not
+absorb a retried run: a retry after a mid-walk failure is a second run's
+worth of calls, and the reservation cuts it short at the budget rather than
+letting it through. The retried run stores what it fetched before the cut,
+and the next scheduled run picks up the rest.
 
 The source stays unconfigured in production until the "Jobs by Adzuna"
 attribution ships on the listing (#367): a run without credentials succeeds,
@@ -28,8 +32,8 @@ from job_ingestion.credentials import is_unconfigured
 logger = logging.getLogger(__name__)
 
 START_DATE = datetime(2026, 1, 1)
-# Six runs a day, offset from the other feeds' minutes.
-SCHEDULE = "40 */4 * * *"
+# Two runs a day, offset from the other feeds' minutes.
+SCHEDULE = "40 */12 * * *"
 # Well above what 36 pages of 50 can return, so the page budget, not the
 # record budget, is what bounds a run.
 MAX_RECORDS = 2000

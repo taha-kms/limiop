@@ -11,13 +11,18 @@ from pathlib import Path
 import pytest
 from airflow.dag_processing.dagbag import DagBag
 from airflow.sdk import DAG
-from job_ingestion.adzuna import DAILY_QUOTA
+from job_ingestion.adzuna.source import (
+    DAILY_QUOTA,
+    MONTHLY_CEILING,
+    PUBLISHED_DAILY_CEILING,
+    WEEKLY_CEILING,
+)
 from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFailure
 
 DAGS_DIR = Path(__file__).parents[1] / "dags"
 DAG_ID = "adzuna_ingestion"
-# "40 */4 * * *": every four hours.
-RUNS_PER_DAY = 6
+# "40 */12 * * *": every twelve hours.
+RUNS_PER_DAY = 2
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +38,7 @@ def dag(dagbag: DagBag) -> DAG:
 
 
 def test_the_dag_is_one_thin_task_on_a_four_hourly_schedule(dag: DAG) -> None:
-    assert dag.schedule == "40 */4 * * *"
+    assert dag.schedule == "40 */12 * * *"
     assert dag.catchup is False
     assert dag.max_active_runs == 1
     assert [task.task_id for task in dag.tasks] == ["ingest"]
@@ -50,15 +55,18 @@ def test_the_dag_delegates_to_reusable_application_code() -> None:
     assert "from job_ingestion.adzuna import AdzunaConfig, ingest_adzuna" in source
 
 
-def test_six_runs_a_day_fit_under_the_daily_quota(dag: DAG) -> None:
-    """Six runs at the client's default page budget would make 288 calls a day
-    against a quota of 250 and the reservation would cut the sixth run short
-    every day; the DAG's own page budget is what keeps the schedule under it."""
+def test_the_schedule_fits_under_every_published_ceiling(dag: DAG) -> None:
+    """The ledger counts days, so the daily budget has to be one that also
+    fits the week and the month; the schedule then has to fit the budget.
+    Asserted against the real config and the three published numbers rather
+    than a literal, so changing any one of them re-does the arithmetic."""
     config = dag.get_task("ingest").python_callable.__globals__["CONFIG"]
 
     assert config.pages_per_country == 3
-    assert config.calls_per_run * RUNS_PER_DAY == 216
-    assert config.calls_per_run * RUNS_PER_DAY < DAILY_QUOTA.per_day
+    assert config.calls_per_run * RUNS_PER_DAY <= DAILY_QUOTA.per_day
+    assert DAILY_QUOTA.per_day <= PUBLISHED_DAILY_CEILING
+    assert DAILY_QUOTA.per_day * 7 <= WEEKLY_CEILING
+    assert DAILY_QUOTA.per_day * 31 <= MONTHLY_CEILING
 
 
 def test_an_unconfigured_source_is_a_warning_not_a_task_failure(

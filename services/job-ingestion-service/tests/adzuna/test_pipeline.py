@@ -18,6 +18,7 @@ from sqlalchemy import select
 from job_ingestion import logging_support
 from job_ingestion.adzuna.client import AdzunaClient, AdzunaConfig
 from job_ingestion.adzuna.pipeline import build_run, ingest_adzuna
+from job_ingestion.adzuna.source import DAILY_QUOTA
 from job_ingestion.config import Settings
 from job_ingestion.contracts import IngestionStage, IngestionSummary
 from job_ingestion.database import Database
@@ -176,7 +177,7 @@ def test_a_spent_quota_stops_the_run_cleanly_before_any_request(
     database_url: PostgresDsn,
 ) -> None:
     async def exercise(database: Database) -> None:
-        await spend(database, 250)
+        await spend(database, DAILY_QUOTA.per_day)
 
         summary, requests = await ingest(database_url, ok(page_body("gb")))
 
@@ -198,7 +199,7 @@ def test_a_spent_quota_stops_the_run_cleanly_before_any_request(
 @pytest.mark.usefixtures("configured")
 def test_a_quota_hit_mid_walk_keeps_what_was_already_fetched(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
-        await spend(database, 249)
+        await spend(database, DAILY_QUOTA.per_day - 1)
 
         summary, requests = await ingest(database_url, ok(page_body("gb")), ok(page_body("de")))
 

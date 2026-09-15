@@ -96,9 +96,12 @@ hits per week, 2500 hits per month".
 
 Consequences the adapter must state:
 
-- The daily quota is the binding limit: 250 calls × 50 results is at most
-  12,500 postings a day across all countries. The adapter takes a configured
-  country list and a per-country page budget and stops at the quota.
+- The monthly ceiling is the binding limit: 2,500 calls over a 31-day month
+  is 80 a day, tighter than the weekly 1,000 (142 a day) and the daily 250.
+  The daily ledger only counts days, so it enforces 80 calls a day, which is
+  at most 4,000 postings a day across all countries. The adapter takes a
+  configured country list and a per-country page budget and stops at the
+  quota.
 - `description` is a snippet, not the posting. The canonical contract requires
   a plain-text description and the deduplicator compares descriptions across
   sources. An Adzuna record is stored with its snippet, marked in provenance

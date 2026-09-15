@@ -11,7 +11,12 @@ from job_ingestion.adzuna.client import (
     AdzunaConfig,
     search_results,
 )
-from job_ingestion.adzuna.source import DEFAULT_BASE_URL, DEFAULT_COUNTRIES, SOURCE_KEY
+from job_ingestion.adzuna.source import (
+    DAILY_QUOTA,
+    DEFAULT_BASE_URL,
+    DEFAULT_COUNTRIES,
+    SOURCE_KEY,
+)
 from job_ingestion.contracts import RawPage
 from job_ingestion.database import Database
 from job_ingestion.errors import QuotaExceeded, SourceResponseError, SourceUnavailableError
@@ -181,7 +186,7 @@ def test_the_quota_refusal_propagates_after_the_pages_already_yielded(
     database_url: PostgresDsn,
 ) -> None:
     async def exercise(database: Database) -> None:
-        await spend(database, 248)
+        await spend(database, DAILY_QUOTA.per_day - 2)
         fetcher, requests = client(database, full_page("gb"), full_page("gb"), full_page("de"))
         pages: list[RawPage] = []
 
@@ -191,8 +196,8 @@ def test_the_quota_refusal_propagates_after_the_pages_already_yielded(
 
         assert len(pages) == 2
         assert len(requests) == 2
-        assert error.value.per_day == 250
-        assert await spent(database) == 250
+        assert error.value.per_day == DAILY_QUOTA.per_day
+        assert await spent(database) == DAILY_QUOTA.per_day
         assert fetcher.reached_the_end is False
 
     run_database_test(database_url, exercise)
@@ -201,7 +206,7 @@ def test_the_quota_refusal_propagates_after_the_pages_already_yielded(
 @pytest.mark.integration
 def test_a_spent_budget_makes_no_request_at_all(database_url: PostgresDsn) -> None:
     async def exercise(database: Database) -> None:
-        await spend(database, 250)
+        await spend(database, DAILY_QUOTA.per_day)
         fetcher, requests = client(database, full_page("gb"))
 
         with pytest.raises(QuotaExceeded):
