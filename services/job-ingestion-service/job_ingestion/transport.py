@@ -8,10 +8,13 @@ every client that needs it.
 """
 
 from collections.abc import Awaitable, Callable, Mapping
+from typing import Any
 
 import httpx2
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from job_ingestion.errors import SourceUnavailableError
+from job_ingestion.errors import QuotaExceeded, SourceUnavailableError
+from job_ingestion.quota import Quota, reserve
 from job_ingestion.rate_limit import is_rate_limited, retry_delay
 
 
@@ -70,3 +73,30 @@ async def retrying_get(
         if last_failure is not None
         else SourceUnavailableError(source_key, f"{subject} could not be fetched")
     )
+
+
+async def reserving_get(
+    session: AsyncSession,
+    source_key: str,
+    quota: Quota,
+    http_client: httpx2.AsyncClient,
+    url: str,
+    **kwargs: Any,
+) -> httpx2.Response:
+    """GET `url`, but only after reserving one call against the daily quota.
+
+    A retry inside the `retrying_get` this delegates to is not a second call
+    to reserve: a rate-limited response and its retry are the same logical
+    request to the provider, asked twice only because the provider did not
+    answer the first time, and reserving again for it would charge the
+    source's budget for a call it never completed.
+
+    The reservation is written to `session` but not committed here: the
+    caller owns the transaction, and committing is its job. A client should
+    commit after every reserved call, not batch several before committing --
+    otherwise a crash mid-run loses the record of calls the provider already
+    received, and the next run would under-count what was actually spent.
+    """
+    if not await reserve(session, source_key, quota=quota):
+        raise QuotaExceeded(source_key, quota.per_day)
+    return await retrying_get(http_client, url, source_key=source_key, **kwargs)

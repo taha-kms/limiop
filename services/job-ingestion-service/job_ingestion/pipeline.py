@@ -34,7 +34,7 @@ from job_ingestion.contracts import (
     RecordOutcome,
 )
 from job_ingestion.database import Database
-from job_ingestion.errors import IngestionError, RecordValidationError
+from job_ingestion.errors import IngestionError, QuotaExceeded, RecordValidationError
 from job_ingestion.persistence import SourceRegistration, persist_job, stored_posting_counts
 from job_ingestion.schemas import NormalizedJob
 from job_ingestion.skills import (
@@ -167,6 +167,12 @@ class IngestionRun[ProviderRecordT]:
                             failures.append(rejection.as_failure())
                     if stopped_at_budget:
                         break
+            except QuotaExceeded as error:
+                # Treated exactly like reaching the record budget: the source
+                # is not exhausted, and refusing a licensed call is not a
+                # record this run failed to process.
+                stopped_at_budget = True
+                logger.info("%s stopped at its daily call quota", error.source_key)
             except IngestionError as error:
                 failures.append(RecordFailure(stage=IngestionStage.FETCH, reason=error.message))
 
