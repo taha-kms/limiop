@@ -5,7 +5,7 @@ evidence and the date it was checked, and must be rechecked before implementatio
 
 ## The gate
 
-Before writing an adapter, its issue must answer **yes** to all four questions:
+Before writing an adapter, its issue must answer **yes** to all five questions:
 
 1. **Documented access:** Is there an official, documented access path that the
    source permits SkillSync to use?
@@ -17,6 +17,16 @@ Before writing an adapter, its issue must answer **yes** to all four questions:
    down? Record the provider's published limit. If a public endpoint publishes
    no ceiling, state a conservative project limit instead and record that the
    provider limit is unpublished.
+5. **Obtainable credentials:** Can SkillSync obtain the required key or
+   agreement on published terms, at what cost, and does the agreement permit
+   storing the postings and displaying them with attribution? A source that
+   needs a key is admitted only when all three answers are on the record in
+   its row.
+
+The "terms silent" rule is unchanged by question five: a documented feed whose
+terms say nothing about third parties is blocked whether or not it needs a
+key; a key or a licence raises the evidence available, it never lowers the
+bar.
 
 The review must link the official access documentation and terms, state the
 answer to each question, and include an ISO check date. One "no" or an answer
