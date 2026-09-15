@@ -2,6 +2,7 @@ import pytest
 
 from job_ingestion.errors import (
     IngestionError,
+    QuotaExceeded,
     RecordValidationError,
     SourceResponseError,
     SourceUnavailableError,
@@ -66,3 +67,12 @@ def test_a_record_failure_is_not_confused_with_a_transport_failure() -> None:
 
     with pytest.raises(IngestionError):
         raise SourceUnavailableError(SOURCE_KEY, "read timed out")
+
+
+def test_a_quota_failure_names_the_source_and_the_budget() -> None:
+    error = QuotaExceeded(SOURCE_KEY, 250)
+
+    assert isinstance(error, IngestionError)
+    assert error.source_key == SOURCE_KEY
+    assert error.per_day == 250
+    assert str(error) == "arbeitnow: exceeded its daily quota of 250 calls"
