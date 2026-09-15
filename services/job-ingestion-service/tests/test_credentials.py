@@ -1,7 +1,6 @@
 """Resolving source credentials from the environment."""
 
 import asyncio
-import logging
 from collections.abc import Awaitable, Callable, Iterable
 from datetime import UTC, datetime
 
@@ -14,6 +13,7 @@ from job_ingestion import credentials, logging_support
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.credentials import Credential, Unconfigured, require, resolve
 from job_ingestion.database import Database
+from tests.support.logs import preserving_secret_filter
 
 APP_ID = Credential(env="SKILLSYNC_FAKE_APP_ID", secret=False)
 APP_KEY = Credential(env="SKILLSYNC_FAKE_APP_KEY")
@@ -99,7 +99,12 @@ def test_require_returns_the_resolved_mapping_when_everything_is_set(
 
         assert resolved == {"SKILLSYNC_FAKE_APP_ID": "id-1"}
 
-    asyncio.run(test())
+    # `require` installs the real filter as a side effect of every successful
+    # resolve, even here where nothing resolved is a secret -- see
+    # `preserving_secret_filter`'s docstring for why that has to be undone
+    # completely rather than partially.
+    with preserving_secret_filter():
+        asyncio.run(test())
 
 
 def test_require_registers_a_resolved_secret_value_for_redaction(
@@ -108,15 +113,6 @@ def test_require_registers_a_resolved_secret_value_for_redaction(
     monkeypatch.setattr(logging_support, "_registered_secrets", set())
     monkeypatch.setenv("SKILLSYNC_FAKE_APP_ID", "id-not-secret-value")
     monkeypatch.setenv("SKILLSYNC_FAKE_APP_KEY", "key-is-a-secret-value")
-    # `require` installs the real filter as a side effect (see the test
-    # below). This test does not force `_installed` back to `False`, so it
-    # triggers at most the one legitimate, idempotent installation the rest of
-    # the suite already depends on staying in place -- but if it is the first
-    # test in the process to reach that point, it is also the first to touch
-    # process-global logging state, so the factory and the root logger's
-    # filters are snapshotted and restored to leave no trace either way.
-    original_factory = logging.getLogRecordFactory()
-    original_root_filters = list(logging.getLogger().filters)
 
     async def test() -> None:
         resolved = await require(
@@ -130,14 +126,11 @@ def test_require_registers_a_resolved_secret_value_for_redaction(
             "SKILLSYNC_FAKE_APP_KEY": "key-is-a-secret-value",
         }
 
-    try:
+    with preserving_secret_filter():
         asyncio.run(test())
 
         assert "key-is-a-secret-value" in logging_support._registered_secrets
         assert "id-not-secret-value" not in logging_support._registered_secrets
-    finally:
-        logging.setLogRecordFactory(original_factory)
-        logging.getLogger().filters = original_root_filters
 
 
 def test_require_installs_the_secret_filter_before_registering(
