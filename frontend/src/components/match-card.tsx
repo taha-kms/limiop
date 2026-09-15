@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import type { JobMatch, MatchedSkill } from "@/lib/api/matches";
 
+import { SourceLine } from "./source-line";
+
 function SkillList({
   skills,
   label,
@@ -58,6 +60,8 @@ export function MatchCard({ match }: { match: JobMatch }) {
         {job.company.display_name}
         {job.location ? ` · ${job.location}` : ""}
       </p>
+
+      <SourceLine sources={job.sources} />
 
       <SkillList skills={matched} label="You have" tone="matched" />
       <SkillList skills={missing} label="This role also asks for" tone="missing" />

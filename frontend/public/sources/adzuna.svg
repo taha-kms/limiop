@@ -1,0 +1,11 @@
+<!--
+  Placeholder wordmark. Adzuna's terms (checked 2026-09-15) require the
+  logo to be shown alongside the "Jobs by Adzuna" attribution; the official
+  asset is not in this repo. This plain-text rendering, in the brand colour
+  #24a0ed, stands in for it and must be replaced with Adzuna's official logo
+  file before the Adzuna source is enabled in production, per the terms'
+  trademark clause.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 84 16" height="16" role="img" aria-label="Adzuna">
+  <text x="0" y="12" font-family="Arial, Helvetica, sans-serif" font-size="13" font-weight="700" fill="#24a0ed">Adzuna</text>
+</svg>

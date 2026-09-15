@@ -21,6 +21,7 @@ function job(id: string, title = `Job ${id}`): JobSummary {
     employment_type: "full-time",
     application_url: `https://acme.example.com/jobs/${id}`,
     published_at: "2026-08-01T12:00:00Z",
+    sources: [],
   };
 }
 
@@ -51,6 +52,32 @@ describe("JobList", () => {
     render(<JobList initial={page([job("1"), job("2")])} filters={{}} />);
 
     expect(screen.getAllByRole("article")).toHaveLength(2);
+  });
+
+  it("shows a card's source line", () => {
+    render(
+      <JobList
+        initial={page([
+          job("1"),
+          {
+            ...job("2"),
+            sources: [
+              {
+                key: "arbeitnow",
+                display_name: "Arbeitnow",
+                url: "https://arbeitnow.example.com/jobs/2",
+              },
+            ],
+          },
+        ])}
+        filters={{}}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /^Arbeitnow/ })).toHaveAttribute(
+      "href",
+      "https://arbeitnow.example.com/jobs/2",
+    );
   });
 
   it("says so when nothing matches, rather than showing an empty page", () => {

@@ -32,6 +32,16 @@ test("the catalogue lists every seeded posting, newest first", async ({ page }) 
   await expect(titles).toHaveText([SEEDED.internship, SEEDED.remote, SEEDED.hybrid, SEEDED.onsite]);
 });
 
+test("the listing shows where each job was found", async ({ page }) => {
+  await page.goto("/jobs");
+
+  const card = page.getByRole("article").filter({ hasText: SEEDED.remote });
+  await expect(card.getByRole("link", { name: /^Seeded catalogue/ })).toHaveAttribute(
+    "href",
+    "https://seed.example.com/postings/3",
+  );
+});
+
 test.describe("without JavaScript", () => {
   // Set through test.use rather than browser.newContext, which would build a
   // context that does not inherit baseURL and send every goto nowhere.
@@ -112,6 +122,11 @@ test("a job opens from the listing and carries its application link", async ({ p
 test("a job names where it was found and links to the original", async ({ page }) => {
   await page.goto("/jobs");
   await openJob(page, SEEDED.remote).click();
+
+  // The listing carries the same "Seeded catalogue" link text on every card,
+  // so a query for it made mid-navigation can still see the listing's four
+  // matches. Waiting for the detail heading settles on the new page first.
+  await expect(page.getByRole("heading", { level: 1, name: SEEDED.remote })).toBeVisible();
 
   const source = page.getByRole("link", { name: /Seeded catalogue/ });
   await expect(source).toHaveAttribute("href", "https://seed.example.com/postings/3");

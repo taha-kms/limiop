@@ -6,6 +6,8 @@ import { InvalidRequestError, JobNotFoundError } from "@/lib/api/errors";
 import type { JobDetail } from "@/lib/api/types";
 import { employmentLabel, publishedLabel, workplaceLabel } from "@/lib/format";
 
+import { SourceLine } from "@/components/source-line";
+
 export const dynamic = "force-dynamic";
 
 const STATUS_NOTICE: Record<string, string> = {
@@ -102,21 +104,9 @@ export default async function JobDetailPage(props: PageProps<"/jobs/[jobId]">) {
       {job.sources.length > 0 ? (
         <footer className="border-t border-slate-200 pt-4 text-sm dark:border-slate-800">
           <h2 className="font-medium">Where this was found</h2>
-          <ul className="mt-2 flex flex-col gap-1">
-            {job.sources.map((source) => (
-              <li key={source.key}>
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer nofollow external"
-                  className="text-blue-700 underline dark:text-blue-400"
-                >
-                  {source.display_name}
-                  <span className="sr-only">, original posting, opens in a new tab</span>
-                </a>
-              </li>
-            ))}
-          </ul>
+          <div className="mt-2">
+            <SourceLine sources={job.sources} />
+          </div>
         </footer>
       ) : null}
     </main>

@@ -58,6 +58,7 @@ export interface JobSummary {
   employment_type: EmploymentType;
   application_url: string;
   published_at: string | null;
+  sources: SourceAttribution[];
 }
 
 /** One job, opened. Carries the whole description and where it was found. */
