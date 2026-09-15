@@ -9,6 +9,7 @@ from platform_db.models import IngestionRun
 from pydantic import PostgresDsn
 from sqlalchemy import delete, select
 
+from job_ingestion import logging_support
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.credentials import Credential, Unconfigured, require, resolve
 from job_ingestion.database import Database
@@ -98,6 +99,31 @@ def test_require_returns_the_resolved_mapping_when_everything_is_set(
         assert resolved == {"SKILLSYNC_FAKE_APP_ID": "id-1"}
 
     asyncio.run(test())
+
+
+def test_require_registers_a_resolved_secret_value_for_redaction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging_support, "_registered_secrets", set())
+    monkeypatch.setenv("SKILLSYNC_FAKE_APP_ID", "id-not-secret-value")
+    monkeypatch.setenv("SKILLSYNC_FAKE_APP_KEY", "key-is-a-secret-value")
+
+    async def test() -> None:
+        resolved = await require(
+            _unreachable_database(),
+            "fake",
+            (APP_ID, APP_KEY),
+            started_at=datetime.now(UTC),
+        )
+        assert resolved == {
+            "SKILLSYNC_FAKE_APP_ID": "id-not-secret-value",
+            "SKILLSYNC_FAKE_APP_KEY": "key-is-a-secret-value",
+        }
+
+    asyncio.run(test())
+
+    assert "key-is-a-secret-value" in logging_support._registered_secrets
+    assert "id-not-secret-value" not in logging_support._registered_secrets
 
 
 def _unreachable_database() -> Database:

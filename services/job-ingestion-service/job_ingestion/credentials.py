@@ -21,6 +21,7 @@ from os import environ as os_environ
 
 from job_ingestion.contracts import IngestionSummary
 from job_ingestion.database import Database
+from job_ingestion.logging_support import register_secrets
 from job_ingestion.runs import record_unconfigured_run
 
 
@@ -91,8 +92,14 @@ async def require(
     so the unconfigured path returns the same type the entry point already
     returns on every other path, and the caller never branches on `Unconfigured`
     itself.
+
+    A resolved `secret=True` value is registered for log redaction before this
+    returns, so it is protected everywhere before the client that carries it
+    can even be constructed. A `secret=False` value -- an app id published
+    alongside a key -- is never registered: there is nothing in it to redact.
     """
     resolved = resolve(required)
     if isinstance(resolved, Unconfigured):
         return await record_unconfigured_run(database, source_key, resolved, started_at=started_at)
+    register_secrets(resolved[credential.env] for credential in required if credential.secret)
     return resolved
