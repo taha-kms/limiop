@@ -74,6 +74,7 @@ def test_a_listed_job_carries_what_a_card_needs(
     assert item["employment_type"] == "full-time"
     assert item["application_url"] == "https://acme.example.com/jobs/1"
     assert item["published_at"] is not None
+    assert item["excerpt"] == "Build reliable data pipelines. And a second paragraph."
     assert item["sources"] == [
         {
             "key": "arbeitnow",
