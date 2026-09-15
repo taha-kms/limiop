@@ -46,7 +46,14 @@ describe("SourceLine", () => {
   it("separates several sources", () => {
     render(
       <SourceLine
-        sources={[source(), source({ key: "jobicy", display_name: "Jobicy", url: "https://jobicy.example.com/jobs/9" })]}
+        sources={[
+          source(),
+          source({
+            key: "jobicy",
+            display_name: "Jobicy",
+            url: "https://jobicy.example.com/jobs/9",
+          }),
+        ]}
       />,
     );
 

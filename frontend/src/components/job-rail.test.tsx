@@ -48,7 +48,11 @@ describe("JobRail", () => {
         jobs={[
           job("1", {
             sources: [
-              { key: "arbeitnow", display_name: "Arbeitnow", url: "https://arbeitnow.example.com/jobs/1" },
+              {
+                key: "arbeitnow",
+                display_name: "Arbeitnow",
+                url: "https://arbeitnow.example.com/jobs/1",
+              },
             ],
           }),
         ]}
