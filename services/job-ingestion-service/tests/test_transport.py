@@ -9,11 +9,14 @@ from platform_db.models import SourceQuotaUsage
 from pydantic import PostgresDsn
 from sqlalchemy import delete
 
+from job_ingestion import logging_support
 from job_ingestion.database import Database
 from job_ingestion.errors import QuotaExceeded, SourceUnavailableError
+from job_ingestion.logging_support import install_secret_filter, register_secrets
 from job_ingestion.quota import Quota, reserve, used_today
 from job_ingestion.transport import reserving_get, retrying_get
 from tests.boards.fakes import never_sleeps, responding
+from tests.support.logs import capturing_logs
 
 SOURCE_KEY = "fake"
 SUBJECT = "the first page"
@@ -269,3 +272,106 @@ def test_a_retry_inside_reserving_get_does_not_reserve_twice(database_url: Postg
             assert await used_today(session, SOURCE_KEY) == 1
 
     run_database_test(database_url, exercise)
+
+
+def test_a_url_carrying_a_secret_produces_no_log_record_containing_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`retrying_get` logs nothing today, so this is a regression guard: the
+    moment a log line is added here without following the comment above it,
+    this is the test that is meant to catch a credential riding along in the
+    URL or the headers."""
+    monkeypatch.setattr(logging_support, "_registered_secrets", set())
+    secret = "SECRETVALUE-app-key-0123456789"
+    register_secrets([secret])
+    install_secret_filter()
+
+    async def run() -> httpx2.Response:
+        http_client = responding(httpx2.Response(200, json={"ok": True}))
+        try:
+            return await retrying_get(
+                http_client,
+                f"https://example.test/api?app_key={secret}",
+                params={"app_key": secret},
+                headers={"authorization": f"Bearer {secret}"},
+                timeout_seconds=5.0,
+                max_attempts=3,
+                retry_backoff_seconds=0.0,
+                sleeper=never_sleeps,
+                source_key=SOURCE_KEY,
+                subject=SUBJECT,
+            )
+        finally:
+            await http_client.aclose()
+
+    with capturing_logs("job_ingestion") as messages:
+        response = asyncio.run(run())
+
+    assert response.status_code == 200
+    assert secret not in "\n".join(messages)
+
+
+def test_a_url_carrying_a_secret_produces_no_log_record_when_a_rate_limit_is_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging_support, "_registered_secrets", set())
+    secret = "SECRETVALUE-rate-limited-987654321"
+    register_secrets([secret])
+    install_secret_filter()
+
+    async def run() -> httpx2.Response:
+        http_client = responding(rate_limited("0"), httpx2.Response(200, json={"ok": True}))
+        try:
+            return await retrying_get(
+                http_client,
+                f"https://example.test/api?app_key={secret}",
+                params={"app_key": secret},
+                headers={"authorization": f"Bearer {secret}"},
+                timeout_seconds=5.0,
+                max_attempts=3,
+                retry_backoff_seconds=0.0,
+                sleeper=never_sleeps,
+                source_key=SOURCE_KEY,
+                subject=SUBJECT,
+            )
+        finally:
+            await http_client.aclose()
+
+    with capturing_logs("job_ingestion") as messages:
+        response = asyncio.run(run())
+
+    assert response.status_code == 200
+    assert secret not in "\n".join(messages)
+
+
+def test_a_url_carrying_a_secret_produces_no_log_record_when_the_request_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(logging_support, "_registered_secrets", set())
+    secret = "SECRETVALUE-transport-error-135792468"
+    register_secrets([secret])
+    install_secret_filter()
+
+    async def run() -> None:
+        http_client = responding(*[httpx2.ConnectError("no route")] * 3)
+        try:
+            with pytest.raises(SourceUnavailableError):
+                await retrying_get(
+                    http_client,
+                    f"https://example.test/api?app_key={secret}",
+                    params={"app_key": secret},
+                    headers={"authorization": f"Bearer {secret}"},
+                    timeout_seconds=5.0,
+                    max_attempts=3,
+                    retry_backoff_seconds=0.0,
+                    sleeper=never_sleeps,
+                    source_key=SOURCE_KEY,
+                    subject=SUBJECT,
+                )
+        finally:
+            await http_client.aclose()
+
+    with capturing_logs("job_ingestion") as messages:
+        asyncio.run(run())
+
+    assert secret not in "\n".join(messages)

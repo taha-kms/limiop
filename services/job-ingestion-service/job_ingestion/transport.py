@@ -45,6 +45,10 @@ async def retrying_get(
 
     Exhausting the attempts raises, so a caller that never got an answer
     knows it, rather than being handed a response that was never received.
+
+    This function logs nothing today, and a log line added here later must
+    log `urlparse(url).path` and the status only -- never the full `url` or
+    `headers` -- because either one may carry a credential.
     """
     last_failure: SourceUnavailableError | None = None
     for attempt in range(1, max_attempts + 1):

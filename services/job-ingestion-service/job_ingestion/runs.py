@@ -12,14 +12,18 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from platform_db.models import IngestionRun, IngestionRunState
 from sqlalchemy import Executable, insert, update
 
-from job_ingestion.contracts import IngestionSummary, RecordFailure
+from job_ingestion.contracts import IngestionStage, IngestionSummary, RecordFailure
 from job_ingestion.database import Database
 from job_ingestion.reconciliation import reconcile
+
+if TYPE_CHECKING:
+    from job_ingestion.credentials import Unconfigured
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +157,36 @@ async def run_recorded_ingestion(
         async with database.session() as session:
             await reconcile(session, summary, run_started_at=started_at)
             await session.commit()
+    await complete_run(database, run_id, summary)
+    return summary
+
+
+async def record_unconfigured_run(
+    database: Database,
+    source_key: str,
+    unconfigured: "Unconfigured",
+    *,
+    started_at: datetime,
+) -> IngestionSummary:
+    """Record a run for a source whose credentials are not all set.
+
+    A deployment enables sources one at a time, so a missing credential is not
+    a scheduler failure: the task still succeeds, and the run row it leaves
+    behind says why nothing was fetched. `started_at` is accepted so a caller
+    that captured it before resolving credentials -- the same moment it would
+    hand to `run_recorded_ingestion` on the configured path -- can pass the
+    same value on either branch; this function does not otherwise use it,
+    since `recorded_run` stamps the row's own start time when it opens.
+
+    Unlike `run_recorded_ingestion`, this never calls `reconcile`: a run that
+    saw nothing must not be read as a run that saw the source and found it
+    empty, and reconciliation exists to draw exactly that distinction.
+    """
+    async with recorded_run(database, source_key) as run_id:
+        summary = IngestionSummary(
+            source_key=source_key,
+            failures=(RecordFailure(stage=IngestionStage.FETCH, reason=unconfigured.reason),),
+        )
     await complete_run(database, run_id, summary)
     return summary
 

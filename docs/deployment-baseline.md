@@ -137,12 +137,23 @@ to refuse one).
 
 ### Secrets, by handling
 
-Only two values are secret: `SKILLSYNC_SESSION_SECRET` and the password inside
-`SKILLSYNC_DATABASE_URL`. Both must come from the platform's secret store rather
-than from an image, a compose file, or a repository. Neither appears in any log
-line: the structured logger writes fields rather than formatted messages, and
-readiness reports a failing dependency as `unavailable` rather than echoing a
-driver error that carries the connection string.
+Every third-party source credential is one environment variable, named
+`SKILLSYNC_<SOURCE>_<NAME>`, injected from the platform's secret store rather
+than from an image, a compose file, or a repository. It is never assembled
+into `SKILLSYNC_SOURCE_CONFIG`, which is a JSON blob and gets logged whole in
+diagnostics. An unset credential leaves that source unconfigured: the source's
+run still happens and is recorded like any other, with a failure that names
+the missing variable rather than its value, instead of raising or blocking
+anything else the deployment does. No keyed source exists yet, so no real
+variable is listed here; each one is named in that source's own row of
+`docs/job-source-policy.md` once it does.
+
+The same handling already covers the two secrets in production today,
+`SKILLSYNC_SESSION_SECRET` and the password inside `SKILLSYNC_DATABASE_URL`.
+Neither appears in any log line: the structured logger writes fields rather
+than formatted messages, and readiness reports a failing dependency as
+`unavailable` rather than echoing a driver error that carries the connection
+string.
 
 ## Migrations
 
