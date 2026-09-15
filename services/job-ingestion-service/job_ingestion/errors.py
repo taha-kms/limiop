@@ -45,3 +45,16 @@ class RecordValidationError(IngestionError):
     def __init__(self, source_key: str, message: str, *, source_job_id: str | None = None) -> None:
         super().__init__(source_key, message)
         self.source_job_id = source_job_id
+
+
+class QuotaExceeded(IngestionError):
+    """A licensed source's daily call budget is already spent.
+
+    Raised by a client that asked `quota.reserve` and was refused. The run
+    treats this exactly like reaching its own record budget: it stops
+    cleanly, and this is not a record failure.
+    """
+
+    def __init__(self, source_key: str, per_day: int) -> None:
+        super().__init__(source_key, f"exceeded its daily quota of {per_day} calls")
+        self.per_day = per_day

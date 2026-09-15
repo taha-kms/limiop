@@ -1,11 +1,12 @@
 import ast
 from pathlib import Path
 
-from sqlalchemy import DateTime, String, Table, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, String, Table, UniqueConstraint
 
 from platform_db.base import Base
 from platform_db.models.boards import BoardStatus, JobBoard
 from platform_db.models.catalog import Company
+from platform_db.models.quota import SourceQuotaUsage
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "platform_db"
 FORBIDDEN_IMPORT_ROOTS = {"app", "backend", "fastapi", "httpx2", "starlette", "uvicorn"}
@@ -68,3 +69,25 @@ def test_companies_records_where_its_website_came_from() -> None:
     assert isinstance(website_checked_at_type, DateTime)
     assert website_checked_at_type.timezone is True
     assert columns["website_checked_at"].nullable
+
+
+def test_source_quota_usage_has_a_composite_primary_key_and_a_non_negative_check() -> None:
+    table = SourceQuotaUsage.__table__
+    assert isinstance(table, Table)
+    assert table.primary_key.name == "pk_source_quota_usage"
+    assert {column.name for column in table.primary_key.columns} == {"source_key", "day"}
+
+    check_constraint_names = {
+        constraint.name
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    assert "ck_source_quota_usage_calls_not_negative" in check_constraint_names
+
+    columns = {column.name: column for column in table.columns}
+    assert isinstance(columns["source_key"].type, String)
+    assert columns["source_key"].type.length == 64
+    assert columns["calls"].nullable is False
+    updated_at_type = columns["updated_at"].type
+    assert isinstance(updated_at_type, DateTime)
+    assert updated_at_type.timezone is True
