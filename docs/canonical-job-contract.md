@@ -353,25 +353,52 @@ job the catalogue currently holds.
 
 A job that is no longer `active` is not served, but until retention runs it is
 still stored in full, raw payloads included. Two licences forbid keeping that
-indefinitely, so the `catalogue_retention` DAG runs a pass nightly at 03:15
-with one rule and a **grace period** of 30 days, counted from when the job last
-changed. A status flip moves `updated_at`, so the grace starts the moment
-reconciliation or expiry acted; a source that keeps writing the job restarts
-it, because a job still being sent has not left any listing.
+indefinitely, so the `catalogue_retention` DAG runs a pass nightly at 03:15.
 
-Once the grace has run out, one of two things happens:
+A job is a **candidate** when all four hold:
+
+- its status is `expired` or `removed`;
+- no source still lists it, which is to say every provenance row has a
+  `retired_at`. An expired job a source keeps sending has not left that
+  source's listing, and deleting it would only have the next run create it
+  again under a new id;
+- its last change, `updated_at`, is older than the **grace period**. A status
+  flip moves that column, so the grace starts the moment reconciliation or
+  expiry acted. The period defaults to 30 days in `RetentionPolicy`, the one
+  place the figure is set;
+- it has not already been anonymised.
+
+Once a job is a candidate, one of two things happens:
 
 - **Deleted.** A job nothing user-facing references leaves with its provenance,
-  skills and mentions, in one transaction.
+  skills and mentions.
 - **Anonymised.** A job that user-facing rows still point at keeps its row so
-  the history keeps its shape, but every provenance `raw_payload` becomes
-  `{"_anonymised_at": "<when>"}`, the description becomes
-  `Posting no longer available`, and the location and application URL are
-  cleared. The company link and the status stay, the first because the schema
+  the history keeps its shape, but the description becomes
+  `Posting no longer available`, the location and application URL are
+  cleared, every provenance `raw_payload` becomes
+  `{"_anonymised_at": "<when>"}`, and `jobs.anonymised_at` records the same
+  instant. The company link and the status stay, the first because the schema
   requires one, the second because an anonymised job is still the withdrawn or
   expired job it was.
 
-`_anonymised_at` is the marker: a job carrying it is never a candidate again,
-so the pass is idempotent. Which rows count as user-facing references is a
-policy the retention module is given, not something it knows; nothing in the
-schema qualifies yet.
+`jobs.anonymised_at` is the marker: a job carrying it is never a candidate
+again, so the pass is idempotent. It lives on the job rather than in a
+provenance payload because a source re-listing the job rewrites only the
+payload it owns. Nothing clears it yet; a source re-listing an anonymised job
+is #392.
+
+Which rows count as **user-facing references** is not something the schema
+says yet, so the retention policy carries a list of probes, each asked which
+of a page's candidates it still needs. Nothing registers one today; the
+tables that will (matches, saved jobs, applications) register a probe rather
+than teaching retention their shape.
+
+The pass works in **pages**. Each page selects a bounded number of candidates,
+oldest change first, under a row lock that skips rows another transaction
+holds, locks their provenance rows the same way, acts on them, and commits.
+An ingestion run writing one of those jobs at the same moment therefore
+either finds the row locked and waits for the page, or has locked it first
+and keeps the page off the job. The statements that delete or anonymise
+restate the whole candidate predicate rather than trusting the page they were
+handed, and pages advance by key, so one pass visits a row at most once and a
+pass that fails midway keeps the pages it finished.

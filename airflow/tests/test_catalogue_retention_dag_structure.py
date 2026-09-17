@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from airflow.dag_processing.dagbag import DagBag
 from airflow.sdk import DAG
+from job_ingestion.retention import DEFAULT_POLICY
 
 DAGS_DIR = Path(__file__).parents[1] / "dags"
 DAG_ID = "catalogue_retention"
@@ -37,8 +38,14 @@ def test_the_dag_stays_a_single_thin_task(dagbag: DagBag) -> None:
     assert [task.task_id for task in dagbag.dags[DAG_ID].tasks] == ["retain"]
 
 
-def test_the_dag_states_its_rule_and_delegates_the_work() -> None:
+def test_the_dag_delegates_to_reusable_application_code() -> None:
     source = (DAGS_DIR / "catalogue_retention.py").read_text()
 
-    assert "from job_ingestion.retention import run_retention" in source
-    assert "30 days" in source
+    assert "from job_ingestion.retention import DEFAULT_POLICY, run_retention" in source
+
+
+def test_the_dag_states_the_grace_period_the_policy_applies(dagbag: DagBag) -> None:
+    dag: DAG = dagbag.dags[DAG_ID]
+
+    assert dag.doc_md is not None
+    assert f"{DEFAULT_POLICY.grace.days} days" in dag.doc_md
