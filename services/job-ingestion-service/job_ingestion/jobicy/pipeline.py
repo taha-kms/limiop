@@ -17,8 +17,7 @@ from job_ingestion.jobicy.normalizer import PRECEDENCE, JobicyNormalizer
 from job_ingestion.jobicy.records import JobicyJobRecord, JobicyValidator
 from job_ingestion.persistence import SourceRegistration
 from job_ingestion.pipeline import DEFAULT_MAX_RECORDS, IngestionRun
-from job_ingestion.reconciliation import ReconciliationResult, reconcile
-from job_ingestion.runs import complete_run, recorded_run
+from job_ingestion.runs import run_recorded_ingestion
 
 DISPLAY_NAME = "Jobicy"
 
@@ -56,39 +55,24 @@ async def ingest_jobicy(
 
     This is the entry point a scheduler calls. It owns the database engine, and
     the HTTP client unless one is supplied, and closes what it owns whatever the
-    run reports.
+    run reports. The record/reconcile/complete sequence around the run itself
+    lives in `run_recorded_ingestion`, shared with every other provider's
+    entry point.
     """
     app_settings = settings if settings is not None else get_settings()
     database = Database(app_settings.database_url)
     resolved = config if config is not None else JobicyConfig()
     started_at = datetime.now(UTC)
+
+    async def build(database: Database) -> IngestionSummary:
+        async with JobicyClient(resolved, http_client=http_client) as client:
+            return await build_run(
+                client,
+                max_records,
+                skill_alias_version=app_settings.skill_alias_version,
+            ).execute(database)
+
     try:
-        async with recorded_run(database, SOURCE_KEY) as run_id:
-            async with JobicyClient(resolved, http_client=http_client) as client:
-                summary = await build_run(
-                    client,
-                    max_records,
-                    skill_alias_version=app_settings.skill_alias_version,
-                ).execute(database)
-            await reconcile_after(database, summary, run_started_at=started_at)
-        await complete_run(database, run_id, summary)
-        return summary
+        return await run_recorded_ingestion(database, SOURCE_KEY, build, started_at=started_at)
     finally:
         await database.dispose()
-
-
-async def reconcile_after(
-    database: Database,
-    summary: IngestionSummary,
-    *,
-    run_started_at: datetime,
-) -> ReconciliationResult:
-    """Conclude what this run is entitled to conclude, if anything.
-
-    Run against the assembled summary rather than inside the run, so a failure
-    recorded after the last page still denies the conclusion.
-    """
-    async with database.session() as session:
-        result = await reconcile(session, summary, run_started_at=run_started_at)
-        await session.commit()
-    return result
