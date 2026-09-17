@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from platform_db.models import Job, JobSource
+from platform_db.models.catalog import WorkplaceType
 from pydantic import PostgresDsn
 from sqlalchemy import select
 
@@ -19,11 +20,13 @@ from job_ingestion.pinpoint.source import PRECEDENCE
 from tests.boards.fakes import ok, responding
 from tests.support.catalog import with_empty_catalog
 
-FIXTURE = Path(__file__).parent / "fixtures" / "postings.json"
+FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE = FIXTURES / "postings.json"
+REMOTE_FIXTURE = FIXTURES / "remote_posting.json"
 
 
-def fixture_body() -> dict[str, Any]:
-    body: dict[str, Any] = json.loads(FIXTURE.read_text())
+def fixture_body(fixture: Path = FIXTURE) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads(fixture.read_text())
     return body
 
 
@@ -63,6 +66,28 @@ def test_a_board_ingests_into_the_catalogue(database_url: PostgresDsn) -> None:
         assert source.key == "pinpoint"
         # Ranked with Greenhouse and Polymer: an employer's own board over the aggregator.
         assert source.precedence == PRECEDENCE
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_posting_with_null_optional_fields_is_stored(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        client = BoardClient(
+            PINPOINT,
+            BoardConfig(boards=("workwithus",)),
+            http_client=responding(ok(fixture_body(REMOTE_FIXTURE))),
+        )
+        summary = await build_run(client, 50).execute(database)
+
+        assert summary.created == 1
+        assert summary.failures == ()
+
+        async with database.session() as session:
+            stored = (await session.scalars(select(Job))).one()
+
+        assert stored.location == "Multiple locations"
+        assert stored.workplace_type is WorkplaceType.UNSPECIFIED
 
     run_database_test(database_url, exercise)
 

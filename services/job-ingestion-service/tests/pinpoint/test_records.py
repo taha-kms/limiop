@@ -7,11 +7,13 @@ import pytest
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.pinpoint.records import PinpointValidator, readable_identifier
 
-FIXTURE = Path(__file__).parent / "fixtures" / "postings.json"
+FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE = FIXTURES / "postings.json"
+REMOTE_FIXTURE = FIXTURES / "remote_posting.json"
 
 
-def fixture_record(**overrides: Any) -> dict[str, Any]:
-    body: dict[str, Any] = json.loads(FIXTURE.read_text())
+def fixture_record(fixture: Path = FIXTURE, **overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads(fixture.read_text())
     record: dict[str, Any] = dict(body["data"][0])
     record["board"] = "workwithus"
     record.update(overrides)
@@ -32,6 +34,29 @@ def test_a_posting_with_a_null_location_validates_with_an_empty_location() -> No
 
     assert record.location.name == ""
     assert record.location.city == ""
+
+
+def test_a_posting_that_sends_null_for_its_optional_strings_validates() -> None:
+    """Remote and multi-location postings carry null, not an empty string."""
+    record = PinpointValidator().validate(fixture_record(REMOTE_FIXTURE))
+
+    assert record.id == "601204"
+    assert record.location.city == ""
+    assert record.location.name == "Multiple locations"
+    assert record.workplace_type == ""
+    assert record.workplace_type_text == ""
+    assert record.employment_type == ""
+    assert record.employment_type_text == ""
+    assert record.key_responsibilities == ""
+    assert record.skills_knowledge_expertise == ""
+
+
+def test_a_required_field_sent_as_null_is_still_refused() -> None:
+    with pytest.raises(RecordValidationError) as raised:
+        PinpointValidator().validate(fixture_record(REMOTE_FIXTURE, title=None))
+
+    assert raised.value.source_job_id == "workwithus:601204"
+    assert "title" in raised.value.message
 
 
 def test_a_record_missing_its_description_is_refused() -> None:

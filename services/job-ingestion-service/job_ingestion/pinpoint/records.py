@@ -11,6 +11,7 @@ from typing import Annotated
 from pydantic import (
     AwareDatetime,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     HttpUrl,
@@ -26,11 +27,22 @@ from job_ingestion.pinpoint.source import SOURCE_KEY
 Required = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
 
+def blank_for_null(value: object) -> object:
+    """A field the board has no value for arrives as null, not as an absent key."""
+    return "" if value is None else value
+
+
+# An optional string: the board may omit it, send it empty, or send null, and
+# every one of those means the posting says nothing here. The required fields
+# above stay strict; a null title or description is still a refused record.
+Nullable = Annotated[str, BeforeValidator(blank_for_null)]
+
+
 class PinpointLocation(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
 
-    name: str = ""
-    city: str = ""
+    name: Nullable = ""
+    city: Nullable = ""
 
 
 class PinpointJobRecord(BaseModel):
@@ -49,14 +61,14 @@ class PinpointJobRecord(BaseModel):
     id: Required
     title: Required
     description: Required
-    key_responsibilities: str = ""
-    skills_knowledge_expertise: str = ""
+    key_responsibilities: Nullable = ""
+    skills_knowledge_expertise: Nullable = ""
     url: HttpUrl
     location: PinpointLocation = Field(default_factory=PinpointLocation)
-    workplace_type: str = ""
-    workplace_type_text: str = ""
-    employment_type: str = ""
-    employment_type_text: str = ""
+    workplace_type: Nullable = ""
+    workplace_type_text: Nullable = ""
+    employment_type: Nullable = ""
+    employment_type_text: Nullable = ""
     deadline_at: AwareDatetime | None = None
 
     @field_validator("location", mode="before")
