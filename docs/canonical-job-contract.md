@@ -43,7 +43,7 @@ provider cannot smuggle source-specific data into the canonical model.
 | `company.website_url` | no | Absolute HTTP(S) URL, at most 2048 characters |
 | `title` | yes | Trimmed, 1–255 characters |
 | `description` | yes | Plain text. HTML is stripped by the normalizer, never stored raw |
-| `location` | no | Trimmed, 1–255 characters. Absent means unknown, not remote |
+| `location` | no | Trimmed, 1–255 characters. Absent means unknown, not remote. A list of places longer than that is shortened at a separator and closed with ` …`; the full list stays in the raw payload |
 | `workplace_type` | no | Defaults to `unspecified` |
 | `employment_type` | no | Defaults to `unspecified` |
 | `application_url` | yes | Absolute HTTP(S) URL where the user applies |

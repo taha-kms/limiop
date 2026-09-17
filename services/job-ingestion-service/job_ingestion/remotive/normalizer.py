@@ -7,7 +7,7 @@ and nothing here touches the network or the database.
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import ValidationError
 
-from job_ingestion.arbeitnow.normalizer import to_plain_text
+from job_ingestion.arbeitnow.normalizer import fit_location, to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.remotive.client import SOURCE_KEY
@@ -36,7 +36,7 @@ class RemotiveNormalizer:
                     "company": {"display_name": record.company_name},
                     "title": record.title,
                     "description": to_plain_text(record.description),
-                    "location": record.candidate_required_location or None,
+                    "location": fit_location(record.candidate_required_location),
                     "workplace_type": WorkplaceType.REMOTE,
                     "employment_type": most_specific(
                         stated_employments(record.job_type),

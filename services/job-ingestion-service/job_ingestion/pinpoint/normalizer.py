@@ -7,7 +7,7 @@ and nothing here touches the network or the database.
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import ValidationError
 
-from job_ingestion.arbeitnow.normalizer import to_plain_text
+from job_ingestion.arbeitnow.normalizer import fit_location, to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.pinpoint.records import PinpointJobRecord, describe_failure
@@ -68,7 +68,7 @@ class PinpointNormalizer:
                     "company": {"display_name": record.board},
                     "title": record.title,
                     "description": to_description(record),
-                    "location": record.location.name or record.location.city or None,
+                    "location": fit_location(record.location.name or record.location.city),
                     "workplace_type": most_specific(
                         stated_workplaces(record.workplace_type, record.workplace_type_text),
                         WORKPLACE_PRECEDENCE,

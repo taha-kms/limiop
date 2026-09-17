@@ -9,6 +9,7 @@ from platform_db.models.catalog import EmploymentType, WorkplaceType
 from job_ingestion.arbeitnow import normalizer
 from job_ingestion.arbeitnow.normalizer import (
     ArbeitnowNormalizer,
+    fit_location,
     to_employment_type,
     to_plain_text,
     to_workplace_type,
@@ -105,6 +106,65 @@ def test_script_and_style_bodies_never_reach_the_description() -> None:
     markup = "<p>Real text</p><script>alert('x')</script><style>.a{color:red}</style>"
 
     assert to_plain_text(markup) == "Real text"
+
+
+def test_a_location_that_fits_is_unchanged() -> None:
+    assert fit_location("Berlin, Germany") == "Berlin, Germany"
+
+
+def test_a_location_is_trimmed_before_it_is_measured() -> None:
+    assert fit_location("  Berlin  ") == "Berlin"
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_a_blank_location_stays_absent(value: str | None) -> None:
+    assert fit_location(value) is None
+
+
+def test_a_long_office_list_is_cut_at_a_separator() -> None:
+    """A board listing every office keeps whole entries and a marker, never a torn one."""
+    offices = "; ".join(f"Office {index:02d}, US" for index in range(1, 21))
+    assert len(offices) > 255
+
+    fitted = fit_location(offices)
+
+    assert fitted is not None
+    assert len(fitted) <= 255
+    assert fitted.endswith(" …")
+    kept = fitted.removesuffix(" …")
+    assert offices.startswith(kept)
+    assert offices[len(kept) :].startswith(";")
+
+
+@pytest.mark.parametrize("separator", [",", "|", " / ", " · "])
+def test_every_separator_a_board_uses_is_a_boundary(separator: str) -> None:
+    offices = separator.join(f"Office {index:02d}" for index in range(1, 40))
+
+    fitted = fit_location(offices, limit=60)
+
+    assert fitted is not None
+    assert len(fitted) <= 60
+    kept = fitted.removesuffix(" …")
+    assert offices[len(kept) :].startswith(separator)
+
+
+def test_a_location_without_separators_is_hard_cut() -> None:
+    fitted = fit_location("x" * 300)
+
+    assert fitted == "x" * 253 + " …"
+
+
+def test_a_separator_that_saves_nothing_falls_back_to_a_hard_cut() -> None:
+    """A first entry longer than the limit cannot be kept whole either way."""
+    fitted = fit_location("x" * 300 + "; Berlin", limit=100)
+
+    assert fitted == "x" * 98 + " …"
+
+
+def test_a_shortened_location_never_ends_in_a_dangling_separator() -> None:
+    fitted = fit_location("Berlin; Munich; Hamburg", limit=20)
+
+    assert fitted == "Berlin; Munich …"
 
 
 def test_a_description_of_only_markup_is_rejected() -> None:

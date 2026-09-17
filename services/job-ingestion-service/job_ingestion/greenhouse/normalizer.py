@@ -7,7 +7,7 @@ and nothing here touches the network or the database.
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import ValidationError
 
-from job_ingestion.arbeitnow.normalizer import to_plain_text
+from job_ingestion.arbeitnow.normalizer import fit_location, to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.greenhouse.records import GreenhouseJobRecord, describe_failure
@@ -68,7 +68,9 @@ class GreenhouseNormalizer:
                     # rather than remove them. The shared flattener repeats
                     # until it settles, which is why this needs nothing special.
                     "description": to_plain_text(record.content),
-                    "location": record.location.name or None,
+                    # A board listing every office can exceed the column;
+                    # the full list stays in the payload below.
+                    "location": fit_location(record.location.name),
                     "workplace_type": to_workplace_type(record),
                     "employment_type": to_employment_type(record),
                     "application_url": str(record.absolute_url),

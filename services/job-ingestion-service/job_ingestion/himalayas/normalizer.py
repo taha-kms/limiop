@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import ValidationError
 
-from job_ingestion.arbeitnow.normalizer import to_plain_text
+from job_ingestion.arbeitnow.normalizer import fit_location, to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.himalayas.client import SOURCE_KEY
@@ -65,7 +65,7 @@ class HimalayasNormalizer:
                     "company": {"display_name": record.companyName},
                     "title": record.title,
                     "description": to_plain_text(record.description),
-                    "location": ", ".join(record.locationRestrictions) or None,
+                    "location": fit_location(", ".join(record.locationRestrictions)),
                     # Himalayas lists remote roles exclusively: the arrangement
                     # is a fact about the board, not something each posting
                     # states, so nothing here is read to arrive at it.
