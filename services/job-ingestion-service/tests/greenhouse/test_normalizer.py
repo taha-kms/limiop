@@ -173,6 +173,21 @@ def test_a_posting_with_no_location_has_none() -> None:
     assert normalize(location={"name": ""}).location is None
 
 
+def test_a_board_listing_every_office_still_stores_the_posting() -> None:
+    """Eight of five hundred postings in one run named more offices than fit."""
+    offices = "; ".join(f"Office {index:02d}, US" for index in range(1, 21))
+    assert len(offices) > 255
+    raw = raw_record(location={"name": offices})
+
+    job = GreenhouseNormalizer().normalize(GreenhouseValidator().validate(raw), raw)
+
+    assert job.location is not None
+    assert len(job.location) <= 255
+    assert job.location.endswith(" …")
+    assert job.provenance.raw_payload is not None
+    assert job.provenance.raw_payload["location"]["name"] == offices
+
+
 def test_the_raw_record_is_kept_for_reproducing_the_transformation() -> None:
     raw = raw_record()
     job = GreenhouseNormalizer().normalize(GreenhouseValidator().validate(raw), raw)

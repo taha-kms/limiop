@@ -9,7 +9,7 @@ import re
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import ValidationError
 
-from job_ingestion.arbeitnow.normalizer import to_plain_text
+from job_ingestion.arbeitnow.normalizer import fit_location, to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.jobicy.client import SOURCE_KEY
@@ -59,7 +59,7 @@ class JobicyNormalizer:
                     "company": {"display_name": record.companyName},
                     "title": record.jobTitle,
                     "description": to_plain_text(record.jobDescription),
-                    "location": to_location(record.jobGeo),
+                    "location": fit_location(to_location(record.jobGeo)),
                     # The feed lists only remote postings, so nothing needs to
                     # be read to know the arrangement: it is the premise of
                     # the source, not something a record can contradict.

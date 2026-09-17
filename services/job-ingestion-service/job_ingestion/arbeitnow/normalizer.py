@@ -14,7 +14,7 @@ from job_ingestion.arbeitnow.client import SOURCE_KEY
 from job_ingestion.arbeitnow.records import ArbeitnowJobRecord, describe_failure
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
-from job_ingestion.schemas import NormalizedJob
+from job_ingestion.schemas import MAX_NAME_LENGTH, NormalizedJob
 from job_ingestion.vocabulary import (
     EMPLOYMENT_PRECEDENCE,
     WORKPLACE_PRECEDENCE,
@@ -69,6 +69,13 @@ HTML_LINE_BREAKS = frozenset(
 # on its own, and this bound only exists so an unforeseen pass that grows the
 # text cannot loop forever.
 MAX_FLATTENING_PASSES = 10
+
+# What boards put between the places of a posting that lists several. Multi
+# character separators keep their spaces so `/` inside a name such as
+# `Frankfurt/Main` is not read as a boundary.
+LOCATION_SEPARATORS = (";", ",", "|", " / ", " · ")
+LOCATION_MARKER = " …"
+"""Closes a shortened location, so a reader knows the list went on."""
 
 
 class PlainTextExtractor(HTMLParser):
@@ -130,6 +137,33 @@ def to_plain_text(markup: str) -> str:
             return text
         text = flattened
     return text
+
+
+def fit_location(value: str | None, limit: int = MAX_NAME_LENGTH) -> str | None:
+    """Shorten a location the catalogue cannot hold, keeping whole entries.
+
+    A board that lists every office on one posting can send a location far
+    longer than the column, and refusing the record over it loses a posting
+    that is otherwise complete. The list is cut at the last separator that
+    leaves room for the marker, so no entry is torn in half; a value with no
+    usable separator is cut hard instead. Anything that fits is returned as
+    it came, trimmed, and a blank value is no location at all.
+    """
+    if value is None:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if len(text) <= limit:
+        return text
+    room = limit - len(LOCATION_MARKER)
+    # `rfind` bounds the whole separator, so the end grows with its length to
+    # admit one that starts exactly at `room`.
+    boundary = max(
+        text.rfind(separator, 0, room + len(separator)) for separator in LOCATION_SEPARATORS
+    )
+    kept = text[:boundary].rstrip() if boundary > 0 else ""
+    return (kept or text[:room].rstrip()) + LOCATION_MARKER
 
 
 def without_aggregator_footer(text: str) -> str:

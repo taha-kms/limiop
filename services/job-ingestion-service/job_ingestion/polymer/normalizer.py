@@ -7,7 +7,7 @@ and nothing here touches the network or the database.
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import ValidationError
 
-from job_ingestion.arbeitnow.normalizer import to_plain_text
+from job_ingestion.arbeitnow.normalizer import fit_location, to_plain_text
 from job_ingestion.contracts import RawRecord
 from job_ingestion.errors import RecordValidationError
 from job_ingestion.polymer.records import PolymerJobRecord, describe_failure
@@ -37,7 +37,7 @@ class PolymerNormalizer:
                     "company": {"display_name": record.organization_name},
                     "title": record.title,
                     "description": to_plain_text(record.description),
-                    "location": record.display_location or None,
+                    "location": fit_location(record.display_location),
                     "workplace_type": most_specific(
                         stated_workplaces(record.remoteness_pretty),
                         WORKPLACE_PRECEDENCE,
