@@ -186,6 +186,8 @@ class Job(Base):
             text("id DESC"),
         ),
         Index("ix_jobs_status_expires_at", "status", "expires_at"),
+        # The nightly retention scan: inactive jobs, oldest change first.
+        Index("ix_jobs_retention", "updated_at", postgresql_where=text("status <> 'active'")),
         Index("ix_jobs_company_id", "company_id"),
         Index("ix_jobs_location", "location"),
     )
@@ -256,6 +258,13 @@ class Job(Base):
         nullable=False,
         default=JobStatus.ACTIVE,
         server_default=JobStatus.ACTIVE.value,
+    )
+    # When retention stripped the content while keeping the row. Null while
+    # the job still says what it said. A fact about the job, so it lives here
+    # rather than on a provenance row a source may rewrite on its own.
+    anonymised_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

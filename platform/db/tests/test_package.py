@@ -5,7 +5,7 @@ from sqlalchemy import CheckConstraint, DateTime, String, Table, UniqueConstrain
 
 from platform_db.base import Base
 from platform_db.models.boards import BoardStatus, JobBoard
-from platform_db.models.catalog import Company
+from platform_db.models.catalog import Company, Job
 from platform_db.models.quota import SourceQuotaUsage
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "platform_db"
@@ -91,3 +91,23 @@ def test_source_quota_usage_has_a_composite_primary_key_and_a_non_negative_check
     updated_at_type = columns["updated_at"].type
     assert isinstance(updated_at_type, DateTime)
     assert updated_at_type.timezone is True
+
+
+def test_jobs_records_when_retention_anonymised_them() -> None:
+    table = Job.__table__
+    assert isinstance(table, Table)
+    columns = {column.name: column for column in table.columns}
+    anonymised_at_type = columns["anonymised_at"].type
+    assert isinstance(anonymised_at_type, DateTime)
+    assert anonymised_at_type.timezone is True
+    assert columns["anonymised_at"].nullable
+
+
+def test_jobs_has_a_partial_index_for_the_retention_scan() -> None:
+    table = Job.__table__
+    assert isinstance(table, Table)
+    indexes = {str(index.name): index for index in table.indexes}
+    assert [column.name for column in indexes["ix_jobs_retention"].columns] == ["updated_at"]
+    assert str(indexes["ix_jobs_retention"].dialect_options["postgresql"]["where"]) == (
+        "status <> 'active'"
+    )
