@@ -1,5 +1,6 @@
 import asyncio
 from collections.abc import Callable
+from datetime import timedelta
 
 import httpx2
 import pytest
@@ -87,6 +88,7 @@ def test_config_defaults_bound_every_loop() -> None:
     assert config.results_per_page == MAX_RESULTS_PER_PAGE
     assert config.pages_per_country == 4
     assert config.max_days_old == 2
+    assert config.retire_unseen_after == timedelta(days=7)
     assert config.max_attempts >= 1
     assert config.timeout_seconds > 0
     assert config.calls_per_run == len(DEFAULT_COUNTRIES) * 4
@@ -112,6 +114,12 @@ def test_config_rejects_unbounded_or_nonsense_limits(
 ) -> None:
     with pytest.raises(ValueError, match=field):
         build()
+
+
+def test_the_age_a_posting_may_go_unseen_follows_the_window() -> None:
+    """The window is what a run can see; the five days on top are for the runs
+    in between that were missed, cut short by the quota, or failed."""
+    assert AdzunaConfig(max_days_old=3).retire_unseen_after == timedelta(days=8)
 
 
 def test_the_client_reports_its_source_key() -> None:

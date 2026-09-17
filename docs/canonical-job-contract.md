@@ -269,11 +269,13 @@ reports `reached_the_end` as false on every run.
 
 Such a source states instead how long a posting may go unseen before it is
 presumed gone: its window plus a grace period for missed runs, carried on the
-run summary as `retire_unseen_after`. A run refused only for not reaching the
-end, and stating that age, retires the provenance records of its source last
-seen before the run started minus the age, and withdraws jobs exactly as an
-exhausted run does. The rule's inputs are the moment the run started and the
-stated age; nothing in the run's counts moves the line.
+run summary as `retire_unseen_after`. Adzuna states its two-day window plus
+five days of grace, so a posting it has not listed for seven days is presumed
+gone. A run refused only for not reaching the end, and stating that age,
+retires the provenance records of its source last seen before the run started
+minus the age, and withdraws jobs exactly as an exhausted run does. The rule's
+inputs are the moment the run started and the stated age; nothing in the run's
+counts moves the line.
 
 Every other refusal stands whether or not an age is stated: a run that stopped
 at its record budget is refused, and a run that saw no records is refused
@@ -282,9 +284,9 @@ reached the end retires everything it did not see, whatever age it states.
 
 ### The conclusion is drawn twice
 
-**Per source.** A provenance record an exhausted run did not see is retired.
-That is a fact about one board: this employer stopped advertising this posting
-there.
+**Per source.** A provenance record an exhausted run did not see, or one a
+windowed source has not seen for its stated age, is retired. That is a fact
+about one board: this employer stopped advertising this posting there.
 
 **Per job.** A job is marked `removed` only once no source still lists it. A
 job dropped by an aggregator but still on the employer's own board is still

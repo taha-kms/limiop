@@ -23,7 +23,7 @@ from job_ingestion.reconciliation import (
     withdraw_jobs_nobody_lists,
 )
 from job_ingestion.schemas import NormalizedJob
-from tests.support.catalog import with_empty_catalog
+from tests.support.catalog import retired_at_by_source_job_id, with_empty_catalog
 
 BOARD = SourceRegistration(
     key="board", display_name="Board", base_url="https://board.example.com", precedence=20
@@ -128,14 +128,6 @@ async def run_reconcile(database: Database, summary: IngestionSummary, *, at: da
         result = await reconcile(session, summary, run_started_at=at)
         await session.commit()
     return result
-
-
-async def retired_at_by_source_job_id(database: Database) -> dict[str, datetime | None]:
-    async with database.session() as session:
-        return {
-            record.source_job_id: record.retired_at
-            for record in (await session.scalars(select(JobProvenance))).all()
-        }
 
 
 # A run that did not see everything cannot conclude that what it missed is gone.

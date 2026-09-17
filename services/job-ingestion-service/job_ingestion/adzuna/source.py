@@ -5,6 +5,8 @@ without importing transport, and so the entry point can ask for credentials
 before any client exists to carry them.
 """
 
+from datetime import timedelta
+
 from job_ingestion.credentials import Credential
 from job_ingestion.quota import Quota
 
@@ -35,6 +37,13 @@ PUBLISHED_DAILY_CEILING = 250
 WEEKLY_CEILING = 1000
 MONTHLY_CEILING = 2500
 DAILY_QUOTA = Quota(per_day=MONTHLY_CEILING // 31)
+
+# How much longer than its window a posting may go unseen before it is
+# presumed gone. Every request is windowed, so a run sees only what the window
+# holds and can never claim the end of the source; the window plus this grace
+# is what the run states instead. Five days covers a run of missed schedules:
+# a quota spent early, a provider outage, a failed deployment over a weekend.
+RETIREMENT_GRACE = timedelta(days=5)
 
 # The markets the project covers, as the ISO codes Adzuna paths are keyed by.
 DEFAULT_COUNTRIES = ("gb", "us", "de", "fr", "nl", "at", "ch", "es", "it", "pl", "ca", "au")

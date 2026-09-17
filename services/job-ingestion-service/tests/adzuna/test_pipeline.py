@@ -4,6 +4,8 @@
 every configured run; `conftest` here undoes both after each test.
 """
 
+from datetime import UTC, datetime, timedelta
+
 import httpx2
 import pytest
 from platform_db.models import IngestionRun, IngestionRunState, JobProvenance
@@ -11,11 +13,14 @@ from pydantic import PostgresDsn
 from sqlalchemy import select
 
 from job_ingestion.adzuna.client import AdzunaClient, AdzunaConfig
+from job_ingestion.adzuna.normalizer import AdzunaNormalizer
 from job_ingestion.adzuna.pipeline import build_run, ingest_adzuna
-from job_ingestion.adzuna.source import DAILY_QUOTA
+from job_ingestion.adzuna.records import AdzunaValidator
+from job_ingestion.adzuna.source import DAILY_QUOTA, DISPLAY_NAME, PRECEDENCE, SOURCE_KEY
 from job_ingestion.config import Settings
 from job_ingestion.contracts import IngestionStage, IngestionSummary
 from job_ingestion.database import Database
+from job_ingestion.persistence import SourceRegistration, persist_job
 from job_ingestion.quota import Quota, reserve
 from tests.adzuna.support import (
     APP_ID,
@@ -23,16 +28,21 @@ from tests.adzuna.support import (
     CREDENTIALS,
     never_opened,
     page_body,
+    posting,
     recording,
     run_database_test,
 )
 from tests.boards.fakes import ok
+from tests.support.catalog import retired_at_by_source_job_id
 from tests.support.logs import capturing_logs
 
 # One full page per country: two calls, six records, and neither country read
 # to its end.
 CONFIG = AdzunaConfig(
     countries=("gb", "de"), pages_per_country=1, results_per_page=3, retry_backoff_seconds=0.0
+)
+ADZUNA = SourceRegistration(
+    key=SOURCE_KEY, display_name=DISPLAY_NAME, base_url=CONFIG.base_url, precedence=PRECEDENCE
 )
 
 
@@ -74,6 +84,17 @@ async def stored_payloads(database: Database) -> list[dict[str, object]]:
     async with database.session() as session:
         rows = await session.scalars(select(JobProvenance.raw_payload))
     return [payload for payload in rows if payload is not None]
+
+
+async def listed_earlier(database: Database, identifier: str, *, days_ago: int) -> None:
+    """One Adzuna posting, as a run that many days ago would have left it."""
+    raw = posting(id=identifier, title=f"Earlier posting {identifier}")
+    job = AdzunaNormalizer().normalize(AdzunaValidator().validate(raw), raw)
+    async with database.session() as session:
+        await persist_job(
+            session, job, source=ADZUNA, seen_at=datetime.now(UTC) - timedelta(days=days_ago)
+        )
+        await session.commit()
 
 
 async def spend(database: Database, calls: int) -> None:
@@ -131,6 +152,32 @@ def test_a_configured_source_stores_every_snippet_flagged_partial(
         assert len(payloads) == 6
         assert all(payload["_partial_description"] is True for payload in payloads)
         assert {payload["country"] for payload in payloads} == {"gb", "de"}
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.usefixtures("configured")
+def test_a_run_ages_out_a_posting_unseen_for_the_window_plus_grace(
+    database_url: PostgresDsn,
+) -> None:
+    """The client never claims the end, so the run states an age instead:
+    `max_days_old` plus five days of grace. A posting no run has listed for
+    longer is presumed gone; one inside the age is left alone, and so is
+    everything this run fetched."""
+
+    async def exercise(database: Database) -> None:
+        await listed_earlier(database, "gone", days_ago=CONFIG.max_days_old + 6)
+        await listed_earlier(database, "recent", days_ago=CONFIG.max_days_old + 4)
+
+        summary, _ = await ingest(database_url, ok(page_body("gb")), ok(page_body("de")))
+
+        records = await retired_at_by_source_job_id(database)
+        assert summary.retire_unseen_after == timedelta(days=CONFIG.max_days_old + 5)
+        assert summary.reached_the_end is False
+        assert records.pop("gb:gone") is not None
+        assert len(records) == 7
+        assert set(records.values()) == {None}
 
     run_database_test(database_url, exercise)
 
@@ -213,3 +260,4 @@ def test_the_run_registers_the_configured_source() -> None:
     assert run.source.precedence == 10
     assert run.client.source_key == run.source.key
     assert run.max_records == 10
+    assert run.retire_unseen_after == timedelta(days=7)
