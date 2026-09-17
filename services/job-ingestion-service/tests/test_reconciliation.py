@@ -109,6 +109,14 @@ async def run_reconcile(database: Database, summary: IngestionSummary, *, at: da
     return result
 
 
+async def retired_at_by_source_job_id(database: Database) -> dict[str, datetime | None]:
+    async with database.session() as session:
+        return {
+            record.source_job_id: record.retired_at
+            for record in (await session.scalars(select(JobProvenance))).all()
+        }
+
+
 # A run that did not see everything cannot conclude that what it missed is gone.
 
 
@@ -174,6 +182,15 @@ def test_a_run_that_saw_everything_may_conclude() -> None:
     assert why_not(exhausted(BOARD)) is None
 
 
+def test_a_run_that_saw_no_records_may_not_conclude_anything() -> None:
+    """Stronger than exhaustion. An empty run is exhausted by its counts, and
+    the counts cannot tell an empty source from a source that did not answer."""
+    empty = exhausted(BOARD, fetched=0, updated=0)
+
+    assert empty.source_exhausted is True
+    assert why_not(empty) == "the run saw no records and cannot tell absence from an outage"
+
+
 def test_processing_complete_does_not_imply_exhausted() -> None:
     """The distinction the whole rule rests on."""
     capped = IngestionSummary(
@@ -231,6 +248,34 @@ def test_an_incomplete_run_expires_nothing(
         assert result.skipped is True
         assert result.reason
         assert result.provenance_retired == 0
+        assert await status_of(database) is JobStatus.ACTIVE
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "summary",
+    [
+        pytest.param(exhausted(BOARD, fetched=0, updated=0), id="claimed the end"),
+    ],
+)
+def test_a_run_that_saw_no_records_retires_nothing(
+    database_url: PostgresDsn, summary: IngestionSummary
+) -> None:
+    """Before the guard this run retired the row: it claimed the end, hit no
+    budget and failed nothing, so nothing in `why_not` told it apart from a
+    run that read the source and found it empty."""
+
+    async def exercise(database: Database) -> None:
+        await ingest(database, BOARD, posting(BOARD), seen_at=FIRST_RUN)
+
+        result = await run_reconcile(database, summary, at=SECOND_RUN + timedelta(days=30))
+
+        assert result.skipped is True
+        assert result.reason == "the run saw no records and cannot tell absence from an outage"
+        assert result.provenance_retired == 0
+        assert (await retired_at_by_source_job_id(database))["board-1"] is None
         assert await status_of(database) is JobStatus.ACTIVE
 
     run_database_test(database_url, exercise)
@@ -359,11 +404,7 @@ def test_one_source_reconciling_does_not_retire_another_sources_records(
 
         await run_reconcile(database, exhausted(AGGREGATOR), at=SECOND_RUN)
 
-        async with database.session() as session:
-            records = {
-                record.source_job_id: record.retired_at
-                for record in (await session.scalars(select(JobProvenance))).all()
-            }
+        records = await retired_at_by_source_job_id(database)
 
         assert records["aggregator-1"] is not None
         assert records["board-1"] is None

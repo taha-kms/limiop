@@ -254,6 +254,12 @@ would have withdrawn twenty-four open jobs.
 Reconciliation refuses to run at all without exhaustion, and says why rather
 than doing nothing quietly.
 
+One run is refused even when its counts call it exhausted. A run that fetched
+no records reads the same whether the source was empty or never answered, and
+retiring every posting on the strength of it would let an outage do the
+retiring. Such a run retires nothing and reports that it saw no records and
+cannot tell absence from an outage.
+
 A source that is read through a window can never claim exhaustion. Adzuna is
 asked only for the last few days of postings, so a walk that runs every
 country short has still seen nothing older than the window, and its client

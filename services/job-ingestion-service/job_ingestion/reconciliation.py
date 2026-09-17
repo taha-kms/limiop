@@ -11,6 +11,12 @@ looks exactly like one that is gone. So reconciliation refuses to run at all
 unless the run exhausted its source, which `IngestionSummary.source_exhausted`
 answers and nothing here second-guesses.
 
+One case is refused even when the counts call it exhausted. A run that saw no
+records at all reads the same whether the source was empty or never answered:
+nothing fetched, nothing failed, the end reached. Retiring every posting on the
+strength of such a run would let an outage do the retiring, so it concludes
+nothing.
+
 The conclusion is drawn in two steps, because one source is not the catalogue:
 
 1. **Per source.** A provenance record the run did not see is retired. That is
@@ -54,8 +60,15 @@ class ReconciliationResult:
         return not self.ran
 
 
+# Refused before anything the summary claims about itself is consulted: a run
+# with no records has nothing to back a claim with.
+EMPTY_RUN = "the run saw no records and cannot tell absence from an outage"
+
+
 def why_not(summary: IngestionSummary) -> str | None:
     """Why this run may not conclude a posting is gone, or nothing if it may."""
+    if summary.fetched == 0:
+        return EMPTY_RUN
     if summary.stopped_at_budget:
         return "the run stopped at its record budget and did not see the rest"
     if not summary.reached_the_end:
