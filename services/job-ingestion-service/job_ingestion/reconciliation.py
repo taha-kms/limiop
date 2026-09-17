@@ -21,10 +21,12 @@ A source read through a time window can never exhaust itself: everything older
 than the window is unread however far the walk went, and a posting that left
 the window is unseen whether or not it is still open. Such a source states
 instead a presumed lifetime, `IngestionSummary.retire_unseen_after`: how long a
-posting is kept after the source last showed it. A run refused for not reaching
-the end and nothing else may retire what the source has not shown for that
-long. That is a lifetime running out rather than evidence of absence, and every
-other refusal stands, the empty run above included.
+posting is kept after the source last showed it. A run stating one may retire
+what the source has not shown for that long provided it saw something, did not
+stop at its budget, and can account for every record it fetched, which
+`may_age_out` decides. Record failures are tolerated there, unlike on the
+exhaustion path: a lifetime runs from when the source last showed the posting,
+and a record this run failed to read moves that not at all.
 
 The conclusion is drawn in two steps, because one source is not the catalogue:
 
@@ -80,8 +82,6 @@ AGED = "aged"
 # Refused before anything the summary claims about itself is consulted: a run
 # with no records has nothing to back a claim with.
 EMPTY_RUN = "the run saw no records and cannot tell absence from an outage"
-# The one refusal a windowed source can answer, by stating an age instead.
-NOT_THE_END = "the run did not reach the end of the source"
 
 
 def why_not(summary: IngestionSummary) -> str | None:
@@ -91,7 +91,7 @@ def why_not(summary: IngestionSummary) -> str | None:
     if summary.stopped_at_budget:
         return "the run stopped at its record budget and did not see the rest"
     if not summary.reached_the_end:
-        return NOT_THE_END
+        return "the run did not reach the end of the source"
     if summary.failures:
         return (
             f"the run had {len(summary.failures)} failure(s) and cannot account for every posting"
@@ -99,6 +99,25 @@ def why_not(summary: IngestionSummary) -> str | None:
     if not summary.processing_complete:
         return "the run did not finish processing what it fetched"
     return None
+
+
+def may_age_out(summary: IngestionSummary) -> bool:
+    """Whether this run may retire what its source has not shown for the lifetime.
+
+    Decided on the summary itself rather than on which refusal `why_not`
+    worded first, because two refusals can apply and only one is visible.
+    Failures are tolerated: the rule is a lifetime, not an inference from
+    absence, so a record this run failed to read says nothing about when the
+    source last showed the postings that are past it. What is not tolerated is
+    a run that saw nothing, stopped at its budget, or lost records without a
+    failure to show for them.
+    """
+    return (
+        summary.retire_unseen_after is not None
+        and summary.fetched > 0
+        and not summary.stopped_at_budget
+        and summary.accounted_for
+    )
 
 
 async def reconcile(
@@ -118,7 +137,10 @@ async def reconcile(
     refusal = why_not(summary)
     if refusal is None:
         rule, unseen_before = EXHAUSTED, run_started_at
-    elif refusal == NOT_THE_END and summary.retire_unseen_after is not None:
+    elif may_age_out(summary):
+        # `retire_unseen_after` is set whenever `may_age_out` holds; the check
+        # is for the type checker, which cannot see through the predicate.
+        assert summary.retire_unseen_after is not None
         rule, unseen_before = AGED, run_started_at - summary.retire_unseen_after
     else:
         return ReconciliationResult(ran=False, reason=refusal)

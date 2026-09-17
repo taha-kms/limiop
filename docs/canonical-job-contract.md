@@ -278,14 +278,17 @@ created, whether or not Adzuna still lists it: the API never says when a
 posting closes, the terms permit holding the data while the licence stands,
 and a posting older than that is more often filled than open.
 
-A run refused only for not reaching the end, and stating a lifetime, retires
-the provenance records of its source last seen before the run started minus
-the lifetime, and withdraws jobs exactly as an exhausted run does. The rule's
+A run stating a lifetime retires the provenance records of its source last
+seen before the run started minus the lifetime, and withdraws jobs exactly as
+an exhausted run does, provided it fetched at least one record, did not stop
+at its record budget, and can account for every record it fetched. The rule's
 inputs are the moment the run started and the stated lifetime; nothing in the
-run's counts moves the line.
+run's counts moves the line. Record failures do not refuse this path, unlike
+the exhaustion path: the lifetime runs from when the source last showed the
+posting, and a record this run failed to read says nothing about that.
 
-Every other refusal stands whether or not a lifetime is stated: a run that
-stopped at its record budget is refused, and a run that saw no records is
+A run that stopped at its record budget is refused, a run whose records
+vanished without a failure is refused, and a run that saw no records is
 refused before either rule is consulted. The exhaustion rule is unchanged: a
 run that reached the end retires everything it did not see, whatever lifetime
 it states.

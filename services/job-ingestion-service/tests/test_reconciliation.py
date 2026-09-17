@@ -18,6 +18,7 @@ from job_ingestion.database import Database
 from job_ingestion.persistence import SourceRegistration, persist_job
 from job_ingestion.reconciliation import (
     expire_jobs_past_their_stated_date,
+    may_age_out,
     reconcile,
     why_not,
     withdraw_jobs_nobody_lists,
@@ -93,7 +94,9 @@ def exhausted(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
 
 def windowed(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
     """A run through a time window: never at the end, but stating a lifetime."""
-    return exhausted(source, reached_the_end=False, retire_unseen_after=UNSEEN_FOR, **overrides)
+    fields: dict[str, Any] = {"reached_the_end": False, "retire_unseen_after": UNSEEN_FOR}
+    fields.update(overrides)
+    return exhausted(source, **fields)
 
 
 def run_database_test(database_url: PostgresDsn, test: Any) -> None:
@@ -439,6 +442,81 @@ def test_a_windowed_run_is_still_not_exhausted() -> None:
     assert why_not(windowed(BOARD)) == "the run did not reach the end of the source"
 
 
+FAILED_RECORD = RecordFailure(stage=IngestionStage.VALIDATE, reason="no title")
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        pytest.param(windowed(BOARD), True, id="clean"),
+        pytest.param(
+            windowed(BOARD, fetched=3, updated=0, failures=(FAILED_RECORD,) * 3),
+            True,
+            id="every record failed",
+        ),
+        pytest.param(exhausted(BOARD), False, id="no lifetime stated"),
+        pytest.param(windowed(BOARD, fetched=0, updated=0), False, id="saw no records"),
+        pytest.param(windowed(BOARD, stopped_at_budget=True), False, id="capped"),
+        pytest.param(windowed(BOARD, fetched=3, updated=1), False, id="records vanished"),
+    ],
+)
+def test_which_runs_may_age_a_posting_out(summary: IngestionSummary, expected: bool) -> None:
+    """Failures are tolerated: the lifetime runs from when the source last
+    showed the posting, and a record this run failed to read moves nothing.
+    Records that vanished without a failure are not, because a run whose
+    counts do not add up cannot say what it did."""
+    assert may_age_out(summary) is expected
+
+
+def test_a_negative_lifetime_is_refused() -> None:
+    """It would move the line past the run's own start and retire what this
+    run just saw."""
+    with pytest.raises(ValueError, match="retire_unseen_after"):
+        windowed(BOARD, retire_unseen_after=timedelta(days=-1))
+
+
+@pytest.mark.integration
+def test_the_aged_rule_tolerates_records_the_run_failed_to_read(
+    database_url: PostgresDsn,
+) -> None:
+    """Intended: three records failed validation and the lifetime still runs
+    out, because it is a lifetime rather than an inference from absence."""
+
+    async def exercise(database: Database) -> None:
+        await ingest(database, BOARD, posting(BOARD), seen_at=LONG_AGO)
+        failed = windowed(BOARD, fetched=3, updated=0, failures=(FAILED_RECORD,) * 3)
+
+        result = await run_reconcile(database, failed, at=SECOND_RUN)
+
+        assert result.rule == "aged"
+        assert result.provenance_retired == 1
+        assert await status_of(database) is JobStatus.REMOVED
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_the_aged_path_does_not_read_the_exhaustion_refusal(database_url: PostgresDsn) -> None:
+    """The refusal here is the failure one, not "did not reach the end": the
+    run claims the end, and one record failed. The aged rule still fires,
+    because it is decided by `may_age_out` and not by which refusal `why_not`
+    happened to word first."""
+
+    async def exercise(database: Database) -> None:
+        await ingest(database, BOARD, posting(BOARD), seen_at=LONG_AGO)
+        summary = windowed(
+            BOARD, reached_the_end=True, fetched=2, updated=1, failures=(FAILED_RECORD,)
+        )
+        assert why_not(summary) == "the run had 1 failure(s) and cannot account for every posting"
+
+        result = await run_reconcile(database, summary, at=SECOND_RUN)
+
+        assert result.rule == "aged"
+        assert result.provenance_retired == 1
+
+    run_database_test(database_url, exercise)
+
+
 @pytest.mark.integration
 def test_the_aged_rule_retires_what_has_gone_unseen_for_the_stated_lifetime(
     database_url: PostgresDsn,
@@ -489,6 +567,9 @@ def test_the_aged_rule_withdraws_a_job_only_once_no_source_lists_it(
             id="no lifetime stated",
         ),
         pytest.param(windowed(BOARD, stopped_at_budget=True), "record budget", id="capped"),
+        pytest.param(
+            windowed(BOARD, fetched=3, updated=1), "did not reach the end", id="records vanished"
+        ),
     ],
 )
 def test_a_run_not_entitled_to_age_anything_out_retires_nothing_however_old(
