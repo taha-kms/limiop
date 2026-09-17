@@ -68,6 +68,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
+    ignore:
+      # eslint-config-next pins eslint-plugin-react, whose peer range stops at
+      # ESLint 9 and whose rules call the `context.getFilename` ESLint 10
+      # removed. Lift this once eslint-config-next declares ESLint 10 support.
+      - dependency-name: eslint
+        versions:
+          - '>= 10'
     groups:
       frontend-dependencies:
         patterns:
