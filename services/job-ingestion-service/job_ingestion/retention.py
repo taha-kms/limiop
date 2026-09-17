@@ -24,9 +24,10 @@ Per-source hooks are not here yet. France Travail's anonymise-at-retirement and
 Adzuna's remove-when-disabled both attach to this policy when they land.
 """
 
+import logging
 from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from platform_db.models import Job, JobProvenance
@@ -34,6 +35,11 @@ from platform_db.models.catalog import JobStatus
 from platform_db.models.job_skills import JobSkill, JobSkillMention
 from sqlalchemy import delete, exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from job_ingestion.config import Settings, get_settings
+from job_ingestion.database import Database
+
+logger = logging.getLogger(__name__)
 
 # Which of the candidate jobs some user-facing row still points at. Nothing in
 # the schema does yet; the tables that will (matches, saved jobs, applications)
@@ -63,6 +69,26 @@ class RetentionResult:
     deleted: int = 0
     anonymised: int = 0
     examined: int = 0
+
+
+DEFAULT_POLICY = RetentionPolicy()
+
+
+async def run_retention(
+    settings: Settings | None = None,
+    policy: RetentionPolicy = DEFAULT_POLICY,
+) -> RetentionResult:
+    """Run one retention pass against the configured database and commit it."""
+    app_settings = settings if settings is not None else get_settings()
+    database = Database(app_settings.database_url)
+    try:
+        async with database.session() as session:
+            result = await apply_retention(session, now=datetime.now(UTC), policy=policy)
+            await session.commit()
+        logger.info("applied catalogue retention: %s", result)
+        return result
+    finally:
+        await database.dispose()
 
 
 async def apply_retention(

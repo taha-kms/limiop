@@ -353,11 +353,11 @@ job the catalogue currently holds.
 
 A job that is no longer `active` is not served, but until retention runs it is
 still stored in full, raw payloads included. Two licences forbid keeping that
-indefinitely, so a daily pass applies one rule with a **grace period** of 30
-days, counted from when the job last changed. A status flip moves
-`updated_at`, so the grace starts the moment reconciliation or expiry acted; a
-source that keeps writing the job restarts it, because a job still being sent
-has not left any listing.
+indefinitely, so the `catalogue_retention` DAG runs a pass nightly at 03:15
+with one rule and a **grace period** of 30 days, counted from when the job last
+changed. A status flip moves `updated_at`, so the grace starts the moment
+reconciliation or expiry acted; a source that keeps writing the job restarts
+it, because a job still being sent has not left any listing.
 
 Once the grace has run out, one of two things happens:
 

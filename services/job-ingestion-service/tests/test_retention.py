@@ -19,6 +19,7 @@ from pydantic import PostgresDsn
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
 from job_ingestion.reconciliation import expire_jobs_past_their_stated_date
 from job_ingestion.retention import (
@@ -28,6 +29,7 @@ from job_ingestion.retention import (
     RetentionPolicy,
     RetentionResult,
     apply_retention,
+    run_retention,
 )
 from tests.support.catalog import with_empty_catalog
 
@@ -394,5 +396,25 @@ def test_references_from_every_probe_count(database_url: PostgresDsn) -> None:
         assert await rows_of(database, kept) == INTACT
         assert await rows_of(database, also_kept) == INTACT
         assert await rows_of(database, gone) == GONE
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_the_entry_point_opens_the_configured_database_and_commits(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(
+            database,
+            status=JobStatus.REMOVED,
+            updated_at=datetime.now(UTC) - GRACE - timedelta(days=1),
+        )
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+
+        result = await run_retention(settings=settings)
+
+        assert result == RetentionResult(deleted=1, anonymised=0, examined=1)
+        assert await rows_of(database, job_id) == GONE
 
     run_database_test(database_url, test)

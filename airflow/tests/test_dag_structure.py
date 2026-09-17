@@ -52,6 +52,9 @@ ALLOWED_CALLS = frozenset(
         "company_websites",
         "resolve",
         "resolve_websites",
+        "catalogue_retention",
+        "retain",
+        "run_retention",
     }
 )
 
