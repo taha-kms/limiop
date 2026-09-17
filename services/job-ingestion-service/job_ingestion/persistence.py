@@ -230,8 +230,8 @@ def resolve(stored: object, incoming: object, *, incoming_outranks: bool) -> obj
     it. Ninety percent of Arbeitnow postings state no workplace arrangement,
     so the alternative would be a catalogue that empties itself every run.
 
-    When both sources speak, rank decides, and an equal rank goes to the
-    incoming record so a single source can still correct itself.
+    When both sources speak, the caller has already decided which of them
+    owns the job; `incoming_outranks` says how.
     """
     if not is_stated(incoming):
         return stored
@@ -414,22 +414,34 @@ async def incoming_outranks(
 ) -> bool:
     """Whether the arriving record takes the fields it contests from the owner.
 
-    Rank decides first, as it always has: a higher-ranked source wins outright
+    The rivals are the other sources with a live provenance row on the job.
+    A source that stopped listing the posting no longer ranks: a board whose
+    posting is gone from the board yields the text to an aggregator that
+    still carries it, and takes it back when the posting reappears.
+
+    One check comes before rank. A snippet never replaces a full description
+    another source supplied, even one that has since retired, because the
+    text the job holds is still that source's full text and an excerpt is a
+    worse account of the same posting. A source alone on a job is not held
+    to this and may still correct itself.
+
+    Then rank decides, as it always has: a higher-ranked source wins outright
     and a lower-ranked one loses outright. Between sources of equal rank the
     more complete record owns the canonical fields. Aggregators carry the same
     employer text as each other, so rank cannot tell them apart and how much
     of the posting a record accounts for is the only signal left. A full
     description outranks a snippet, and then the record stating more of
-    `OPTIONAL_CANONICAL_FIELDS` wins. The comparison is against the owner's
-    own record as its provenance row recorded it, never against the merged
-    job: the job holds what every contributor said, so measured against it no
-    single source could stay complete enough to change the text again.
+    `OPTIONAL_CANONICAL_FIELDS` wins. The comparison is against the rival's
+    own record as its provenance row recorded it under `STATED_FIELDS_KEY`,
+    never against the merged job: the job holds what every contributor said,
+    so measured against it no single source could stay complete enough to
+    change the text again.
 
     At equal completeness the source that listed the job first keeps it. Once
     both sources have been seen, that date is the same whichever of them ran
     last, so the record stops depending on the order of the runs. A source
     that listed the job before any rival still lands its own corrections; a
-    source with no rival at its rank always does.
+    source with no live rival at its rank always does.
     """
     rivals = await rivals_of(session, job.id, other_than=registered.id)
     if incoming.provenance.partial_description and rivals.supplied_full_text:

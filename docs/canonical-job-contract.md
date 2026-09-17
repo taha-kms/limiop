@@ -121,7 +121,17 @@ Each source carries a **precedence**, stored on its row rather than held in
 code, so the ordering that produced a stored record can be read back out of the
 database. Higher wins.
 
-Four rules decide a field:
+Ownership is judged among a job's **live rivals**: the other sources whose
+provenance row is not retired. A source that stopped listing the posting no
+longer ranks, so a board whose posting is gone from the board yields the text
+to an aggregator that still carries it, and takes it back when the posting
+reappears. One exception looks at retired rows too: a snippet never replaces a
+full description another source supplied, even one that has since gone,
+because the text the job holds is still that source's full text and an excerpt
+is a worse account of the same posting. A source alone on a job may still
+correct itself.
+
+Four rules then decide a field:
 
 1. **Silence never wins.** A source that says nothing about a field cannot erase
    what another source said. Nothing distinguishes a provider that dropped a
@@ -135,12 +145,17 @@ Four rules decide a field:
    much of the posting a record accounts for is the only signal left. A full
    description outranks a partial one; after that, the record stating more of
    the optional canonical fields (location, workplace type, employment type,
-   published and expiry dates) wins.
+   published and expiry dates) wins. The comparison is between the two
+   sources' own records, read from the `_partial_description` and
+   `_stated_fields` keys their provenance rows carry (see the provenance
+   section), never against the merged job: the job holds what every
+   contributor said, so measured against it no single source could stay
+   complete enough to change the text again.
 4. **At equal completeness, the source that listed the job first keeps it.**
    Once both sources have been seen, that date is the same whichever of them
    ran last, so the record stops depending on the order of the runs. A source
-   with no rival at its rank, or one that listed the job before its rivals,
-   still lands its own corrections.
+   with no live rival at its rank, or one that listed the job before its
+   rivals, still lands its own corrections.
 
 A lower-ranked source that wins nothing still records that it saw the job, and
 still refreshes when it last did. Losing a disagreement is not the same as being
