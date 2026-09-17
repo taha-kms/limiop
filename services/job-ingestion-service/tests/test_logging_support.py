@@ -12,7 +12,7 @@ from job_ingestion.logging_support import (
     install_secret_filter,
     register_secrets,
 )
-from tests.support.logs import capturing_logs
+from tests.support.logs import capturing_logs, preserving_secret_filter
 
 LOGGER_NAME = "job_ingestion.logging_support_test"
 TRACEBACK_HEADER = "Traceback (most recent call last)"
@@ -390,10 +390,30 @@ def test_secret_filter_redacts_stack_info_carried_by_a_record() -> None:
     assert record.stack_info == f"{STACK_HEADER}:\n  key=[redacted]"
 
 
-def test_installing_twice_wraps_the_traceback_formatter_once() -> None:
-    install_secret_filter()
-    wrapped = logging.Formatter.formatException
-    install_secret_filter()
+def test_installing_twice_wraps_the_traceback_formatter_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = logging.Formatter.formatException
+    with preserving_secret_filter():
+        monkeypatch.setattr(logging_support, "_installed", False)
+        install_secret_filter()
+        wrapped = logging.Formatter.formatException
+        install_secret_filter()
 
-    assert logging.Formatter.formatException is wrapped
-    assert getattr(wrapped, "__wrapped__", None) is not None
+        assert logging.Formatter.formatException is wrapped
+
+    assert wrapped is not original
+    assert getattr(wrapped, "__wrapped__", None) is original
+
+
+def test_preserving_secret_filter_restores_the_traceback_formatter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = logging.Formatter.formatException
+    with preserving_secret_filter():
+        monkeypatch.setattr(logging_support, "_installed", False)
+        install_secret_filter()
+
+        assert logging.Formatter.formatException is not original
+
+    assert logging.Formatter.formatException is original
