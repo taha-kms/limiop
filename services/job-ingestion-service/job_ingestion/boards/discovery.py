@@ -37,6 +37,7 @@ who looked at the careers page.
 """
 
 import re
+import unicodedata
 from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
@@ -75,6 +76,11 @@ LEGAL_SUFFIXES = (
 )
 
 _SEPARATORS = re.compile(r"[^a-z0-9]+")
+_NOT_SLUG_CHARACTERS = re.compile(r"[^a-z0-9-]+")
+_REPEATED_HYPHENS = re.compile(r"-{2,}")
+# The longest slug worth guessing: one DNS label. Pinpoint requests a slug as
+# a subdomain, and no host can carry a longer one.
+_MAX_SLUG_LENGTH = 63
 # Trailing punctuation, so `Example Ltd.` matches the same suffix as
 # `Example Ltd`. The normalizer keeps it, and a suffix list that did not
 # tolerate it would silently miss the commonest written form.
@@ -124,14 +130,47 @@ def strip_legal_form(name: str) -> str:
     return normalized
 
 
+def _ascii_fold(text: str) -> str:
+    """`text` with accented letters reduced to their base letter and every
+    character that has no ASCII form dropped: `Café Müller` is `Cafe Muller`,
+    `jobbusters®` is `jobbusters`."""
+    return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
+def safe_slug(guess: str) -> str | None:
+    """`guess` reduced to the characters a board slug can be made of, or
+    `None` when nothing usable is left.
+
+    A slug is requested as a URL path segment or, for Pinpoint, as a hostname
+    label, and a guess outside plain `[a-z0-9-]` is not a slug any board could
+    have. Measured: `jobbusters®` reached the transport as a host it could not
+    even encode, and the whole discovery run died on that one company. So
+    accented letters fold to their ASCII base, anything else is dropped,
+    repeated hyphens collapse, leading and trailing ones go, and a guess left
+    empty or longer than one DNS label is no guess at all. Every guesser's
+    candidates pass through here before a request is built from them.
+    """
+    folded = _NOT_SLUG_CHARACTERS.sub("", _ascii_fold(guess).casefold())
+    slug = _REPEATED_HYPHENS.sub("-", folded).strip("-")
+    if not slug or len(slug) > _MAX_SLUG_LENGTH:
+        return None
+    return slug
+
+
 def candidate_slugs(company_name: str) -> tuple[str, ...]:
     """Slugs a company of this name might use, most likely first.
 
     Ordered rather than scored: each is checked against the board it names, so
     a wrong guess costs one request and is caught. Ordering only decides which
     request is made first.
+
+    The name is folded to ASCII before it is split, not only after: folding
+    each candidate on its own would turn `Café Müller` into `caf-m-ller`,
+    because the separator rule would have treated each accented letter as a
+    gap. Every candidate still ends with `safe_slug`, which is what drops one
+    that is empty or too long to be a hostname label.
     """
-    stripped = strip_legal_form(company_name)
+    stripped = " ".join(_ascii_fold(strip_legal_form(company_name)).split())
     if not stripped:
         return ()
 
@@ -140,8 +179,9 @@ def candidate_slugs(company_name: str) -> tuple[str, ...]:
     first = stripped.split(" ")[0]
 
     seen: dict[str, None] = {}
-    for slug in (joined, hyphenated, first):
-        if slug and slug not in seen:
+    for guess in (joined, hyphenated, first):
+        slug = safe_slug(guess)
+        if slug is not None and slug not in seen:
             seen[slug] = None
     return tuple(seen)
 

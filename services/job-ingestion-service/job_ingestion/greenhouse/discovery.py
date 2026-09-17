@@ -12,6 +12,7 @@ from job_ingestion.boards.discovery import (
     belongs_to,
     candidate_slugs,
     discover,
+    safe_slug,
     strip_legal_form,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "belongs_to",
     "candidate_slugs",
     "discover",
+    "safe_slug",
     "strip_legal_form",
 ]
