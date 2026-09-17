@@ -111,6 +111,10 @@ class DiscoveryResult:
     outcome: DiscoveryOutcome
     slug: str | None = None
     found_company: str | None = None
+    # For an `UNREACHABLE` outcome that a raised error decided rather than a
+    # quiet one: the error's class and message, so the registry row says
+    # what actually went wrong, not just that nothing answered.
+    failure: str | None = None
 
 
 def strip_legal_form(name: str) -> str:

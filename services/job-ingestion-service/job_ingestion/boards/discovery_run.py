@@ -9,6 +9,7 @@ guess costs one request and is stored as what it was, not silently retried.
 
 import asyncio
 import logging
+import re
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -33,6 +34,7 @@ from job_ingestion.boards.pipeline import configured_base_url
 from job_ingestion.boards.provider import BoardProvider, Verification
 from job_ingestion.config import Settings, get_settings
 from job_ingestion.database import Database
+from job_ingestion.errors import IngestionError, SourceResponseError, SourceUnavailableError
 from job_ingestion.persistence import SourceRegistration, ensure_source
 from job_ingestion.pipeline import utc_now
 
@@ -53,6 +55,18 @@ _SETTLED_STATUSES = frozenset({BoardStatus.BLOCKED, BoardStatus.WRONG_COMPANY})
 # (not_found, unreachable, candidate, inactive) is unproven and may still be
 # re-keyed to whoever a later probe actually confirms.
 _OWNED_STATUSES = frozenset({BoardStatus.CONFIRMED, BoardStatus.NAMED})
+
+# What one company's probe can raise without saying anything about the next
+# company's: the transport could not build or send the request (`InvalidURL`,
+# and the `ValueError` the standard library raises for a host it cannot
+# encode), or a verifier's own request found the provider unreachable or its
+# answer unusable — the two errors `discover` already absorbs for the feed.
+# Anything else is a programming error and still ends the run.
+_PROBE_FAILURES = (httpx2.InvalidURL, ValueError, SourceUnavailableError, SourceResponseError)
+
+# The userinfo of a URL: what a transport error's message may quote along
+# with the host it could not reach, and what evidence must never hold.
+_USERINFO = re.compile(r"://[^/\s@]+@")
 
 # `register`'s return values that a run tallies into its summary.
 _TALLIED_OUTCOMES = (
@@ -189,6 +203,32 @@ async def due_companies(
         for company in companies
         if _company_is_due(boards_by_company.get(company.id, ()), config, now)
     ]
+
+
+def describe_failure(error: Exception) -> str:
+    """`error` as registry evidence: its class and message, and nothing a
+    message could carry that evidence must not. An `IngestionError`'s message
+    is taken without the source key it prefixes, and the userinfo of any URL
+    quoted in the message is removed, because a transport that could not
+    build a request tends to quote the request it was building."""
+    message = error.message if isinstance(error, IngestionError) else str(error)
+    return f"{type(error).__name__}: {_USERINFO.sub('://', message)}"
+
+
+def _recheck_note(kind: DiscoveryOutcome, result: DiscoveryResult, now: datetime) -> dict[str, Any]:
+    """What a probe that must not change a row's status still records
+    about itself, under `evidence["last_recheck"]`."""
+    note: dict[str, Any] = {"kind": kind.value, "checked_at": now.isoformat()}
+    if result.failure is not None:
+        note["failure"] = result.failure
+    return note
+
+
+def _unreachable_evidence(result: DiscoveryResult) -> dict[str, Any]:
+    evidence: dict[str, Any] = {"kind": "unreachable"}
+    if result.failure is not None:
+        evidence["failure"] = result.failure
+    return evidence
 
 
 async def _existing_board(session: AsyncSession, source_id: UUID, slug: str) -> JobBoard | None:
@@ -448,7 +488,7 @@ async def register(
         # An operator's decision outranks any probe's answer, confirming or
         # not: only the attempt is recorded, never acted on.
         evidence = dict(board.evidence) if board.evidence else {}
-        evidence["last_recheck"] = {"kind": outcome_kind.value, "checked_at": now.isoformat()}
+        evidence["last_recheck"] = _recheck_note(outcome_kind, result, now)
         board.evidence = evidence
         await session.flush()
         return "pinned_reported"
@@ -510,7 +550,7 @@ async def register(
             # lifecycle (not discovery) is what retires a board that stops
             # answering. The row's status stands; only the attempt is noted.
             evidence = dict(board.evidence) if board.evidence else {}
-            evidence["last_recheck"] = {"kind": outcome_kind.value, "checked_at": now.isoformat()}
+            evidence["last_recheck"] = _recheck_note(outcome_kind, result, now)
             board.evidence = evidence
             outcome = "unchanged"
         elif outcome_kind is DiscoveryOutcome.UNVERIFIABLE:
@@ -595,7 +635,7 @@ async def register(
         outcome = "not_found"
     else:
         board.status = BoardStatus.UNREACHABLE
-        board.evidence = {"kind": "unreachable"}
+        board.evidence = _unreachable_evidence(result)
         outcome = "unreachable"
 
     if renamed is not None:
@@ -628,6 +668,56 @@ async def register(
 
     await session.flush()
     return outcome
+
+
+async def probe_company(
+    session: AsyncSession,
+    *,
+    client: BoardClient,
+    source: JobSource,
+    company: Company,
+    skip: Collection[str],
+    now: datetime,
+) -> str:
+    """Guess, verify and register one company's board; what `register` said.
+
+    A probe that fails in transport — the request could not be built or
+    sent, or a verifier's own request could not be answered — is this
+    company's outcome, not the run's. Measured: one company whose name was
+    guessed as a host the transport could not encode ended a nineteen-minute
+    run, and its retry, with nothing registered. So the probe runs inside a
+    SAVEPOINT: on one of `_PROBE_FAILURES` whatever it had written is rolled
+    back, and the company is registered `unreachable` with the failure as
+    evidence, exactly as a board that timed out is — `register` still leaves
+    a settled or pinned row alone and only notes the recheck on a previously
+    verified one. Anything else the probe raises is a programming error and
+    propagates.
+    """
+    try:
+        async with session.begin_nested():
+            result = await discover(client, company.display_name, skip=skip)
+            return await register(
+                session,
+                source=source,
+                company=company,
+                result=result,
+                now=now,
+                skip=skip,
+                client=client,
+            )
+    except _PROBE_FAILURES as error:
+        failure = describe_failure(error)
+        logger.warning(
+            "probe for %s failed and is recorded against the company: %s",
+            company.display_name,
+            failure,
+        )
+        result = DiscoveryResult(
+            company=company.display_name, outcome=DiscoveryOutcome.UNREACHABLE, failure=failure
+        )
+        return await register(
+            session, source=source, company=company, result=result, now=now, skip=skip
+        )
 
 
 async def run_discovery(
@@ -682,17 +772,10 @@ async def run_discovery(
                 if probed > 0:
                     await sleeper(config.politeness_seconds)
 
-                result = await discover(client, company.display_name, skip=skip)
-                probed += 1
-                outcome = await register(
-                    session,
-                    source=source,
-                    company=company,
-                    result=result,
-                    now=moment,
-                    skip=skip,
-                    client=client,
+                outcome = await probe_company(
+                    session, client=client, source=source, company=company, skip=skip, now=moment
                 )
+                probed += 1
                 if outcome == "named_reactivated":
                     tallies["named"] += 1
                     tallies["reactivated"] += 1
