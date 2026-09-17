@@ -1,6 +1,7 @@
 """Keeping credential values out of every log line."""
 
 import logging
+from collections.abc import Callable
 
 import pytest
 
@@ -11,9 +12,11 @@ from job_ingestion.logging_support import (
     install_secret_filter,
     register_secrets,
 )
-from tests.support.logs import capturing_logs
+from tests.support.logs import capturing_logs, preserving_secret_filter
 
 LOGGER_NAME = "job_ingestion.logging_support_test"
+TRACEBACK_HEADER = "Traceback (most recent call last)"
+STACK_HEADER = "Stack (most recent call last)"
 
 
 @pytest.fixture(autouse=True)
@@ -250,3 +253,167 @@ def test_capturing_logs_stops_capturing_once_the_context_exits() -> None:
     logging.getLogger(f"{LOGGER_NAME}.child").info("emitted after the context closed")
 
     assert messages == []
+
+
+def _record(msg: str, *, sinfo: str | None = None) -> logging.LogRecord:
+    return logging.LogRecord(
+        name=LOGGER_NAME,
+        level=logging.ERROR,
+        pathname=__file__,
+        lineno=0,
+        msg=msg,
+        args=(),
+        exc_info=None,
+        sinfo=sinfo,
+    )
+
+
+def _log_with_traceback(logger: logging.Logger, secret: str) -> None:
+    try:
+        raise RuntimeError(f"could not reach https://example.test/?key={secret}")
+    except RuntimeError:
+        logger.exception("request failed")
+
+
+def _log_with_args(logger: logging.Logger, secret: str) -> None:
+    logger.info("fetched with key %s", secret)
+
+
+def _log_with_f_string(logger: logging.Logger, secret: str) -> None:
+    logger.info(f"fetched with key {secret}")
+
+
+REDACTED_TRACEBACK_TAIL = "RuntimeError: could not reach https://example.test/?key=[redacted]"
+
+
+@pytest.mark.parametrize(
+    ("emit", "propagate", "expected_fragments"),
+    [
+        pytest.param(_log_with_args, True, ("fetched with key [redacted]",), id="args"),
+        pytest.param(_log_with_f_string, True, ("fetched with key [redacted]",), id="f-string"),
+        pytest.param(_log_with_args, False, ("fetched with key [redacted]",), id="propagate-false"),
+        pytest.param(
+            _log_with_traceback,
+            True,
+            (TRACEBACK_HEADER, REDACTED_TRACEBACK_TAIL),
+            id="traceback",
+        ),
+        pytest.param(
+            _log_with_traceback,
+            False,
+            (TRACEBACK_HEADER, REDACTED_TRACEBACK_TAIL),
+            id="propagate-false-traceback",
+        ),
+    ],
+)
+def test_no_captured_line_carries_a_registered_secret(
+    emit: Callable[[logging.Logger, str], None],
+    propagate: bool,
+    expected_fragments: tuple[str, ...],
+) -> None:
+    """The shapes from the report: `%s` arguments, an f-string, a logger that
+    never reaches the root logger's filter, and a traceback whose final line
+    carries the exception message. Each must come out with the secret gone
+    and the rest of the line -- the traceback included -- still there."""
+    secret = "abcdef1234-must-never-be-captured"
+    register_secrets([secret])
+    install_secret_filter()
+    logger = logging.getLogger(f"{LOGGER_NAME}.shape")
+    logger.propagate = propagate
+
+    try:
+        with capturing_logs(logger.name) as messages:
+            emit(logger, secret)
+    finally:
+        logger.propagate = True
+
+    output = "\n".join(messages)
+    assert secret not in output
+    for fragment in expected_fragments:
+        assert fragment in output
+
+
+def test_a_traceback_cached_by_one_handler_is_still_redacted_for_the_next() -> None:
+    """`Formatter.format` stores the traceback text on `record.exc_text` the
+    first time any handler formats it and every later handler reuses that
+    cache, so the second handler here never formats the exception itself."""
+    secret = "abcdef1234-cached-between-handlers"
+    register_secrets([secret])
+    install_secret_filter()
+
+    with capturing_logs(LOGGER_NAME) as first, capturing_logs(LOGGER_NAME) as second:
+        _log_with_traceback(logging.getLogger(f"{LOGGER_NAME}.child"), secret)
+
+    assert first == second
+    output = "\n".join(first)
+    assert secret not in output
+    assert TRACEBACK_HEADER in output
+    assert REDACTED_TRACEBACK_TAIL in output
+
+
+def test_a_secret_is_redacted_when_stack_info_is_requested() -> None:
+    secret = "abcdef1234-logged-with-stack-info"
+    register_secrets([secret])
+    install_secret_filter()
+
+    with capturing_logs(LOGGER_NAME) as messages:
+        logging.getLogger(f"{LOGGER_NAME}.child").info(
+            f"fetched with key {secret}", stack_info=True
+        )
+
+    output = "\n".join(messages)
+    assert secret not in output
+    assert output.startswith("fetched with key [redacted]")
+    assert STACK_HEADER in output
+
+
+def test_secret_filter_redacts_traceback_text_already_cached_on_a_record() -> None:
+    secret = "abcdef1234-already-on-exc-text"
+    register_secrets([secret])
+    record = _record("request failed")
+    record.exc_text = f"{TRACEBACK_HEADER}:\nRuntimeError: key={secret}"
+
+    kept = SecretFilter().filter(record)
+
+    assert kept is True
+    assert record.exc_text == f"{TRACEBACK_HEADER}:\nRuntimeError: key=[redacted]"
+
+
+def test_secret_filter_redacts_stack_info_carried_by_a_record() -> None:
+    secret = "abcdef1234-already-in-stack-info"
+    register_secrets([secret])
+    record = _record("request failed", sinfo=f"{STACK_HEADER}:\n  key={secret}")
+
+    kept = SecretFilter().filter(record)
+
+    assert kept is True
+    assert record.stack_info == f"{STACK_HEADER}:\n  key=[redacted]"
+
+
+def test_installing_twice_wraps_the_traceback_formatter_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = logging.Formatter.formatException
+    with preserving_secret_filter():
+        monkeypatch.setattr(logging_support, "_installed", False)
+        install_secret_filter()
+        wrapped = logging.Formatter.formatException
+        install_secret_filter()
+
+        assert logging.Formatter.formatException is wrapped
+
+    assert wrapped is not original
+    assert getattr(wrapped, "__wrapped__", None) is original
+
+
+def test_preserving_secret_filter_restores_the_traceback_formatter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original = logging.Formatter.formatException
+    with preserving_secret_filter():
+        monkeypatch.setattr(logging_support, "_installed", False)
+        install_secret_filter()
+
+        assert logging.Formatter.formatException is not original
+
+    assert logging.Formatter.formatException is original

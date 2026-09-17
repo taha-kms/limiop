@@ -43,21 +43,26 @@ def preserving_secret_filter() -> Iterator[None]:
     """Undo whatever a real call to `install_secret_filter` does inside.
 
     `install_secret_filter` is meant to run once and stay installed for the
-    life of the process, so it mutates three pieces of global state together:
-    the module's own `_installed` flag, the shared log record factory, and
-    the root logger's filter list. A test that provokes a real installation
-    -- as opposed to one that stubs `install_secret_filter` out -- has to put
-    all three back, and only all three together: restoring the factory and
-    the root filters while leaving `_installed` set would make every later
-    real installation in the process a silent no-op, since the flag would
-    claim the work was already done while the actual wrap had been erased.
+    life of the process, so it mutates four pieces of global state together:
+    the module's own `_installed` flag, the shared log record factory,
+    `logging.Formatter.formatException`, and the root logger's filter list.
+    A test that provokes a real installation -- as opposed to one that stubs
+    `install_secret_filter` out -- has to put all four back, and only all
+    four together: restoring the factory, the formatter, and the root filters
+    while leaving `_installed` set would make every later real installation
+    in the process a silent no-op, since the flag would claim the work was
+    already done while the actual wraps had been erased; restoring the flag
+    while leaving a wrap in place would make the next installation wrap the
+    wrap, one layer deeper each time.
     """
     installed = logging_support._installed
     factory = logging.getLogRecordFactory()
+    format_exception = logging.Formatter.formatException
     root_filters = list(logging.getLogger().filters)
     try:
         yield
     finally:
         logging_support._installed = installed
         logging.setLogRecordFactory(factory)
+        logging.Formatter.formatException = format_exception  # type: ignore[method-assign]
         logging.getLogger().filters = root_filters

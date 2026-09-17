@@ -32,15 +32,34 @@ is why `credentials.require` -- the first place a source's secret values
 exist in the process -- installs the filter itself rather than trusting some
 other setup step to have run first.
 
+A traceback is the one piece of a record the factory cannot see. `exc_info`
+is a live exception triple when the record is built; the text a reader sees
+-- the frames and the final `ExceptionClass: message` line, where a
+provider's error text lands -- is produced by `logging.Formatter`'s
+`formatException` only when the first handler formats the record, and
+`Formatter.format` then caches that text on `record.exc_text` for every
+later handler to reuse verbatim. Every handler formats through a
+`Formatter`, so `install_secret_filter` also wraps the class's
+`formatException` once, redacting the text at the moment it is produced.
+That covers the first formatting; a record that already carries `exc_text`
+-- rebuilt from another process's dict, or handed to a `SecretFilter`
+attached directly to a later handler -- never calls `formatException` again,
+so `_redact_record` redacts the cached text too. `stack_info` is a plain
+string from the start and is redacted where the message is.
+
 A value shorter than eight characters (`MINIMUM_SECRET_LENGTH` below) is never
 registered: redacting a one- or two-character "secret" would blank out routine
 words and digits in every unrelated log line.
 """
 
+import functools
 import logging
 from collections.abc import Iterable
+from types import TracebackType
 
 MINIMUM_SECRET_LENGTH = 8
+
+_ExcInfo = tuple[type[BaseException], BaseException, TracebackType | None] | tuple[None, None, None]
 
 _registered_secrets: set[str] = set()
 
@@ -95,16 +114,20 @@ def _redact_arg(arg: object) -> object:
 
 
 def _redact_record(record: logging.LogRecord) -> logging.LogRecord:
-    """Redact a record's message and arguments in place.
+    """Redact a record's message, arguments, and any text it already carries.
 
-    Only `getMessage()`'s two inputs are touched: the format string in `msg`,
-    for a caller that interpolated a secret before ever calling the logger,
-    and each entry of `args`, for the ordinary `logger.info("...%s", value)`
+    `getMessage()`'s two inputs are touched: the format string in `msg`, for
+    a caller that interpolated a secret before ever calling the logger, and
+    each entry of `args`, for the ordinary `logger.info("...%s", value)`
     shape -- including a non-string argument such as an exception, whose
     `str()` may itself carry a secret (a `SourceUnavailableError` built from a
-    provider's own error text, say). Anything else on the record --
-    `exc_info`, `exc_text` -- is untouched; a traceback that carries a secret
-    is a different problem than this module solves.
+    provider's own error text, say). `stack_info` is redacted when set. So is
+    `exc_text`, but only when it is already set: a record built by the
+    factory never has it yet, and the traceback text produced later by
+    `formatException` is redacted by the wrap in `install_secret_filter`;
+    this branch covers a record that arrives with the cached text in place
+    (see the module docstring). `exc_info` itself is left alone -- it is the
+    live exception, not text.
     """
     if not _registered_secrets:
         return record
@@ -114,6 +137,10 @@ def _redact_record(record: logging.LogRecord) -> logging.LogRecord:
         record.args = tuple(_redact_arg(arg) for arg in record.args)
     elif isinstance(record.args, dict):
         record.args = {key: _redact_arg(value) for key, value in record.args.items()}
+    if record.exc_text is not None:
+        record.exc_text = _redact(record.exc_text)
+    if record.stack_info is not None:
+        record.stack_info = _redact(record.stack_info)
     return record
 
 
@@ -137,9 +164,13 @@ def install_secret_filter() -> None:
     """Install credential redaction for the whole process, once.
 
     Wraps the shared log record factory so every logger's every record is
-    redacted at the moment it is built, and also attaches a `SecretFilter` to
-    the root logger (see the module docstring for why that alone would not be
-    enough). Calling this more than once does either only on the first call.
+    redacted at the moment it is built, wraps `logging.Formatter`'s
+    `formatException` so a traceback is redacted at the moment its text is
+    produced, and also attaches a `SecretFilter` to the root logger (see the
+    module docstring for why the filter alone would not be enough, and why a
+    traceback needs its own hook). Calling this more than once does any of it
+    only on the first call. Both wraps chain whatever was there before them,
+    and a test that provokes a real installation puts both back.
     """
     global _installed
     if _installed:
@@ -155,3 +186,11 @@ def install_secret_filter() -> None:
         return _redact_record(previous_factory(*args, **kwargs))
 
     logging.setLogRecordFactory(factory)
+
+    previous_format_exception = logging.Formatter.formatException
+
+    @functools.wraps(previous_format_exception)
+    def format_exception(self: logging.Formatter, ei: _ExcInfo) -> str:
+        return _redact(previous_format_exception(self, ei))
+
+    logging.Formatter.formatException = format_exception  # type: ignore[method-assign]
