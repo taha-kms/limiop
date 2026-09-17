@@ -68,6 +68,14 @@ cannot be normalized without recording where it came from.
 | `raw_payload` | no | Untrusted provider JSON, preserved for reproducing transformations |
 | `partial_description` | no | `true` when `description` is the provider's excerpt rather than the posting. Defaults to `false`. When true, stored inside `raw_payload` as `_partial_description: true`; absent otherwise |
 
+Persistence folds two keys of its own into the stored `raw_payload`, prefixed
+so they can never collide with a field the provider sent:
+
+| Key | Meaning |
+| --- | --- |
+| `_partial_description` | `true` when the record's description was an excerpt. Deduplication never text-matches such a row |
+| `_stated_fields` | How many of the optional canonical fields (location, workplace type, employment type, published and expiry dates) the record itself stated. Ownership judges a rival against this, not against the merged job |
+
 `(source_key, source_job_id)` identifies an external record. One canonical job
 may carry provenance from several sources when the same posting is advertised in
 more than one place.

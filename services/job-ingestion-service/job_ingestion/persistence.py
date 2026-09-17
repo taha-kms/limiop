@@ -29,23 +29,36 @@ from sqlalchemy.orm import selectinload
 from job_ingestion.contracts import IngestionStage, RecordFailure, RecordOutcome
 from job_ingestion.deduplication import PARTIAL_DESCRIPTION_KEY, DeduplicationOutcome, decide
 from job_ingestion.matching import match_key_of
-from job_ingestion.schemas import NormalizedJob, NormalizedProvenance
+from job_ingestion.schemas import NormalizedJob
+
+# The key under which a provenance row records how many optional canonical
+# fields its record stated, beside `PARTIAL_DESCRIPTION_KEY`. Ownership
+# compares one source's record against another's, and the payload is the
+# only place a row keeps what its own record said once the job has merged it.
+STATED_FIELDS_KEY = "_stated_fields"
 
 
-def stored_payload(provenance: NormalizedProvenance) -> dict[str, object] | None:
-    """The payload a provenance row keeps, with the partial flag folded in.
+def stored_payload(incoming: NormalizedJob) -> dict[str, object]:
+    """The payload a provenance row keeps, with what ownership needs folded in.
 
-    A partial description is recorded inside `raw_payload` rather than in a
-    column of its own. The flag exists so that deduplication can refuse to
-    text-match the record later, and the payload is already the one place a
-    row keeps what is known about the record it came from; a column would be
-    a schema change for one bit that only ever travels with that payload. A
-    record that is not partial stores its payload untouched, so nothing that
-    was written before the flag existed reads any differently.
+    A partial description and the stated-field count are recorded inside
+    `raw_payload` rather than in columns of their own. The flag exists so that
+    deduplication can refuse to text-match the record later, the count so
+    that a rival can be judged against this record rather than against the
+    merged job, and the payload is already the one place a row keeps what is
+    known about the record it came from; columns would be a schema change
+    for two facts that only ever travel with that payload. The provider's
+    own keys are stored untouched, so nothing that was written before these
+    keys existed reads any differently.
     """
-    if not provenance.partial_description:
-        return provenance.raw_payload
-    return {**(provenance.raw_payload or {}), PARTIAL_DESCRIPTION_KEY: True}
+    provenance = incoming.provenance
+    payload: dict[str, object] = {
+        **(provenance.raw_payload or {}),
+        STATED_FIELDS_KEY: stated_field_count(incoming),
+    }
+    if provenance.partial_description:
+        payload[PARTIAL_DESCRIPTION_KEY] = True
+    return payload
 
 
 async def observe_job_provenance(
@@ -292,12 +305,29 @@ class Owner:
     Read off the job's live provenance rows from every source but the one
     now writing: the sources at the highest rank among them, taken together.
     `partial` is true only when each of them delivered a snippet, because a
-    full description at that rank would have won the field from a snippet.
+    full description at that rank would have won the field from a snippet;
+    `stated` is the most optional fields any of them stated, for the same
+    reason.
     """
 
     precedence: int
     first_seen_at: datetime
     partial: bool
+    stated: int
+
+
+def payload_facts(payload: dict[str, object] | None) -> tuple[bool, int]:
+    """What a provenance row's payload records about its own record.
+
+    A row written before the keys existed reads as a full record that stated
+    nothing, which is the most it can be trusted to have said.
+    """
+    facts = payload or {}
+    stated = facts.get(STATED_FIELDS_KEY)
+    return (
+        facts.get(PARTIAL_DESCRIPTION_KEY) is True,
+        stated if isinstance(stated, int) else 0,
+    )
 
 
 async def current_owner(session: AsyncSession, job_id: UUID, *, other_than: UUID) -> Owner | None:
@@ -309,13 +339,7 @@ async def current_owner(session: AsyncSession, job_id: UUID, *, other_than: UUID
     not count: a source that stopped listing the job no longer owns any of it.
     """
     statement = (
-        select(
-            JobSource.precedence,
-            JobProvenance.first_seen_at,
-            func.coalesce(
-                JobProvenance.raw_payload.contains({PARTIAL_DESCRIPTION_KEY: True}), False
-            ),
-        )
+        select(JobSource.precedence, JobProvenance.first_seen_at, JobProvenance.raw_payload)
         .select_from(JobProvenance)
         .join(JobSource, JobProvenance.source_id == JobSource.id)
         .where(
@@ -327,12 +351,17 @@ async def current_owner(session: AsyncSession, job_id: UUID, *, other_than: UUID
     rows = (await session.execute(statement)).all()
     if not rows:
         return None
-    highest = max(precedence for precedence, _seen, _partial in rows)
-    owning = [(seen, partial) for precedence, seen, partial in rows if precedence == highest]
+    highest = max(precedence for precedence, _seen, _payload in rows)
+    owning = [
+        (seen, *payload_facts(payload))
+        for precedence, seen, payload in rows
+        if precedence == highest
+    ]
     return Owner(
         precedence=highest,
-        first_seen_at=min(seen for seen, _partial in owning),
-        partial=all(partial for _seen, partial in owning),
+        first_seen_at=min(seen for seen, _partial, _stated in owning),
+        partial=all(partial for _seen, partial, _stated in owning),
+        stated=max(stated for _seen, _partial, stated in owning),
     )
 
 
@@ -372,8 +401,10 @@ async def incoming_outranks(
     employer text as each other, so rank cannot tell them apart and how much
     of the posting a record accounts for is the only signal left. A full
     description outranks a snippet, and then the record stating more of
-    `OPTIONAL_CANONICAL_FIELDS` wins. The stored side of that comparison is the
-    job as it stands, which holds at least what its owner said.
+    `OPTIONAL_CANONICAL_FIELDS` wins. The comparison is against the owner's
+    own record as its provenance row recorded it, never against the merged
+    job: the job holds what every contributor said, so measured against it no
+    single source could stay complete enough to change the text again.
 
     At equal completeness the source that listed the job first keeps it. Once
     both sources have been seen, that date is the same whichever of them ran
@@ -386,7 +417,7 @@ async def incoming_outranks(
         return owner is None or registered.precedence > owner.precedence
 
     arriving = (not incoming.provenance.partial_description, stated_field_count(incoming))
-    stored = (not owner.partial, stated_field_count(job))
+    stored = (not owner.partial, owner.stated)
     if arriving != stored:
         return arriving > stored
 
@@ -492,7 +523,7 @@ async def write(
         source_job_id=incoming.provenance.source_job_id,
         source_url=str(incoming.provenance.source_url),
         seen_at=seen_at,
-        raw_payload=stored_payload(incoming.provenance),
+        raw_payload=stored_payload(incoming),
     )
     # A source listing it again contradicts the conclusion that nobody did.
     # Expiry is left alone: a stated date does not stop having passed because
