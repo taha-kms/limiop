@@ -1,13 +1,13 @@
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import PostgresDsn
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy import text as sql
 
 from job_ingestion import persistence
@@ -28,6 +28,11 @@ SOURCE = SourceRegistration(
 )
 FIRST_SEEN = datetime(2026, 8, 18, 10, tzinfo=UTC)
 LATER_SEEN = datetime(2026, 8, 19, 10, tzinfo=UTC)
+
+
+def seen(day: int) -> datetime:
+    """The run time on the given day, counting from the first."""
+    return FIRST_SEEN + timedelta(days=day)
 
 
 def incoming_job(**overrides: Any) -> NormalizedJob:
@@ -397,7 +402,11 @@ def test_the_raw_payload_is_preserved_for_reproducing_transformations(
         async with database.session() as session:
             provenance = (await session.scalars(select(JobProvenance))).one()
 
-        assert provenance.raw_payload == {"slug": "external-42"}
+        assert provenance.raw_payload == {
+            "slug": "external-42",
+            "_partial_description": False,
+            "_stated_fields": 4,
+        }
 
     run_database_test(database_url, exercise)
 
@@ -423,7 +432,11 @@ def test_a_partial_description_is_flagged_inside_the_stored_payload(
         async with database.session() as session:
             provenance = (await session.scalars(select(JobProvenance))).one()
 
-        assert provenance.raw_payload == {"slug": "external-42", "_partial_description": True}
+        assert provenance.raw_payload == {
+            "slug": "external-42",
+            "_partial_description": True,
+            "_stated_fields": 4,
+        }
 
     run_database_test(database_url, exercise)
 
@@ -448,7 +461,7 @@ def test_a_partial_description_is_stored_even_without_a_payload(
         async with database.session() as session:
             provenance = (await session.scalars(select(JobProvenance))).one()
 
-        assert provenance.raw_payload == {"_partial_description": True}
+        assert provenance.raw_payload == {"_partial_description": True, "_stated_fields": 4}
 
     run_database_test(database_url, exercise)
 
@@ -801,5 +814,393 @@ def test_two_openings_for_one_role_in_one_city_stay_two_jobs(
 
         jobs, *_ = await counts(database)
         assert jobs == 2
+
+    run_database_test(database_url, exercise)
+
+
+# Two sources at the same rank. Aggregators copy the employer's text, so rank
+# cannot separate them and the fuller record owns the canonical fields instead.
+
+
+def aggregator_like(key: str) -> SourceRegistration:
+    """Another source at the aggregator's rank."""
+    return SourceRegistration(
+        key=key,
+        display_name=key.capitalize(),
+        base_url=f"https://{key}.example.com",
+        precedence=AGGREGATOR.precedence,
+    )
+
+
+# The opening sentence alone, which is what a provider that truncates delivers.
+SNIPPET = "Build the pipelines the analytics team depends on, and own them end to end."
+
+
+def telling(audience: str) -> str:
+    """The posting as one more source words it, differing from the others by a word."""
+    return f"{SNIPPET} You will work with engineers across the {audience}."
+
+
+MIRROR = aggregator_like("mirror")
+MIRROR_TEXT = telling("organisation")
+RELAY = aggregator_like("relay")
+RELAY_TEXT = telling("group")
+
+Listing = tuple[SourceRegistration, NormalizedJob, datetime]
+
+
+def fuller(source: SourceRegistration, description: str, **overrides: Any) -> NormalizedJob:
+    """The posting with the two fields the default telling leaves unstated."""
+    return from_source(
+        source,
+        description=description,
+        workplace_type="remote",
+        employment_type="full-time",
+        **overrides,
+    )
+
+
+async def ingest_each(database: Database, listings: list[Listing]) -> PersistenceResult:
+    result: PersistenceResult | None = None
+    for source, incoming, seen_at in listings:
+        result = await ingest_from(database, source, incoming, seen_at=seen_at)
+    assert result is not None
+    return result
+
+
+@pytest.mark.integration
+def test_a_fuller_record_arriving_second_owns_the_job(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), FIRST_SEEN),
+                (MIRROR, fuller(MIRROR, MIRROR_TEXT), LATER_SEEN),
+            ],
+        )
+
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_fuller_record_keeps_the_job_when_a_sparser_one_arrives(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        result = await ingest_each(
+            database,
+            [
+                (AGGREGATOR, fuller(AGGREGATOR, AGGREGATOR_TEXT), FIRST_SEEN),
+                (MIRROR, from_source(MIRROR, description=MIRROR_TEXT), LATER_SEEN),
+            ],
+        )
+
+        assert result.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == AGGREGATOR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_full_description_owns_the_job_over_a_partial_one(database_url: PostgresDsn) -> None:
+    """A provider that starts delivering excerpts loses the text to one that does not.
+
+    Identity matching never joins a snippet to a full posting, so the only way
+    a partial record shares a job with a full one is through a source that was
+    full when it first listed the job and truncated later. Both sources state
+    the same fields, so nothing but the snippet separates them.
+    """
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), FIRST_SEEN),
+                (MIRROR, from_source(MIRROR, description=MIRROR_TEXT), LATER_SEEN),
+            ],
+        )
+        truncated = from_source(
+            AGGREGATOR,
+            description=SNIPPET,
+            provenance={
+                "source_key": AGGREGATOR.key,
+                "source_job_id": f"{AGGREGATOR.key}-1",
+                "source_url": f"{AGGREGATOR.base_url}/jobs/1",
+                "partial_description": True,
+            },
+        )
+        snipped = await ingest_from(database, AGGREGATOR, truncated, seen_at=LATER_SEEN)
+
+        assert snipped.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description != SNIPPET
+
+        await ingest_from(
+            database, MIRROR, from_source(MIRROR, description=MIRROR_TEXT), seen_at=LATER_SEEN
+        )
+
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("board_first", [True, False], ids=["board first", "aggregator first"])
+def test_a_higher_ranked_source_still_beats_a_fuller_lower_one(
+    database_url: PostgresDsn,
+    board_first: bool,
+) -> None:
+    async def exercise(database: Database) -> None:
+        listings: list[Listing] = [
+            (BOARD, from_source(BOARD), FIRST_SEEN),
+            (AGGREGATOR, fuller(AGGREGATOR, AGGREGATOR_TEXT), LATER_SEEN),
+        ]
+        if not board_first:
+            listings.reverse()
+
+        await ingest_each(database, listings)
+
+        job = await stored_job(database)
+        assert job.description == BOARD_TEXT
+        # Rank settles what both describe; what only the aggregator said still lands.
+        assert job.workplace_type is WorkplaceType.REMOTE
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("mirror_first", [True, False], ids=["mirror first", "aggregator first"])
+def test_at_equal_completeness_the_first_seen_source_owns_whichever_ran_last(
+    database_url: PostgresDsn,
+    mirror_first: bool,
+) -> None:
+    """Two equally full tellings, one of which listed the job a day earlier."""
+
+    async def exercise(database: Database) -> None:
+        listings: list[Listing] = [
+            (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), FIRST_SEEN),
+            (MIRROR, from_source(MIRROR, description=MIRROR_TEXT), LATER_SEEN),
+        ]
+        if mirror_first:
+            listings.reverse()
+
+        # Several rounds, because a rule that only settles after one pass would
+        # still flip the record on every scheduled run.
+        for _ in range(3):
+            await ingest_each(database, listings)
+
+        assert (await stored_job(database)).description == AGGREGATOR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_the_first_seen_owner_still_corrects_itself_after_a_rival_filled_a_field(
+    database_url: PostgresDsn,
+) -> None:
+    """Completeness is judged against the rival's own record, not the merged job.
+
+    The merged job holds what both sources said, so measured against it
+    neither source could ever be complete enough to change the text again.
+    """
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), seen(0)),
+                (MIRROR, from_source(MIRROR, location=None, workplace_type="remote"), seen(1)),
+            ],
+        )
+        corrected = from_source(
+            AGGREGATOR,
+            description=f"{AGGREGATOR_TEXT} Fixed typo.",
+            title="Enterprise Account Executive, Insurance (EMEA)",
+        )
+        landed = await ingest_from(database, AGGREGATOR, corrected, seen_at=seen(2))
+        job = await stored_job(database)
+
+        assert landed.outcome is RecordOutcome.UPDATED
+        assert job.description == corrected.description
+        assert job.title == corrected.title
+        assert job.workplace_type is WorkplaceType.REMOTE
+
+        rival = from_source(
+            MIRROR, location=None, workplace_type="remote", description=f"{MIRROR_TEXT} Fixed."
+        )
+        refused = await ingest_from(database, MIRROR, rival, seen_at=seen(3))
+
+        assert refused.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == corrected.description
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    "order",
+    [
+        ("aggregator", "relay", "mirror"),
+        ("mirror", "aggregator", "relay"),
+        ("aggregator", "mirror", "relay"),
+    ],
+    ids=lambda order: " then ".join(order),
+)
+def test_three_sources_settle_on_the_fullest_whatever_the_order(
+    database_url: PostgresDsn,
+    order: tuple[str, ...],
+) -> None:
+    """The mirror states strictly more than the aggregator, and the relay states
+    a field nobody else does, so the merged job outgrows every single record."""
+
+    async def exercise(database: Database) -> None:
+        tellings = {
+            "aggregator": (AGGREGATOR, fuller(AGGREGATOR, AGGREGATOR_TEXT)),
+            "relay": (RELAY, from_source(RELAY, description=RELAY_TEXT, published_at=seen(0))),
+            "mirror": (MIRROR, fuller(MIRROR, MIRROR_TEXT, expires_at=seen(30))),
+        }
+        for day, key in enumerate(order):
+            source, incoming = tellings[key]
+            await ingest_from(database, source, incoming, seen_at=seen(day))
+        for day in (10, 11):
+            await ingest_each(database, [(*tellings[key], seen(day)) for key in order])
+
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_record_that_was_partial_once_reads_as_full_again(database_url: PostgresDsn) -> None:
+    """A source that truncated and recovered must not keep reading as a snippet.
+
+    The flag lives in the payload, and a record with no payload of its own
+    used to leave the old payload, flag included, in place. Its rival then saw
+    a snippet where the source itself sent full text, and the two took the
+    job from each other on every run.
+    """
+
+    def without_payload(source: SourceRegistration, partial: bool = False) -> NormalizedJob:
+        return from_source(
+            source,
+            description=SNIPPET if partial else telling(source.key),
+            provenance={
+                "source_key": source.key,
+                "source_job_id": f"{source.key}-1",
+                "source_url": f"{source.base_url}/jobs/1",
+                "partial_description": partial,
+            },
+        )
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, without_payload(AGGREGATOR), seen(0)),
+                (MIRROR, without_payload(MIRROR), seen(1)),
+                (AGGREGATOR, without_payload(AGGREGATOR, partial=True), seen(2)),
+                (AGGREGATOR, without_payload(AGGREGATOR), seen(3)),
+            ],
+        )
+
+        async with database.session() as session:
+            payloads = (await session.scalars(select(JobProvenance.raw_payload))).all()
+        assert all((payload or {}).get("_partial_description") is False for payload in payloads)
+
+        outcomes = [
+            (
+                await ingest_from(database, source, without_payload(source), seen_at=seen(day))
+            ).outcome
+            for day, source in enumerate([MIRROR, AGGREGATOR] * 3, start=4)
+        ]
+
+        assert outcomes == [RecordOutcome.SKIPPED] * 6
+        assert (await stored_job(database)).description == telling(AGGREGATOR.key)
+
+    run_database_test(database_url, exercise)
+
+
+async def retire(database: Database, source: SourceRegistration, at: datetime) -> None:
+    """Mark every row this source holds as no longer listed, as reconciliation does."""
+    async with database.session() as session:
+        source_id = await session.scalar(select(JobSource.id).where(JobSource.key == source.key))
+        await session.execute(
+            update(JobProvenance).where(JobProvenance.source_id == source_id).values(retired_at=at)
+        )
+        await session.commit()
+
+
+@pytest.mark.integration
+def test_a_retired_board_yields_the_text_and_takes_it_back_on_return(
+    database_url: PostgresDsn,
+) -> None:
+    """A board whose posting is gone from the board no longer owns the text."""
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (BOARD, from_source(BOARD), seen(0)),
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), seen(1)),
+            ],
+        )
+        assert (await stored_job(database)).description == BOARD_TEXT
+
+        await retire(database, BOARD, seen(2))
+        taken = await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR, description=AGGREGATOR_TEXT),
+            seen_at=seen(3),
+        )
+        assert taken.outcome is RecordOutcome.UPDATED
+        assert (await stored_job(database)).description == AGGREGATOR_TEXT
+
+        returned = await ingest_from(database, BOARD, from_source(BOARD), seen_at=seen(4))
+        assert returned.outcome is RecordOutcome.UPDATED
+        assert (await stored_job(database)).description == BOARD_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_snippet_never_replaces_full_text_even_after_its_rival_retires(
+    database_url: PostgresDsn,
+) -> None:
+    """The full text the job holds is not discarded for an excerpt when the
+    source that supplied it stops listing the posting."""
+
+    async def exercise(database: Database) -> None:
+        truncated = from_source(
+            AGGREGATOR,
+            description=SNIPPET,
+            provenance={
+                "source_key": AGGREGATOR.key,
+                "source_job_id": f"{AGGREGATOR.key}-1",
+                "source_url": f"{AGGREGATOR.base_url}/jobs/1",
+                "partial_description": True,
+            },
+        )
+        full = from_source(MIRROR, description=MIRROR_TEXT)
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), seen(0)),
+                (MIRROR, full, seen(1)),
+                (AGGREGATOR, truncated, seen(2)),
+                (MIRROR, full, seen(3)),
+            ],
+        )
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+        await retire(database, MIRROR, seen(4))
+        snipped = await ingest_from(database, AGGREGATOR, truncated, seen_at=seen(5))
+        assert snipped.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+        returned = await ingest_from(database, MIRROR, full, seen_at=seen(6))
+        assert returned.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == MIRROR_TEXT
 
     run_database_test(database_url, exercise)

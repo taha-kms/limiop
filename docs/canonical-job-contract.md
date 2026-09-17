@@ -66,7 +66,15 @@ cannot be normalized without recording where it came from.
 | `source_job_id` | yes | The provider's own identifier for the record |
 | `source_url` | yes | Where the record was read from |
 | `raw_payload` | no | Untrusted provider JSON, preserved for reproducing transformations |
-| `partial_description` | no | `true` when `description` is the provider's excerpt rather than the posting. Defaults to `false`. When true, stored inside `raw_payload` as `_partial_description: true`; absent otherwise |
+| `partial_description` | no | `true` when `description` is the provider's excerpt rather than the posting. Defaults to `false`. Stored inside `raw_payload` as `_partial_description`, always written, `true` or `false` |
+
+Persistence folds two keys of its own into the stored `raw_payload`, prefixed
+so they can never collide with a field the provider sent:
+
+| Key | Meaning |
+| --- | --- |
+| `_partial_description` | `true` when the record's description was an excerpt, `false` otherwise. Written on every run, so a source that truncated once and recovered stops reading as a snippet. Deduplication never text-matches a row where it is `true` |
+| `_stated_fields` | How many of the optional canonical fields (location, workplace type, employment type, published and expiry dates) the record itself stated. Ownership judges a rival against this, not against the merged job |
 
 `(source_key, source_job_id)` identifies an external record. One canonical job
 may carry provenance from several sources when the same posting is advertised in
@@ -113,7 +121,17 @@ Each source carries a **precedence**, stored on its row rather than held in
 code, so the ordering that produced a stored record can be read back out of the
 database. Higher wins.
 
-Three rules decide a field:
+Ownership is judged among a job's **live rivals**: the other sources whose
+provenance row is not retired. A source that stopped listing the posting no
+longer ranks, so a board whose posting is gone from the board yields the text
+to an aggregator that still carries it, and takes it back when the posting
+reappears. One exception looks at retired rows too: a snippet never replaces a
+full description another source supplied, even one that has since gone,
+because the text the job holds is still that source's full text and an excerpt
+is a worse account of the same posting. A source alone on a job may still
+correct itself.
+
+Four rules then decide a field:
 
 1. **Silence never wins.** A source that says nothing about a field cannot erase
    what another source said. Nothing distinguishes a provider that dropped a
@@ -122,8 +140,22 @@ Three rules decide a field:
    A field is silent when it is null, or when it holds the `unspecified` member
    its vocabulary uses for exactly this.
 2. **When both speak, rank decides.**
-3. **An equal rank goes to the incoming record**, so one source can still
-   correct itself.
+3. **At equal rank, the more complete record owns the job.** Aggregators copy
+   the same employer text as each other, so rank cannot separate them and how
+   much of the posting a record accounts for is the only signal left. A full
+   description outranks a partial one; after that, the record stating more of
+   the optional canonical fields (location, workplace type, employment type,
+   published and expiry dates) wins. The comparison is between the two
+   sources' own records, read from the `_partial_description` and
+   `_stated_fields` keys their provenance rows carry (see the provenance
+   section), never against the merged job: the job holds what every
+   contributor said, so measured against it no single source could stay
+   complete enough to change the text again.
+4. **At equal completeness, the source that listed the job first keeps it.**
+   Once both sources have been seen, that date is the same whichever of them
+   ran last, so the record stops depending on the order of the runs. A source
+   with no live rival at its rank, or one that listed the job before its
+   rivals, still lands its own corrections.
 
 A lower-ranked source that wins nothing still records that it saw the job, and
 still refreshes when it last did. Losing a disagreement is not the same as being
@@ -140,8 +172,11 @@ is what the next section decides.
 ### Alternatives considered
 
 **First creator owns.** Whichever source saw a job first would keep it forever.
-Rejected because arrival order is an accident of scheduling, and it would freeze
-an aggregator's thinner account of a posting in place ahead of the employer's.
+Rejected as the rule because arrival order is an accident of scheduling, and it
+would freeze an aggregator's thinner account of a posting in place ahead of the
+employer's. It survives only as the last tie-break, once rank and completeness
+have both failed to separate two sources, where the alternative is a record
+that follows whichever run happened last.
 
 **Precedence per field.** A source could outrank another on location while
 losing on description. Rejected as unjustified for now: it needs per-field
