@@ -254,18 +254,51 @@ would have withdrawn twenty-four open jobs.
 Reconciliation refuses to run at all without exhaustion, and says why rather
 than doing nothing quietly.
 
+One run is refused even when its counts call it exhausted. A run that fetched
+no records reads the same whether the source was empty or never answered, and
+retiring every posting on the strength of it would let an outage do the
+retiring. Such a run retires nothing and reports that it saw no records and
+cannot tell absence from an outage.
+
+### A creation-windowed source keeps a posting for a presumed lifetime
+
 A source that is read through a window can never claim exhaustion. Adzuna is
-asked only for the last few days of postings, so a walk that runs every
-country short has still seen nothing older than the window, and its client
-reports `reached_the_end` as false on every run. Adzuna postings are therefore
-not retired by reconciliation yet; the rule for windowed sources, whether a
-maximum age or an expiry derived from the posting date, is #376.
+asked only for postings created in the last two days, so a walk that runs
+every country short has still seen nothing older than the window, and its
+client reports `reached_the_end` as false on every run. Nor does absence from
+such a source mean anything: a posting leaves the window two days after it was
+created whether or not it is still open, and the API has no closing signal.
+
+Such a source states a presumed lifetime instead: how long a posting is kept
+after the source last showed it before SkillSync retires it, carried on the
+run summary as `retire_unseen_after`. This is a lifetime, not evidence of
+absence. Adzuna states thirty days, so an Adzuna posting is shown for thirty
+days after it was last seen, roughly thirty to thirty-two days after it was
+created, whether or not Adzuna still lists it: the API never says when a
+posting closes, the terms permit holding the data while the licence stands,
+and a posting older than that is more often filled than open.
+
+A run stating a lifetime retires the provenance records of its source last
+seen before the run started minus the lifetime, and withdraws jobs exactly as
+an exhausted run does, provided it fetched at least one record, did not stop
+at its record budget, and can account for every record it fetched. The rule's
+inputs are the moment the run started and the stated lifetime; nothing in the
+run's counts moves the line. Record failures do not refuse this path, unlike
+the exhaustion path: the lifetime runs from when the source last showed the
+posting, and a record this run failed to read says nothing about that.
+
+A run that stopped at its record budget is refused, a run whose records
+vanished without a failure is refused, and a run that saw no records is
+refused before either rule is consulted. The exhaustion rule is unchanged: a
+run that reached the end retires everything it did not see, whatever lifetime
+it states.
 
 ### The conclusion is drawn twice
 
-**Per source.** A provenance record an exhausted run did not see is retired.
-That is a fact about one board: this employer stopped advertising this posting
-there.
+**Per source.** A provenance record an exhausted run did not see, or one a
+windowed source has not shown for its stated lifetime, is retired. That is a
+fact about one board: this employer stopped advertising this posting there,
+or the lifetime SkillSync keeps it for has run out.
 
 **Per job.** A job is marked `removed` only once no source still lists it. A
 job dropped by an aggregator but still on the employer's own board is still

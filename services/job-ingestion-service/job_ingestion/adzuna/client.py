@@ -15,7 +15,11 @@ Every request is windowed by `max_days_old`, so a short page means "nothing
 more from the last few days", never "nothing more on the source". This client
 therefore never reports `reached_the_end`: a walk that came up short in every
 country still has not seen any posting older than the window, and the
-lifecycle rule must not retire what a run never looked at.
+lifecycle rule must not retire what a run never looked at. Nor does absence
+from a run mean anything, since a posting leaves the window days after it was
+created whether or not it is still open. What the run states instead is
+`AdzunaConfig.retire_unseen_after`, the lifetime a posting is kept for after a
+run last saw it.
 
 Every page is one call against a licensed daily budget. The reservation is
 made through `reserving_get` in a session of this client's own, committed the
@@ -38,6 +42,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
+from datetime import timedelta
 from types import TracebackType
 from typing import Any, Self
 
@@ -50,6 +55,7 @@ from job_ingestion.adzuna.source import (
     DAILY_QUOTA,
     DEFAULT_BASE_URL,
     DEFAULT_COUNTRIES,
+    PRESUMED_LIFETIME,
     SOURCE_KEY,
 )
 from job_ingestion.contracts import RawPage, RawRecord
@@ -115,6 +121,16 @@ class AdzunaConfig:
     def calls_per_run(self) -> int:
         """The most calls one complete walk can make."""
         return len(self.countries) * self.pages_per_country
+
+    @property
+    def retire_unseen_after(self) -> timedelta:
+        """How long a posting is kept after a run last saw it.
+
+        Independent of `max_days_old`: the window decides what a run sees, and
+        the lifetime decides how long what it saw is kept. Widening the window
+        shows more postings; it says nothing about how long they stay open.
+        """
+        return PRESUMED_LIFETIME
 
 
 def subject(country: str, page: int) -> str:
@@ -252,8 +268,9 @@ class AdzunaClient:
         that ran every country short has still seen nothing older than the
         window, and claiming the end would retire every Adzuna posting older
         than a few days while it is still live there. Adzuna postings are
-        therefore not retired by reconciliation yet; a rule for windowed
-        sources is #376.
+        retired by lifetime instead: `AdzunaConfig.retire_unseen_after` states
+        how long one is kept after it was last seen, and the run carries that
+        on its summary.
         """
         return False
 

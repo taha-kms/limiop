@@ -20,6 +20,7 @@ from job_ingestion.runs import (
     recorded_run,
     run_recorded_ingestion,
 )
+from tests.support.logs import capturing_logs
 
 SOURCE = "arbeitnow"
 
@@ -224,6 +225,41 @@ def test_run_recorded_ingestion_returns_the_built_summary_and_completes_the_row(
         row = await stored(database)
         assert row.state == IngestionRunState.COMPLETED
         assert (row.fetched, row.created) == (3, 3)
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("built", "expected"),
+    [
+        pytest.param(
+            summary(fetched=3, created=3, reached_the_end=True),
+            "arbeitnow reconciliation: exhausted (0 provenance retired, 0 jobs withdrawn)",
+            id="a rule applied",
+        ),
+        pytest.param(
+            summary(),
+            "arbeitnow reconciliation: skipped: the run saw no records and cannot tell "
+            "absence from an outage (0 provenance retired, 0 jobs withdrawn)",
+            id="refused",
+        ),
+    ],
+)
+def test_run_recorded_ingestion_logs_which_retirement_rule_applied(
+    database_url: PostgresDsn, built: IngestionSummary, expected: str
+) -> None:
+    """The run row has no column for it, so the log line is the one place a
+    rule's first firing, or a refusal, can be seen in production."""
+
+    async def test(database: Database) -> None:
+        async def build(_: Database) -> IngestionSummary:
+            return built
+
+        with capturing_logs("job_ingestion") as messages:
+            await run_recorded_ingestion(database, SOURCE, build, started_at=datetime.now(UTC))
+
+        assert expected in messages
 
     run_database_test(database_url, test)
 

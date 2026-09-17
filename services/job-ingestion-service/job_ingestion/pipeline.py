@@ -16,7 +16,7 @@ is reported rather than discarded.
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from platform_db.models.catalog import normalize_company_name
@@ -100,6 +100,11 @@ class IngestionRun[ProviderRecordT]:
     max_records: int = DEFAULT_MAX_RECORDS
     skill_alias_version: str | None = None
     boilerplate: BoilerplatePolicy = field(default_factory=BoilerplatePolicy)
+    # Set by a source that reads through a time window and so never reaches
+    # its end; see `IngestionSummary.retire_unseen_after`. Carried here rather
+    # than patched onto the summary afterwards so the summary is assembled in
+    # one place from what the run was configured with.
+    retire_unseen_after: timedelta | None = None
 
     def __post_init__(self) -> None:
         if self.max_records < 1:
@@ -291,6 +296,7 @@ class IngestionRun[ProviderRecordT]:
             # ran out of pages or out of allowance.
             reached_the_end=self.client.reached_the_end,
             stopped_at_budget=stopped_at_budget,
+            retire_unseen_after=self.retire_unseen_after,
             alias_version=vocabulary.version if vocabulary is not None else None,
             mentions_resolved=tally.extraction.resolved,
             mentions_unknown=tally.extraction.unknown,

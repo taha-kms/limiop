@@ -13,6 +13,7 @@ here imports a scheduler, a web framework, or a database session factory.
 
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -50,6 +51,11 @@ class RawPage:
         return self.next_page is not None
 
 
+# The stages whose failure drops the record before it reaches persistence, so
+# it is counted nowhere else.
+REJECTED_BEFORE_STORING = frozenset({IngestionStage.VALIDATE, IngestionStage.NORMALIZE})
+
+
 @dataclass(frozen=True, slots=True)
 class RecordFailure:
     """One record that could not be processed, kept as a value.
@@ -83,6 +89,14 @@ class IngestionSummary:
     reached_the_end: bool = False
     # Whether the run stopped because it hit its own record budget.
     stopped_at_budget: bool = False
+    # How long a posting is kept after the source last showed it before it is
+    # retired, or None when the source makes no such statement. A source that
+    # only shows new postings never says when one closes, and can never claim
+    # the end of the source either, because everything older than its window
+    # is unread however far the walk went; so it states a presumed lifetime
+    # instead. This is a lifetime, not evidence of absence: the posting is
+    # retired when it runs out whether or not the source still lists it.
+    retire_unseen_after: timedelta | None = None
     # The alias table every skill count below was produced under, or None when
     # no vocabulary was published and nothing was extracted.
     alias_version: str | None = None
@@ -98,6 +112,12 @@ class IngestionSummary:
     # block reconciliation from withdrawing a posting over an enrichment
     # problem that says nothing about whether the posting is gone.
     extraction_failed: int = 0
+
+    def __post_init__(self) -> None:
+        # A negative lifetime would move the retirement line past the run's
+        # own start and retire what this very run just saw.
+        if self.retire_unseen_after is not None and self.retire_unseen_after < timedelta(0):
+            raise ValueError("retire_unseen_after must not be negative")
 
     @property
     def mentions_discarded(self) -> int:
@@ -126,6 +146,20 @@ class IngestionSummary:
         a tenth of a board and handled all of it is processing-complete.
         """
         return self.fetched == self.persisted + self.skipped and not self.failures
+
+    @property
+    def accounted_for(self) -> bool:
+        """Whether every record this run fetched ended somewhere it can name.
+
+        Stored, skipped, or rejected before storing. Weaker than
+        `processing_complete`, which any failure denies: this asks only that no
+        record vanished without a failure saying so, because a run whose counts
+        do not add up cannot say what it did. A record persistence refused is
+        already counted as skipped, with its failure attached, and a fetch
+        failure names no record, so neither is added again here.
+        """
+        rejected = sum(1 for failure in self.failures if failure.stage in REJECTED_BEFORE_STORING)
+        return self.fetched == self.persisted + self.skipped + rejected
 
     @property
     def source_exhausted(self) -> bool:

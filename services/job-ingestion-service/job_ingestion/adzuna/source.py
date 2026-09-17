@@ -5,6 +5,8 @@ without importing transport, and so the entry point can ask for credentials
 before any client exists to carry them.
 """
 
+from datetime import timedelta
+
 from job_ingestion.credentials import Credential
 from job_ingestion.quota import Quota
 
@@ -35,6 +37,17 @@ PUBLISHED_DAILY_CEILING = 250
 WEEKLY_CEILING = 1000
 MONTHLY_CEILING = 2500
 DAILY_QUOTA = Quota(per_day=MONTHLY_CEILING // 31)
+
+# How long an Adzuna posting is kept after a run last saw it. Every request is
+# windowed to postings created in the last `max_days_old` days, so a posting is
+# seen during its first days and never again, live or not, and the API has no
+# closing signal. The window decides what is seen; this lifetime decides how
+# long it is kept, so the two are independent: a posting is shown for thirty
+# days after it was last seen, roughly thirty to thirty-two days after it was
+# created, whether or not Adzuna still lists it. The terms permit holding the
+# data while the licence stands, and a posting older than this is more often
+# filled than open.
+PRESUMED_LIFETIME = timedelta(days=30)
 
 # The markets the project covers, as the ISO codes Adzuna paths are keyed by.
 DEFAULT_COUNTRIES = ("gb", "us", "de", "fr", "nl", "at", "ch", "es", "it", "pl", "ca", "au")

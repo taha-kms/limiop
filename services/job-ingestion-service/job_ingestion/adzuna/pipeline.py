@@ -32,7 +32,12 @@ def build_run(
     *,
     skill_alias_version: str | None = None,
 ) -> IngestionRun[AdzunaJobRecord]:
-    """Assemble the stages around an already-built client."""
+    """Assemble the stages around an already-built client.
+
+    The lifetime a posting is kept for after it was last seen comes from the
+    client's config, because the config is what windows every request; the
+    client itself stays transport and never reads a job field.
+    """
     return IngestionRun(
         client=client,
         validator=AdzunaValidator(),
@@ -45,6 +50,7 @@ def build_run(
         ),
         max_records=max_records,
         skill_alias_version=skill_alias_version,
+        retire_unseen_after=client.config.retire_unseen_after,
     )
 
 
