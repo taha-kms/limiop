@@ -155,8 +155,17 @@ async def run_recorded_ingestion(
     async with recorded_run(database, source_key) as run_id:
         summary = await build(database)
         async with database.session() as session:
-            await reconcile(session, summary, run_started_at=started_at)
+            result = await reconcile(session, summary, run_started_at=started_at)
             await session.commit()
+        # The run row has no column for the rule or the refusal, so this line
+        # is where a rule's first firing in production can be seen.
+        logger.info(
+            "%s reconciliation: %s (%d provenance retired, %d jobs withdrawn)",
+            source_key,
+            result.rule if result.ran else f"skipped: {result.reason}",
+            result.provenance_retired,
+            result.jobs_withdrawn,
+        )
     await complete_run(database, run_id, summary)
     return summary
 
