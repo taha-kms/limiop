@@ -23,6 +23,7 @@ from job_ingestion.boards.provider import Verification
 from job_ingestion.boards.registered import polled_slugs
 from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
+from job_ingestion.errors import SourceUnavailableError
 from job_ingestion.persistence import SourceRegistration, ensure_source
 from tests.boards.fakes import (
     FAKE_BASE_URL,
@@ -1675,5 +1676,207 @@ def test_a_confirmed_guess_landing_on_a_pinned_slug_is_not_tallied(
 
         assert row.pinned is True
         assert row.company_id is None
+
+    run_database_test(database_url, exercise)
+
+
+# --- probe failures ---------------------------------------------------------
+
+
+@pytest.mark.integration
+def test_a_probe_the_transport_cannot_send_is_that_companys_outcome_not_the_runs(
+    database_url: PostgresDsn,
+) -> None:
+    """Measured: one company's guess reached the transport as a host it could
+    not encode, and every board found before it was lost with the run."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            alpha = await make_company(session, "Alpha")
+            bravo = await make_company(session, "Bravo")
+            charlie = await make_company(session, "Charlie")
+            await session.commit()
+
+        transport = routing(
+            {
+                "/alpha/jobs": board("Alpha"),
+                "/bravo/jobs": httpx2.InvalidURL("Invalid IDNA hostname: 'bravo®.example.test'"),
+                "/charlie/jobs": board("Charlie"),
+            }
+        )
+        summary = await run_discovery(
+            database,
+            json_provider(),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.probed == 3
+        assert summary.confirmed == 2
+        assert summary.unreachable == 1
+
+        async with database.session() as session:
+            rows = {row.slug: row for row in (await session.scalars(select(JobBoard))).all()}
+
+        assert rows["alpha"].company_id == alpha.id
+        assert rows["alpha"].status is BoardStatus.CONFIRMED
+        assert rows["charlie"].company_id == charlie.id
+        assert rows["charlie"].status is BoardStatus.CONFIRMED
+        assert rows["bravo"].company_id == bravo.id
+        assert rows["bravo"].status is BoardStatus.UNREACHABLE
+        assert rows["bravo"].evidence == {
+            "kind": "unreachable",
+            "failure": "InvalidURL: Invalid IDNA hostname: 'bravo®.example.test'",
+        }
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_verifier_that_fails_is_recorded_without_the_credential_its_message_carried(
+    database_url: PostgresDsn,
+) -> None:
+    """A provider's own `verify` may raise the transport errors `discover`
+    already absorbs for the feed; they are that company's outcome too, and a
+    message quoting the URL being fetched must not quote its userinfo."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            acme = await make_company(session, "Acme")
+            await session.commit()
+
+        async def verify(_client: BoardClient, _slug: str, _company: Company) -> Verification:
+            raise SourceUnavailableError(
+                "fake", "careers site timed out: https://token:secret@acme.example.test/jobs"
+            )
+
+        summary = await run_discovery(
+            database,
+            verifying_provider(verify),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=routing({"/acme/jobs": board("")}),
+            sleeper=never_sleeps,
+            now=lambda: datetime.now(UTC),
+        )
+
+        assert summary.probed == 1
+        assert summary.unreachable == 1
+        assert summary.unverifiable == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.company_id == acme.id
+        assert row.status is BoardStatus.UNREACHABLE
+        assert row.evidence == {
+            "kind": "unreachable",
+            "failure": (
+                "SourceUnavailableError: careers site timed out: https://acme.example.test/jobs"
+            ),
+        }
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_programming_error_in_a_probe_ends_the_run_but_keeps_what_it_had_registered(
+    database_url: PostgresDsn,
+) -> None:
+    """Each company's findings are committed before the next probe, so a run
+    that dies on its third company still leaves the first two registered."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        async with database.session() as session:
+            alpha = await make_company(session, "Alpha")
+            bravo = await make_company(session, "Bravo")
+            await make_company(session, "Charlie")
+            await session.commit()
+
+        transport = routing(
+            {
+                "/alpha/jobs": board("Alpha"),
+                "/bravo/jobs": board("Bravo"),
+                "/charlie/jobs": RuntimeError("bug"),
+            }
+        )
+        with pytest.raises(RuntimeError, match="bug"):
+            await run_discovery(
+                database,
+                json_provider(),
+                config=DiscoveryConfig(),
+                settings=settings,
+                http_client=transport,
+                sleeper=never_sleeps,
+                now=lambda: datetime.now(UTC),
+            )
+
+        async with database.session() as session:
+            rows = {row.slug: row for row in (await session.scalars(select(JobBoard))).all()}
+
+        assert set(rows) == {"alpha", "bravo"}
+        assert rows["alpha"].company_id == alpha.id
+        assert rows["alpha"].status is BoardStatus.CONFIRMED
+        assert rows["bravo"].company_id == bravo.id
+        assert rows["bravo"].status is BoardStatus.CONFIRMED
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_failed_recheck_of_a_confirmed_row_only_notes_the_failure(
+    database_url: PostgresDsn,
+) -> None:
+    """The same rule a silent recheck gets: one failed probe is not evidence
+    the board moved, so the row stands and only the attempt is recorded."""
+
+    async def exercise(database: Database) -> None:
+        settings = Settings(environment=Environment.TEST, database_url=database_url)
+        moment = datetime.now(UTC)
+        async with database.session() as session:
+            acme = await make_company(session, "Acme")
+            await add_board_row(
+                session,
+                slug="acme",
+                company_id=acme.id,
+                status=BoardStatus.CONFIRMED,
+                evidence={"kind": "provider_name"},
+                last_checked_at=moment - timedelta(days=31),
+            )
+            await session.commit()
+
+        transport = routing({"/acme/jobs": httpx2.InvalidURL("Invalid IDNA hostname: 'acme'")})
+        summary = await run_discovery(
+            database,
+            json_provider(),
+            config=DiscoveryConfig(),
+            settings=settings,
+            http_client=transport,
+            sleeper=never_sleeps,
+            now=lambda: moment,
+        )
+
+        assert summary.probed == 1
+        assert summary.unchanged == 1
+        assert summary.unreachable == 0
+
+        async with database.session() as session:
+            row = (await session.scalars(select(JobBoard).where(JobBoard.slug == "acme"))).one()
+
+        assert row.status is BoardStatus.CONFIRMED
+        assert row.evidence == {
+            "kind": "provider_name",
+            "last_recheck": {
+                "kind": "unreachable",
+                "checked_at": moment.isoformat(),
+                "failure": "InvalidURL: Invalid IDNA hostname: 'acme'",
+            },
+        }
 
     run_database_test(database_url, exercise)

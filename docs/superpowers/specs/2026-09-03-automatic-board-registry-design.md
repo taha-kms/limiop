@@ -79,6 +79,12 @@ budget (default 200) and a politeness delay between requests.
 4. **Register.** Upsert the row with status, evidence, `company_id` when
    verified, and `last_checked_at`. Negatives are stored too.
 
+A probe that fails in transport (a request the transport could not build or
+send, or a verifier's own request left unanswered) is that company's outcome,
+registered `unreachable` with the error as evidence, never the run's; each
+company's registry writes are committed before the next probe, so a run that
+dies on a later company keeps what it had already found.
+
 The run summary reports counts per outcome, and the budget is what bounds a
 run against a catalogue of thousands of companies.
 

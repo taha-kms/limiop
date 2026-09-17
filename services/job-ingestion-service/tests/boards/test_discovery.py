@@ -5,7 +5,7 @@ from typing import Any
 import httpx2
 
 from job_ingestion.boards.client import BoardClient, BoardConfig
-from job_ingestion.boards.discovery import DiscoveryOutcome, discover
+from job_ingestion.boards.discovery import DiscoveryOutcome, candidate_slugs, discover, safe_slug
 from job_ingestion.boards.provider import BoardProvider
 from job_ingestion.contracts import RawRecord
 from tests.boards.fakes import json_provider, never_sleeps, ok, responding, routing, xml_provider
@@ -30,6 +30,36 @@ def client(
 
 def run(fetcher: BoardClient, company: str) -> Any:
     return asyncio.run(discover(fetcher, company))
+
+
+# --- candidate_slugs ----------------------------------------------------------
+
+
+def test_a_symbol_in_the_name_is_not_part_of_the_slug() -> None:
+    """Measured: `jobbusters®` was guessed as a host no transport could encode,
+    and the whole Pinpoint run died on it."""
+    assert candidate_slugs("jobbusters®") == ("jobbusters",)
+
+
+def test_accented_letters_fold_to_their_ascii_base() -> None:
+    assert candidate_slugs("Café Müller") == ("cafemuller", "cafe-muller", "cafe")
+
+
+def test_a_name_that_is_only_symbols_proposes_nothing() -> None:
+    assert candidate_slugs("®©") == ()
+
+
+def test_a_guess_longer_than_a_dns_label_is_dropped() -> None:
+    assert candidate_slugs("x" * 64) == ()
+    assert candidate_slugs("x" * 63) == ("x" * 63,)
+
+
+def test_safe_slug_reduces_a_guess_to_slug_characters() -> None:
+    assert safe_slug("Café--Müller-") == "cafe-muller"
+    assert safe_slug("jobbusters®") == "jobbusters"
+    assert safe_slug("®") is None
+    assert safe_slug("-") is None
+    assert safe_slug("a" * 64) is None
 
 
 def test_the_provider_says_whose_board_answered() -> None:
