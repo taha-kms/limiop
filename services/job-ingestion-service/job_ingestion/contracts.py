@@ -13,6 +13,7 @@ here imports a scheduler, a web framework, or a database session factory.
 
 from collections.abc import AsyncIterator, Mapping
 from dataclasses import dataclass, field
+from datetime import timedelta
 from enum import StrEnum
 from typing import Any, Protocol, runtime_checkable
 
@@ -83,6 +84,13 @@ class IngestionSummary:
     reached_the_end: bool = False
     # Whether the run stopped because it hit its own record budget.
     stopped_at_budget: bool = False
+    # How long a posting may go unseen before it is presumed gone, or None
+    # when the source makes no such statement. A source that reads through a
+    # time window can never claim the end of the source, because everything
+    # older than the window is unread however far the walk went; so it states
+    # this instead: the window, plus a grace period for the runs in between
+    # that were missed or cut short.
+    retire_unseen_after: timedelta | None = None
     # The alias table every skill count below was produced under, or None when
     # no vocabulary was published and nothing was extracted.
     alias_version: str | None = None

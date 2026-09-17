@@ -260,12 +260,25 @@ retiring every posting on the strength of it would let an outage do the
 retiring. Such a run retires nothing and reports that it saw no records and
 cannot tell absence from an outage.
 
+### A windowed source presumes by age instead
+
 A source that is read through a window can never claim exhaustion. Adzuna is
 asked only for the last few days of postings, so a walk that runs every
 country short has still seen nothing older than the window, and its client
-reports `reached_the_end` as false on every run. Adzuna postings are therefore
-not retired by reconciliation yet; the rule for windowed sources, whether a
-maximum age or an expiry derived from the posting date, is #376.
+reports `reached_the_end` as false on every run.
+
+Such a source states instead how long a posting may go unseen before it is
+presumed gone: its window plus a grace period for missed runs, carried on the
+run summary as `retire_unseen_after`. A run refused only for not reaching the
+end, and stating that age, retires the provenance records of its source last
+seen before the run started minus the age, and withdraws jobs exactly as an
+exhausted run does. The rule's inputs are the moment the run started and the
+stated age; nothing in the run's counts moves the line.
+
+Every other refusal stands whether or not an age is stated: a run that stopped
+at its record budget is refused, and a run that saw no records is refused
+before either rule is consulted. The exhaustion rule is unchanged: a run that
+reached the end retires everything it did not see, whatever age it states.
 
 ### The conclusion is drawn twice
 

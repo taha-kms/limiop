@@ -37,6 +37,9 @@ AGGREGATOR = SourceRegistration(
 
 FIRST_RUN = datetime(2026, 8, 1, 12, tzinfo=UTC)
 SECOND_RUN = FIRST_RUN + timedelta(days=1)
+# A windowed source's statement: two days of window and five of grace.
+UNSEEN_FOR = timedelta(days=7)
+LONG_AGO = SECOND_RUN - UNSEEN_FOR - timedelta(days=1)
 
 TEXT = (
     "Build the pipelines the analytics team depends on, and own them end to end. "
@@ -61,6 +64,19 @@ def posting(source: SourceRegistration, **overrides: Any) -> NormalizedJob:
     return NormalizedJob.model_validate(payload)
 
 
+def numbered(source: SourceRegistration, number: int) -> NormalizedJob:
+    """A distinct posting on `source`, so one source can list several."""
+    return posting(
+        source,
+        title=f"Senior Data Engineer {number}",
+        provenance={
+            "source_key": source.key,
+            "source_job_id": f"{source.key}-{number}",
+            "source_url": f"{source.base_url}/jobs/{number}",
+        },
+    )
+
+
 def exhausted(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
     """A run entitled to conclude that an unseen posting is gone."""
     fields: dict[str, Any] = {
@@ -72,6 +88,11 @@ def exhausted(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
     }
     fields.update(overrides)
     return IngestionSummary(**fields)
+
+
+def windowed(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
+    """A run through a time window: never at the end, but stating an age."""
+    return exhausted(source, reached_the_end=False, retire_unseen_after=UNSEEN_FOR, **overrides)
 
 
 def run_database_test(database_url: PostgresDsn, test: Any) -> None:
@@ -258,6 +279,7 @@ def test_an_incomplete_run_expires_nothing(
     "summary",
     [
         pytest.param(exhausted(BOARD, fetched=0, updated=0), id="claimed the end"),
+        pytest.param(windowed(BOARD, fetched=0, updated=0), id="stated an age"),
     ],
 )
 def test_a_run_that_saw_no_records_retires_nothing(
@@ -268,11 +290,12 @@ def test_a_run_that_saw_no_records_retires_nothing(
     run that read the source and found it empty."""
 
     async def exercise(database: Database) -> None:
-        await ingest(database, BOARD, posting(BOARD), seen_at=FIRST_RUN)
+        await ingest(database, BOARD, posting(BOARD), seen_at=LONG_AGO)
 
-        result = await run_reconcile(database, summary, at=SECOND_RUN + timedelta(days=30))
+        result = await run_reconcile(database, summary, at=SECOND_RUN)
 
         assert result.skipped is True
+        assert result.rule == ""
         assert result.reason == "the run saw no records and cannot tell absence from an outage"
         assert result.provenance_retired == 0
         assert (await retired_at_by_source_job_id(database))["board-1"] is None
@@ -289,6 +312,7 @@ def test_a_posting_no_source_lists_any_more_is_withdrawn(database_url: PostgresD
         result = await run_reconcile(database, exhausted(BOARD), at=SECOND_RUN)
 
         assert result.ran is True
+        assert result.rule == "exhausted"
         assert result.provenance_retired == 1
         assert result.jobs_withdrawn == 1
         assert await status_of(database) is JobStatus.REMOVED
@@ -412,6 +436,86 @@ def test_one_source_reconciling_does_not_retire_another_sources_records(
     run_database_test(database_url, exercise)
 
 
+# A source read through a window never reaches its end. It states instead how
+# long a posting may go unseen before it is presumed gone.
+
+
+def test_a_windowed_run_is_still_not_exhausted() -> None:
+    """Stating an age changes nothing about the exhaustion rule."""
+    assert windowed(BOARD).source_exhausted is False
+    assert why_not(windowed(BOARD)) == "the run did not reach the end of the source"
+
+
+@pytest.mark.integration
+def test_the_aged_rule_retires_what_has_gone_unseen_for_the_stated_age(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest(database, BOARD, numbered(BOARD, 1), seen_at=LONG_AGO)
+        await ingest(database, BOARD, numbered(BOARD, 2), seen_at=FIRST_RUN)
+
+        result = await run_reconcile(database, windowed(BOARD), at=SECOND_RUN)
+
+        records = await retired_at_by_source_job_id(database)
+        assert result.ran is True
+        assert result.rule == "aged"
+        assert result.provenance_retired == 1
+        assert records["board-1"] == SECOND_RUN
+        assert records["board-2"] is None
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_the_aged_rule_withdraws_a_job_only_once_no_source_lists_it(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest(database, BOARD, posting(BOARD), seen_at=LONG_AGO)
+        await ingest(database, AGGREGATOR, posting(AGGREGATOR), seen_at=LONG_AGO)
+
+        first = await run_reconcile(database, windowed(AGGREGATOR), at=SECOND_RUN)
+        assert first.provenance_retired == 1
+        assert first.jobs_withdrawn == 0
+        assert await status_of(database) is JobStatus.ACTIVE
+
+        second = await run_reconcile(database, windowed(BOARD), at=SECOND_RUN)
+        assert second.jobs_withdrawn == 1
+        assert await status_of(database) is JobStatus.REMOVED
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        pytest.param(
+            exhausted(BOARD, reached_the_end=False), "did not reach the end", id="no age stated"
+        ),
+        pytest.param(windowed(BOARD, stopped_at_budget=True), "record budget", id="capped"),
+    ],
+)
+def test_a_run_not_entitled_to_presume_by_age_retires_nothing_however_old(
+    database_url: PostgresDsn, summary: IngestionSummary, expected: str
+) -> None:
+    """A truncated run that states no age is refused exactly as before, and a
+    budget stop refuses a windowed run the way it refuses any other."""
+
+    async def exercise(database: Database) -> None:
+        await ingest(database, BOARD, posting(BOARD), seen_at=LONG_AGO)
+
+        result = await run_reconcile(database, summary, at=SECOND_RUN)
+
+        assert result.skipped is True
+        assert result.rule == ""
+        assert result.reason is not None
+        assert expected in result.reason
+        assert (await retired_at_by_source_job_id(database))["board-1"] is None
+
+    run_database_test(database_url, exercise)
+
+
 # Expiry is a stated fact rather than an inference, so it needs no exhausted run.
 
 
@@ -484,20 +588,7 @@ def test_several_postings_disappearing_at_once_are_all_withdrawn(
 ) -> None:
     async def exercise(database: Database) -> None:
         for number in (1, 2, 3):
-            await ingest(
-                database,
-                BOARD,
-                posting(
-                    BOARD,
-                    title=f"Senior Data Engineer {number}",
-                    provenance={
-                        "source_key": BOARD.key,
-                        "source_job_id": f"board-{number}",
-                        "source_url": f"{BOARD.base_url}/jobs/{number}",
-                    },
-                ),
-                seen_at=FIRST_RUN,
-            )
+            await ingest(database, BOARD, numbered(BOARD, number), seen_at=FIRST_RUN)
 
         result = await run_reconcile(database, exhausted(BOARD), at=SECOND_RUN)
 

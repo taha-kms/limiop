@@ -17,6 +17,13 @@ nothing fetched, nothing failed, the end reached. Retiring every posting on the
 strength of such a run would let an outage do the retiring, so it concludes
 nothing.
 
+A source read through a time window can never exhaust itself: everything older
+than the window is unread however far the walk went. Such a source states
+instead how long a posting may go unseen before it is presumed gone, which is
+`IngestionSummary.retire_unseen_after`, and a run that was refused for not
+reaching the end and nothing else may retire what has gone unseen that long.
+Every other refusal stands, the empty run above included.
+
 The conclusion is drawn in two steps, because one source is not the catalogue:
 
 1. **Per source.** A provenance record the run did not see is retired. That is
@@ -54,15 +61,25 @@ class ReconciliationResult:
     reason: str | None = None
     provenance_retired: int = 0
     jobs_withdrawn: int = 0
+    # Which rule entitled the run to conclude anything: `EXHAUSTED` when it saw
+    # the whole source, `AGED` when it presumed by age, and empty when it was
+    # refused. Reported so a run's conclusions can be read back against the
+    # rule that licensed them.
+    rule: str = ""
 
     @property
     def skipped(self) -> bool:
         return not self.ran
 
 
+EXHAUSTED = "exhausted"
+AGED = "aged"
+
 # Refused before anything the summary claims about itself is consulted: a run
 # with no records has nothing to back a claim with.
 EMPTY_RUN = "the run saw no records and cannot tell absence from an outage"
+# The one refusal a windowed source can answer, by stating an age instead.
+NOT_THE_END = "the run did not reach the end of the source"
 
 
 def why_not(summary: IngestionSummary) -> str | None:
@@ -72,7 +89,7 @@ def why_not(summary: IngestionSummary) -> str | None:
     if summary.stopped_at_budget:
         return "the run stopped at its record budget and did not see the rest"
     if not summary.reached_the_end:
-        return "the run did not reach the end of the source"
+        return NOT_THE_END
     if summary.failures:
         return (
             f"the run had {len(summary.failures)} failure(s) and cannot account for every posting"
@@ -92,10 +109,16 @@ async def reconcile(
 
     `run_started_at` separates seen from unseen. Provenance is refreshed as each
     record is written, so anything this source still carries has a last-seen
-    time at or after the moment the run began.
+    time at or after the moment the run began. A run presuming by age draws
+    the line `retire_unseen_after` earlier instead, so only what no run has
+    seen for that long counts as unseen.
     """
     refusal = why_not(summary)
-    if refusal is not None:
+    if refusal is None:
+        rule, unseen_before = EXHAUSTED, run_started_at
+    elif refusal == NOT_THE_END and summary.retire_unseen_after is not None:
+        rule, unseen_before = AGED, run_started_at - summary.retire_unseen_after
+    else:
         return ReconciliationResult(ran=False, reason=refusal)
 
     source = (
@@ -104,19 +127,19 @@ async def reconcile(
     if source is None:
         # A source that has never written anything cannot have stopped listing
         # anything either.
-        return ReconciliationResult(ran=True)
+        return ReconciliationResult(ran=True, rule=rule)
 
     unseen = (
         await session.scalars(
             select(JobProvenance).where(
                 JobProvenance.source_id == source.id,
                 JobProvenance.retired_at.is_(None),
-                JobProvenance.last_seen_at < run_started_at,
+                JobProvenance.last_seen_at < unseen_before,
             )
         )
     ).all()
     if not unseen:
-        return ReconciliationResult(ran=True)
+        return ReconciliationResult(ran=True, rule=rule)
 
     for record in unseen:
         record.retired_at = run_started_at
@@ -132,6 +155,7 @@ async def reconcile(
         ran=True,
         provenance_retired=len(unseen),
         jobs_withdrawn=withdrawn,
+        rule=rule,
     )
 
 
