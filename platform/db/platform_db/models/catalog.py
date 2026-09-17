@@ -257,6 +257,13 @@ class Job(Base):
         default=JobStatus.ACTIVE,
         server_default=JobStatus.ACTIVE.value,
     )
+    # When retention stripped the content while keeping the row. Null while
+    # the job still says what it said. A fact about the job, so it lives here
+    # rather than on a provenance row a source may rewrite on its own.
+    anonymised_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

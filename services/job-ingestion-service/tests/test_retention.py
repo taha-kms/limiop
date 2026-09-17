@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.config import Environment, Settings
 from job_ingestion.database import Database
+from job_ingestion.persistence import SourceRegistration, persist_job
 from job_ingestion.reconciliation import expire_jobs_past_their_stated_date
 from job_ingestion.retention import (
     ANONYMISED_AT_KEY,
@@ -32,6 +33,7 @@ from job_ingestion.retention import (
     apply_retention,
     run_retention,
 )
+from job_ingestion.schemas import NormalizedJob
 from tests.support.catalog import with_empty_catalog
 
 NOW = datetime(2026, 9, 17, 3, 15, tzinfo=UTC)
@@ -42,6 +44,7 @@ WITHIN_THE_GRACE = NOW - GRACE + timedelta(days=1)
 VERSION = "2026.09.17.1"
 PYTHON = UUID("11111111-1111-4111-8111-111111111111")
 SOURCE_ID = UUID("33333333-3333-4333-8333-333333333333")
+OTHER_SOURCE_ID = UUID("44444444-4444-4444-8444-444444444444")
 PAYLOAD: dict[str, object] = {"id": "board-1", "title": "Senior Data Engineer"}
 
 
@@ -62,13 +65,11 @@ def run_database_test(
         async with database.session() as session:
             session.add(SkillAliasVersion(version=VERSION))
             session.add(SkillConcept(id=PYTHON, preferred_label="Python"))
-            session.add(
+            session.add_all(
                 JobSource(
-                    id=SOURCE_ID,
-                    key="board",
-                    display_name="Board",
-                    base_url="https://board.example.com",
+                    id=source_id, key=key, display_name=key, base_url=f"https://{key}.example.com"
                 )
+                for source_id, key in ((SOURCE_ID, "board"), (OTHER_SOURCE_ID, "aggregator"))
             )
             await session.commit()
         await test(database)
@@ -358,6 +359,7 @@ def test_a_referenced_job_is_anonymised_rather_than_deleted(database_url: Postgr
         assert after.company_id == before.company_id
         assert after.status is JobStatus.REMOVED
         assert after.title == before.title
+        assert after.anonymised_at == NOW
 
     run_database_test(database_url, test)
 
@@ -526,5 +528,109 @@ def test_a_job_whose_clock_moved_after_selection_is_not_deleted(
 
         assert result == RetentionResult(deleted=0, anonymised=0, examined=1)
         assert await rows_of(database, job_id) == INTACT
+
+    run_database_test(database_url, test)
+
+
+# The marker is a fact about the job and lives on the job. Nothing here clears
+# it: a source re-listing an anonymised job is issue #392.
+
+
+async def add_provenance(database: Database, job_id: UUID, source_id: UUID) -> None:
+    async with database.session() as session:
+        session.add(
+            JobProvenance(
+                job_id=job_id,
+                source_id=source_id,
+                source_job_id=f"{source_id}-{job_id}",
+                source_url=f"https://example.com/{job_id}",
+                raw_payload=dict(PAYLOAD),
+                retired_at=BEFORE_THE_GRACE,
+            )
+        )
+        await session.commit()
+
+
+async def relist(database: Database, job_id: UUID, source: SourceRegistration) -> None:
+    """One source lists the posting again, exactly as ingestion would write it."""
+    async with database.session() as session:
+        job = await session.get_one(Job, job_id)
+        company = await session.get_one(Company, job.company_id)
+        record = await session.scalar(
+            select(JobProvenance).where(
+                JobProvenance.job_id == job_id, JobProvenance.source_id == SOURCE_ID
+            )
+        )
+        assert record is not None
+        incoming = NormalizedJob.model_validate(
+            {
+                "company": {"display_name": company.display_name},
+                "title": job.title,
+                "description": "Build the pipelines the analytics team depends on.",
+                "location": "Berlin",
+                "application_url": "https://acme.example.com/jobs/1",
+                "provenance": {
+                    "source_key": source.key,
+                    "source_job_id": record.source_job_id,
+                    "source_url": record.source_url,
+                },
+            }
+        )
+        outcome = await persist_job(session, incoming, source=source, seen_at=NOW)
+        assert outcome.failure is None, outcome.failure
+        await session.commit()
+
+
+async def withdraw(database: Database, job_id: UUID, *, at: datetime) -> None:
+    async with database.session() as session:
+        await session.execute(
+            update(JobProvenance).where(JobProvenance.job_id == job_id).values(retired_at=at)
+        )
+        await session.execute(
+            update(Job).where(Job.id == job_id).values(status=JobStatus.REMOVED, updated_at=at)
+        )
+        await session.commit()
+
+
+BOARD = SourceRegistration(key="board", display_name="Board", base_url="https://board.example.com")
+
+
+@pytest.mark.integration
+def test_a_partial_relist_does_not_unmark_an_anonymised_job(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+        await add_provenance(database, job_id, OTHER_SOURCE_ID)
+        await retain(database, policy=RetentionPolicy(references=(referencing(job_id),)))
+
+        await relist(database, job_id, BOARD)
+        assert (await job_row(database, job_id)).status is JobStatus.ACTIVE
+        withdrawn_again = NOW + timedelta(days=10)
+        await withdraw(database, job_id, at=withdrawn_again)
+
+        result = await retain(database, now=withdrawn_again + GRACE + timedelta(days=1))
+
+        assert result == RetentionResult(deleted=0, anonymised=0, examined=0)
+        after = await job_row(database, job_id)
+        assert after.anonymised_at == NOW
+        assert after.status is JobStatus.REMOVED
+        assert await rows_of(database, job_id) == {**INTACT, "provenance": 2}
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_a_job_with_no_provenance_is_marked_once(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        await store_withdrawn_jobs(database, 1)
+        async with database.session() as session:
+            job_id = (await session.execute(select(Job.id))).scalar_one()
+        policy = RetentionPolicy(references=(referencing(job_id),))
+
+        first = await retain(database, policy=policy)
+        again = await retain(database, policy=policy, now=NOW + GRACE + timedelta(days=365))
+
+        assert first == RetentionResult(deleted=0, anonymised=1, examined=1)
+        assert again == RetentionResult(deleted=0, anonymised=0, examined=0)
+        assert (await job_row(database, job_id)).anonymised_at == NOW
 
     run_database_test(database_url, test)

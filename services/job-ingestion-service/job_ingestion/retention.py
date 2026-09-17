@@ -10,15 +10,18 @@ The rule is one pass over the catalogue. A job that has not been `active` for
 longer than the policy's grace period is a candidate. A candidate nothing
 user-facing references is deleted with its provenance, skills and mentions. A
 candidate that user-facing rows still reference is anonymised instead, so the
-history keeps its shape without the content.
+history keeps its shape without the content, and `jobs.anonymised_at` records
+that it happened so the job is never a candidate again. Nothing here clears
+that column: a source re-listing an anonymised job is issue #392.
 
 The pass runs in pages, because a first run against a catalogue that has been
 reconciling for months has more candidates than one statement can name. Each
 page is selected under a row lock that skips rows another transaction holds,
 acted on, and committed on its own, so an ingestion run writing a job at the
 same moment either finds the row locked and waits, or has locked it first and
-is left alone. The statements that finally act restate the whole predicate
-rather than trusting the page they were handed.
+is left alone. Pages advance by key, oldest first, so one pass visits a row at
+most once whatever it did to it. The statements that finally act restate the
+whole predicate rather than trusting the page they were handed.
 
 The "left the listing" moment is `jobs.updated_at`. The model declares
 `onupdate=func.now()` and both status flips in `reconciliation` go through the
@@ -39,7 +42,7 @@ from uuid import UUID
 from platform_db.models import Job, JobProvenance
 from platform_db.models.catalog import JobStatus
 from platform_db.models.job_skills import JobSkill, JobSkillMention
-from sqlalchemy import ColumnElement, delete, exists, select, update
+from sqlalchemy import ColumnElement, delete, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.config import Settings, get_settings
@@ -53,10 +56,14 @@ logger = logging.getLogger(__name__)
 # is handed one page at a time, never more ids than the policy's batch size.
 type ReferenceProbe = Callable[[AsyncSession, Collection[UUID]], Awaitable[set[UUID]]]
 
-# Left in every provenance row of an anonymised job, in place of the payload.
-# It is the marker that keeps the job from being a candidate again.
+# What replaces every provenance payload of an anonymised job: the same
+# instant `jobs.anonymised_at` records, so a payload read on its own still
+# says why it is empty.
 ANONYMISED_AT_KEY = "_anonymised_at"
 ANONYMISED_DESCRIPTION = "Posting no longer available"
+
+# Where a page ends: the (updated_at, id) of its last row.
+type PageKey = tuple[datetime, UUID]
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,14 +116,10 @@ async def run_retention(
 def eligible(cutoff: datetime) -> tuple[ColumnElement[bool], ...]:
     """The candidate predicate, shared by the selection and by every statement
     that acts, so the two can never drift apart."""
-    already_anonymised = exists().where(
-        JobProvenance.job_id == Job.id,
-        JobProvenance.raw_payload.has_key(ANONYMISED_AT_KEY),
-    )
     return (
         Job.status != JobStatus.ACTIVE,
         Job.updated_at < cutoff,
-        ~already_anonymised,
+        Job.anonymised_at.is_(None),
     )
 
 
@@ -133,8 +136,9 @@ async def apply_retention(
     """
     cutoff = now - policy.grace
     result = RetentionResult()
+    after: PageKey | None = None
     while True:
-        page = await select_page(session, cutoff=cutoff, size=policy.batch_size)
+        page, after = await select_page(session, cutoff=cutoff, size=policy.batch_size, after=after)
         if not page:
             return result
 
@@ -152,22 +156,35 @@ async def apply_retention(
         )
 
 
-async def select_page(session: AsyncSession, *, cutoff: datetime, size: int) -> set[UUID]:
-    """The next candidates, locked until the page commits.
+async def select_page(
+    session: AsyncSession,
+    *,
+    cutoff: datetime,
+    size: int,
+    after: PageKey | None,
+) -> tuple[set[UUID], PageKey | None]:
+    """The next candidates past `after`, locked until the page commits.
 
     Oldest first, so a backlog drains from the far end. Rows another
     transaction holds are skipped rather than waited for: that transaction is
     an ingestion run writing the job, and what it writes decides whether the
-    job is still a candidate next time.
+    job is still a candidate next time. Returns where the page ended, so the
+    next one starts past it whatever this one did to its rows.
     """
     statement = (
-        select(Job.id)
+        select(Job.id, Job.updated_at)
         .where(*eligible(cutoff))
         .order_by(Job.updated_at, Job.id)
         .limit(size)
         .with_for_update(skip_locked=True)
     )
-    return set((await session.scalars(statement)).all())
+    if after is not None:
+        statement = statement.where(tuple_(Job.updated_at, Job.id) > after)
+    rows = (await session.execute(statement)).all()
+    if not rows:
+        return set(), after
+    last_id, last_updated_at = rows[-1]
+    return {job_id for job_id, _ in rows}, (last_updated_at, last_id)
 
 
 async def anonymise(
@@ -190,7 +207,12 @@ async def anonymise(
             await session.scalars(
                 update(Job)
                 .where(Job.id.in_(job_ids), *eligible(cutoff))
-                .values(description=ANONYMISED_DESCRIPTION, location=None, application_url="")
+                .values(
+                    description=ANONYMISED_DESCRIPTION,
+                    location=None,
+                    application_url="",
+                    anonymised_at=at,
+                )
                 .returning(Job.id)
             )
         ).all()
