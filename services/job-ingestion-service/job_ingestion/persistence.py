@@ -50,15 +50,18 @@ def stored_payload(incoming: NormalizedJob) -> dict[str, object]:
     for two facts that only ever travel with that payload. The provider's
     own keys are stored untouched, so nothing that was written before these
     keys existed reads any differently.
+
+    Both keys are written every time, the flag as an explicit `False` when
+    the record is not partial. The upsert keeps the old payload when the new
+    one is null, so a record that truncated once and recovered with no
+    payload of its own would otherwise keep reading as a snippet forever.
     """
     provenance = incoming.provenance
-    payload: dict[str, object] = {
+    return {
         **(provenance.raw_payload or {}),
+        PARTIAL_DESCRIPTION_KEY: provenance.partial_description,
         STATED_FIELDS_KEY: stated_field_count(incoming),
     }
-    if provenance.partial_description:
-        payload[PARTIAL_DESCRIPTION_KEY] = True
-    return payload
 
 
 async def observe_job_provenance(

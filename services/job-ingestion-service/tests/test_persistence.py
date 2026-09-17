@@ -402,7 +402,11 @@ def test_the_raw_payload_is_preserved_for_reproducing_transformations(
         async with database.session() as session:
             provenance = (await session.scalars(select(JobProvenance))).one()
 
-        assert provenance.raw_payload == {"slug": "external-42", "_stated_fields": 4}
+        assert provenance.raw_payload == {
+            "slug": "external-42",
+            "_partial_description": False,
+            "_stated_fields": 4,
+        }
 
     run_database_test(database_url, exercise)
 
@@ -1063,5 +1067,55 @@ def test_three_sources_settle_on_the_fullest_whatever_the_order(
             await ingest_each(database, [(*tellings[key], seen(day)) for key in order])
 
         assert (await stored_job(database)).description == MIRROR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_record_that_was_partial_once_reads_as_full_again(database_url: PostgresDsn) -> None:
+    """A source that truncated and recovered must not keep reading as a snippet.
+
+    The flag lives in the payload, and a record with no payload of its own
+    used to leave the old payload, flag included, in place. Its rival then saw
+    a snippet where the source itself sent full text, and the two took the
+    job from each other on every run.
+    """
+
+    def without_payload(source: SourceRegistration, partial: bool = False) -> NormalizedJob:
+        return from_source(
+            source,
+            description=SNIPPET if partial else telling(source.key),
+            provenance={
+                "source_key": source.key,
+                "source_job_id": f"{source.key}-1",
+                "source_url": f"{source.base_url}/jobs/1",
+                "partial_description": partial,
+            },
+        )
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, without_payload(AGGREGATOR), seen(0)),
+                (MIRROR, without_payload(MIRROR), seen(1)),
+                (AGGREGATOR, without_payload(AGGREGATOR, partial=True), seen(2)),
+                (AGGREGATOR, without_payload(AGGREGATOR), seen(3)),
+            ],
+        )
+
+        async with database.session() as session:
+            payloads = (await session.scalars(select(JobProvenance.raw_payload))).all()
+        assert all((payload or {}).get("_partial_description") is False for payload in payloads)
+
+        outcomes = [
+            (
+                await ingest_from(database, source, without_payload(source), seen_at=seen(day))
+            ).outcome
+            for day, source in enumerate([MIRROR, AGGREGATOR] * 3, start=4)
+        ]
+
+        assert outcomes == [RecordOutcome.SKIPPED] * 6
+        assert (await stored_job(database)).description == telling(AGGREGATOR.key)
 
     run_database_test(database_url, exercise)
