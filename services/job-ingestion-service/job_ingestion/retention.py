@@ -24,21 +24,35 @@ Per-source hooks are not here yet. France Travail's anonymise-at-retirement and
 Adzuna's remove-when-disabled both attach to this policy when they land.
 """
 
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from platform_db.models import Job, JobProvenance
 from platform_db.models.catalog import JobStatus
 from platform_db.models.job_skills import JobSkill, JobSkillMention
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# Which of the candidate jobs some user-facing row still points at. Nothing in
+# the schema does yet; the tables that will (matches, saved jobs, applications)
+# register a probe here rather than teaching this module their shape.
+type ReferenceProbe = Callable[[AsyncSession, Collection[UUID]], Awaitable[set[UUID]]]
+
+# Left in every provenance row of an anonymised job, in place of the payload.
+# It is the marker that keeps the job from being a candidate again.
+ANONYMISED_AT_KEY = "_anonymised_at"
+ANONYMISED_DESCRIPTION = "Posting no longer available"
 
 
 @dataclass(frozen=True, slots=True)
 class RetentionPolicy:
-    """How long a job that stopped being listable is kept as it was."""
+    """How long a job that stopped being listable is kept as it was, and what
+    counts as still needing it afterwards."""
 
     grace: timedelta = timedelta(days=30)
+    references: tuple[ReferenceProbe, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,12 +75,17 @@ async def apply_retention(
 
     Runs inside the caller's transaction, so one pass is all or nothing.
     """
+    already_anonymised = exists().where(
+        JobProvenance.job_id == Job.id,
+        JobProvenance.raw_payload.has_key(ANONYMISED_AT_KEY),
+    )
     candidates = set(
         (
             await session.scalars(
                 select(Job.id).where(
                     Job.status != JobStatus.ACTIVE,
                     Job.updated_at < now - policy.grace,
+                    ~already_anonymised,
                 )
             )
         ).all()
@@ -74,11 +93,50 @@ async def apply_retention(
     if not candidates:
         return RetentionResult()
 
-    # Explicit and in dependency order. Skills and mentions cascade on the
-    # schema and provenance restricts, but a delete that relies on which is
-    # which reads as an accident, and this way the order is the rule.
-    for model in (JobSkillMention, JobSkill, JobProvenance):
-        await session.execute(delete(model).where(model.job_id.in_(candidates)))
-    await session.execute(delete(Job).where(Job.id.in_(candidates)))
+    referenced: set[UUID] = set()
+    for probe in policy.references:
+        referenced |= await probe(session, candidates)
+
+    await anonymise(session, referenced, at=now)
+    await purge(session, candidates - referenced)
     await session.flush()
-    return RetentionResult(deleted=len(candidates), examined=len(candidates))
+    return RetentionResult(
+        deleted=len(candidates - referenced),
+        anonymised=len(referenced),
+        examined=len(candidates),
+    )
+
+
+async def anonymise(session: AsyncSession, job_ids: set[UUID], *, at: datetime) -> None:
+    """Strip what the jobs said while leaving the rows other data points at.
+
+    The company link stays because the schema requires one. The application URL
+    is emptied rather than nulled for the same reason. Status is left alone: an
+    anonymised job is still the withdrawn or expired job it was.
+    """
+    if not job_ids:
+        return
+    await session.execute(
+        update(JobProvenance)
+        .where(JobProvenance.job_id.in_(job_ids))
+        .values(raw_payload={ANONYMISED_AT_KEY: at.isoformat()})
+    )
+    await session.execute(
+        update(Job)
+        .where(Job.id.in_(job_ids))
+        .values(description=ANONYMISED_DESCRIPTION, location=None, application_url="")
+    )
+
+
+async def purge(session: AsyncSession, job_ids: set[UUID]) -> None:
+    """Delete the jobs and everything that hangs off them.
+
+    Explicit and in dependency order. Skills and mentions cascade on the schema
+    and provenance restricts, but a delete that relies on which is which reads
+    as an accident, and this way the order is the rule.
+    """
+    if not job_ids:
+        return
+    for model in (JobSkillMention, JobSkill, JobProvenance):
+        await session.execute(delete(model).where(model.job_id.in_(job_ids)))
+    await session.execute(delete(Job).where(Job.id.in_(job_ids)))

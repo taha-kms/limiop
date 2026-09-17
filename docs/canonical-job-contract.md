@@ -348,3 +348,30 @@ A job past a date it stated itself becomes `expired`. That is a stated fact
 rather than an inference from absence, so it needs no exhausted run and no
 provenance. A job that stated no date never expires on its own, which is every
 job the catalogue currently holds.
+
+### Nothing that stopped being listable is kept as it was
+
+A job that is no longer `active` is not served, but until retention runs it is
+still stored in full, raw payloads included. Two licences forbid keeping that
+indefinitely, so a daily pass applies one rule with a **grace period** of 30
+days, counted from when the job last changed. A status flip moves
+`updated_at`, so the grace starts the moment reconciliation or expiry acted; a
+source that keeps writing the job restarts it, because a job still being sent
+has not left any listing.
+
+Once the grace has run out, one of two things happens:
+
+- **Deleted.** A job nothing user-facing references leaves with its provenance,
+  skills and mentions, in one transaction.
+- **Anonymised.** A job that user-facing rows still point at keeps its row so
+  the history keeps its shape, but every provenance `raw_payload` becomes
+  `{"_anonymised_at": "<when>"}`, the description becomes
+  `Posting no longer available`, and the location and application URL are
+  cleared. The company link and the status stay, the first because the schema
+  requires one, the second because an anonymised job is still the withdrawn or
+  expired job it was.
+
+`_anonymised_at` is the marker: a job carrying it is never a candidate again,
+so the pass is idempotent. Which rows count as user-facing references is a
+policy the retention module is given, not something it knows; nothing in the
+schema qualifies yet.

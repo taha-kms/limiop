@@ -6,7 +6,7 @@ schema.
 """
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -17,10 +17,18 @@ from platform_db.models.job_skills import JobSkill, JobSkillMention
 from platform_db.models.skills import SkillAliasVersion, SkillConcept
 from pydantic import PostgresDsn
 from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.database import Database
 from job_ingestion.reconciliation import expire_jobs_past_their_stated_date
-from job_ingestion.retention import RetentionPolicy, RetentionResult, apply_retention
+from job_ingestion.retention import (
+    ANONYMISED_AT_KEY,
+    ANONYMISED_DESCRIPTION,
+    ReferenceProbe,
+    RetentionPolicy,
+    RetentionResult,
+    apply_retention,
+)
 from tests.support.catalog import with_empty_catalog
 
 NOW = datetime(2026, 9, 17, 3, 15, tzinfo=UTC)
@@ -301,5 +309,90 @@ def test_a_status_flip_restarts_the_clock(database_url: PostgresDsn) -> None:
             job = await session.get_one(Job, job_id)
             assert job.status is JobStatus.EXPIRED
             assert job.updated_at > BEFORE_THE_GRACE
+
+    run_database_test(database_url, test)
+
+
+# The schema has no user-facing table that points at a job yet, so a reference
+# is whatever the policy says one is. This one says the job it is handed.
+
+
+def referencing(job_id: UUID) -> ReferenceProbe:
+    async def probe(_session: AsyncSession, candidates: Collection[UUID]) -> set[UUID]:
+        return {job_id} & set(candidates)
+
+    return probe
+
+
+async def job_row(database: Database, job_id: UUID) -> Job:
+    async with database.session() as session:
+        return await session.get_one(Job, job_id)
+
+
+async def payloads_of(database: Database, job_id: UUID) -> list[dict[str, object] | None]:
+    async with database.session() as session:
+        rows = await session.scalars(
+            select(JobProvenance.raw_payload).where(JobProvenance.job_id == job_id)
+        )
+        return list(rows)
+
+
+@pytest.mark.integration
+def test_a_referenced_job_is_anonymised_rather_than_deleted(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+        before = await job_row(database, job_id)
+
+        result = await retain(database, policy=RetentionPolicy(references=(referencing(job_id),)))
+
+        assert result == RetentionResult(deleted=0, anonymised=1, examined=1)
+        assert await rows_of(database, job_id) == INTACT
+        assert await payloads_of(database, job_id) == [{ANONYMISED_AT_KEY: NOW.isoformat()}]
+        after = await job_row(database, job_id)
+        assert after.description == ANONYMISED_DESCRIPTION
+        assert after.location is None
+        assert after.application_url == ""
+        assert after.company_id == before.company_id
+        assert after.status is JobStatus.REMOVED
+        assert after.title == before.title
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_an_anonymised_job_is_not_a_candidate_again(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+        policy = RetentionPolicy(references=(referencing(job_id),))
+        await retain(database, policy=policy)
+        first = await job_row(database, job_id)
+
+        # Long after the anonymisation itself has aged out of the grace, and
+        # with nothing referencing the job any more.
+        later = NOW + GRACE + timedelta(days=365)
+        result = await retain(database, now=later)
+
+        assert result == RetentionResult(deleted=0, anonymised=0, examined=0)
+        assert await rows_of(database, job_id) == INTACT
+        assert await payloads_of(database, job_id) == [{ANONYMISED_AT_KEY: NOW.isoformat()}]
+        assert (await job_row(database, job_id)).updated_at == first.updated_at
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_references_from_every_probe_count(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        kept = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+        also_kept = await store_job(database, status=JobStatus.EXPIRED, updated_at=BEFORE_THE_GRACE)
+        gone = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+        policy = RetentionPolicy(references=(referencing(kept), referencing(also_kept)))
+
+        result = await retain(database, policy=policy)
+
+        assert result == RetentionResult(deleted=1, anonymised=2, examined=3)
+        assert await rows_of(database, kept) == INTACT
+        assert await rows_of(database, also_kept) == INTACT
+        assert await rows_of(database, gone) == GONE
 
     run_database_test(database_url, test)
