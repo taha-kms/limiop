@@ -24,7 +24,7 @@ from job_ingestion.boards.provider import BoardProvider, Request
 from job_ingestion.boards.reading import json_object
 from job_ingestion.contracts import IngestionStage, RawPage, RawRecord, RecordFailure
 from job_ingestion.errors import SourceResponseError, SourceUnavailableError
-from job_ingestion.rate_limit import is_rate_limited, retry_delay
+from job_ingestion.transport import retrying_get
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,45 +143,24 @@ class BoardClient:
     async def request(self, slug: str, request: Request) -> httpx2.Response:
         """Make one request, retrying what may succeed later.
 
-        Retries transport failures and rate limits, at most `max_attempts`
-        times. Any other answer is returned as it is: a board that answers is
-        answering, and asking again will not change what it said. A rate
-        limit is the exception, because it is a request to wait rather than a
-        refusal.
+        The retry loop -- transport failures and rate limits, at most
+        `max_attempts` times -- lives in `job_ingestion.transport.retrying_get`,
+        shared with every other client here. Any other answer is returned as
+        it is: a board that answers is answering, and asking again will not
+        change what it said. A rate limit is the exception, because it is a
+        request to wait rather than a refusal.
         """
-        last_failure: SourceUnavailableError | None = None
-        for attempt in range(1, self.config.max_attempts + 1):
-            delay = self.config.retry_backoff_seconds
-            try:
-                response = await self._http_client.get(
-                    request.url,
-                    params=dict(request.params),
-                    headers=dict(request.headers),
-                    timeout=self.config.timeout_seconds,
-                )
-            except httpx2.TimeoutException as error:
-                last_failure = SourceUnavailableError(
-                    self.source_key, f"board {slug} timed out: {error}"
-                )
-            except httpx2.TransportError as error:
-                last_failure = SourceUnavailableError(
-                    self.source_key, f"board {slug} could not be reached: {error}"
-                )
-            else:
-                if not is_rate_limited(response):
-                    return response
-                last_failure = SourceUnavailableError(
-                    self.source_key, f"board {slug} was rate limited"
-                )
-                delay = retry_delay(response, fallback=delay)
-
-            if attempt < self.config.max_attempts:
-                await self.sleeper(delay)
-
-        raise (
-            last_failure
-            if last_failure is not None
-            else SourceUnavailableError(self.source_key, f"board {slug} could not be fetched")
+        return await retrying_get(
+            self._http_client,
+            request.url,
+            params=request.params,
+            headers=request.headers,
+            timeout_seconds=self.config.timeout_seconds,
+            max_attempts=self.config.max_attempts,
+            retry_backoff_seconds=self.config.retry_backoff_seconds,
+            sleeper=self.sleeper,
+            source_key=self.source_key,
+            subject=f"board {slug}",
         )
 
     async def fetch_board(self, slug: str) -> RawPage:
