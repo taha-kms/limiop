@@ -938,3 +938,29 @@ def test_a_higher_ranked_source_still_beats_a_fuller_lower_one(
         assert job.workplace_type is WorkplaceType.REMOTE
 
     run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("mirror_first", [True, False], ids=["mirror first", "aggregator first"])
+def test_at_equal_completeness_the_first_seen_source_owns_whichever_ran_last(
+    database_url: PostgresDsn,
+    mirror_first: bool,
+) -> None:
+    """Two equally full tellings, one of which listed the job a day earlier."""
+
+    async def exercise(database: Database) -> None:
+        listings: list[Listing] = [
+            (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), FIRST_SEEN),
+            (MIRROR, from_source(MIRROR, description=MIRROR_TEXT), LATER_SEEN),
+        ]
+        if mirror_first:
+            listings.reverse()
+
+        # Several rounds, because a rule that only settles after one pass would
+        # still flip the record on every scheduled run.
+        for _ in range(3):
+            await ingest_each(database, listings)
+
+        assert (await stored_job(database)).description == AGGREGATOR_TEXT
+
+    run_database_test(database_url, exercise)

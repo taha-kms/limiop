@@ -336,11 +336,33 @@ async def current_owner(session: AsyncSession, job_id: UUID, *, other_than: UUID
     )
 
 
+async def first_listed_at(
+    session: AsyncSession, job_id: UUID, source_id: UUID, seen_at: datetime
+) -> datetime:
+    """When a source first listed a job, counting the record now arriving.
+
+    The arriving record has no provenance row yet, and the row it will get
+    keeps the least of its `first_seen_at` and `seen_at`, so this is that
+    value ahead of the write. Every row the source holds for the job counts,
+    retired or not: a listing the source dropped and brought back still dates
+    from when it first appeared.
+    """
+    earliest: datetime | None = await session.scalar(
+        select(func.min(JobProvenance.first_seen_at)).where(
+            JobProvenance.job_id == job_id,
+            JobProvenance.source_id == source_id,
+        )
+    )
+    return seen_at if earliest is None else min(earliest, seen_at)
+
+
 async def incoming_outranks(
     session: AsyncSession,
     job: Job,
     registered: JobSource,
     incoming: NormalizedJob,
+    *,
+    seen_at: datetime,
 ) -> bool:
     """Whether the arriving record takes the fields it contests from the owner.
 
@@ -353,8 +375,11 @@ async def incoming_outranks(
     `OPTIONAL_CANONICAL_FIELDS` wins. The stored side of that comparison is the
     job as it stands, which holds at least what its owner said.
 
-    A record no more and no less complete than what is stored still lands, so
-    a source can correct itself.
+    At equal completeness the source that listed the job first keeps it. Once
+    both sources have been seen, that date is the same whichever of them ran
+    last, so the record stops depending on the order of the runs. A source
+    that listed the job before any rival still lands its own corrections; a
+    source with no rival at its rank always does.
     """
     owner = await current_owner(session, job.id, other_than=registered.id)
     if owner is None or registered.precedence != owner.precedence:
@@ -362,7 +387,11 @@ async def incoming_outranks(
 
     arriving = (not incoming.provenance.partial_description, stated_field_count(incoming))
     stored = (not owner.partial, stated_field_count(job))
-    return arriving >= stored
+    if arriving != stored:
+        return arriving > stored
+
+    listed_at = await first_listed_at(session, job.id, registered.id, seen_at)
+    return listed_at < owner.first_seen_at
 
 
 async def persist_job(
@@ -442,7 +471,9 @@ async def write(
             merge_fields(
                 job,
                 incoming,
-                incoming_outranks=await incoming_outranks(session, job, registered, incoming),
+                incoming_outranks=await incoming_outranks(
+                    session, job, registered, incoming, seen_at=seen_at
+                ),
             )
             # A record can differ from what is stored and still change nothing,
             # because the merge may decline every field it disagrees about. That

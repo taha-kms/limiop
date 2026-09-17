@@ -113,7 +113,7 @@ Each source carries a **precedence**, stored on its row rather than held in
 code, so the ordering that produced a stored record can be read back out of the
 database. Higher wins.
 
-Three rules decide a field:
+Four rules decide a field:
 
 1. **Silence never wins.** A source that says nothing about a field cannot erase
    what another source said. Nothing distinguishes a provider that dropped a
@@ -127,8 +127,12 @@ Three rules decide a field:
    much of the posting a record accounts for is the only signal left. A full
    description outranks a partial one; after that, the record stating more of
    the optional canonical fields (location, workplace type, employment type,
-   published and expiry dates) wins. A record exactly as complete as what is
-   stored still lands, so one source can correct itself.
+   published and expiry dates) wins.
+4. **At equal completeness, the source that listed the job first keeps it.**
+   Once both sources have been seen, that date is the same whichever of them
+   ran last, so the record stops depending on the order of the runs. A source
+   with no rival at its rank, or one that listed the job before its rivals,
+   still lands its own corrections.
 
 A lower-ranked source that wins nothing still records that it saw the job, and
 still refreshes when it last did. Losing a disagreement is not the same as being
@@ -145,8 +149,11 @@ is what the next section decides.
 ### Alternatives considered
 
 **First creator owns.** Whichever source saw a job first would keep it forever.
-Rejected because arrival order is an accident of scheduling, and it would freeze
-an aggregator's thinner account of a posting in place ahead of the employer's.
+Rejected as the rule because arrival order is an accident of scheduling, and it
+would freeze an aggregator's thinner account of a posting in place ahead of the
+employer's. It survives only as the last tie-break, once rank and completeness
+have both failed to separate two sources, where the alternative is a record
+that follows whichever run happened last.
 
 **Precedence per field.** A source could outrank another on location while
 losing on description. Rejected as unjustified for now: it needs per-field
