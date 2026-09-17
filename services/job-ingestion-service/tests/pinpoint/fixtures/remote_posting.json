@@ -1,0 +1,47 @@
+{
+  "data": [
+    {
+      "id": "601204",
+      "benefits": "<div><!--block-->Flexible hours and a learning budget.</div>",
+      "benefits_header": "What We Offer",
+      "compensation": null,
+      "compensation_minimum": null,
+      "compensation_maximum": null,
+      "compensation_currency": null,
+      "compensation_frequency": null,
+      "compensation_visible": false,
+      "deadline_at": null,
+      "description": "<div><!--block-->We are looking for a Support Engineer to join a distributed team across several countries. You will help customers get the most out of the product and feed what you learn back to engineering.</div>",
+      "employment_type": null,
+      "employment_type_text": null,
+      "key_responsibilities": null,
+      "key_responsibilities_header": null,
+      "reporting_to": null,
+      "skills_knowledge_expertise": null,
+      "skills_knowledge_expertise_header": null,
+      "title": "Support Engineer",
+      "url": "https://workwithus.pinpointhq.com/en/postings/1f4d9a6e-7c21-4b3e-9d5a-2e8c0b7f6a13",
+      "path": "/en/postings/1f4d9a6e-7c21-4b3e-9d5a-2e8c0b7f6a13",
+      "workplace_type": null,
+      "workplace_type_text": null,
+      "job": {
+        "id": "604117",
+        "requisition_id": "PIN-0412",
+        "department": {
+          "id": "1790",
+          "name": "Customer Success"
+        },
+        "division": null,
+        "structure_custom_group_one": null
+      },
+      "location": {
+        "id": "301",
+        "city": null,
+        "name": "Multiple locations",
+        "postal_code": null,
+        "province": null,
+        "street_address": null
+      }
+    }
+  ]
+}

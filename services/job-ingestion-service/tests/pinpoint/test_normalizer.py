@@ -10,19 +10,21 @@ from job_ingestion.pinpoint.normalizer import PinpointNormalizer
 from job_ingestion.pinpoint.records import PinpointValidator
 from job_ingestion.schemas import NormalizedJob
 
-FIXTURE = Path(__file__).parent / "fixtures" / "postings.json"
+FIXTURES = Path(__file__).parent / "fixtures"
+FIXTURE = FIXTURES / "postings.json"
+REMOTE_FIXTURE = FIXTURES / "remote_posting.json"
 
 
-def fixture_record(**overrides: Any) -> dict[str, Any]:
-    body: dict[str, Any] = json.loads(FIXTURE.read_text())
+def fixture_record(fixture: Path = FIXTURE, **overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = json.loads(fixture.read_text())
     record: dict[str, Any] = dict(body["data"][0])
     record["board"] = "workwithus"
     record.update(overrides)
     return record
 
 
-def normalize(**overrides: Any) -> NormalizedJob:
-    raw = fixture_record(**overrides)
+def normalize(fixture: Path = FIXTURE, **overrides: Any) -> NormalizedJob:
+    raw = fixture_record(fixture, **overrides)
     return PinpointNormalizer().normalize(PinpointValidator().validate(raw), raw)
 
 
@@ -65,6 +67,33 @@ def test_full_time_reads_as_full_time() -> None:
     job = normalize()
 
     assert job.employment_type is EmploymentType.FULL_TIME
+
+
+def test_a_null_workplace_type_stays_unspecified() -> None:
+    """Silence is not an office: nothing is inferred from a null."""
+    job = normalize(REMOTE_FIXTURE)
+
+    assert job.workplace_type is WorkplaceType.UNSPECIFIED
+    assert job.employment_type is EmploymentType.UNSPECIFIED
+
+
+def test_a_null_city_falls_back_to_the_location_name() -> None:
+    job = normalize(REMOTE_FIXTURE)
+
+    assert job.location == "Multiple locations"
+
+
+def test_a_null_city_with_no_location_name_is_no_location() -> None:
+    job = normalize(REMOTE_FIXTURE, location={"city": None, "name": None})
+
+    assert job.location is None
+
+
+def test_null_sections_leave_only_the_description() -> None:
+    job = normalize(REMOTE_FIXTURE)
+
+    assert "Support Engineer" in job.description
+    assert "\n\n" not in job.description
 
 
 def test_a_deadline_becomes_an_aware_expiry() -> None:
