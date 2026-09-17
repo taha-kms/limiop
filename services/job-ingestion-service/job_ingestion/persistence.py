@@ -267,21 +267,102 @@ def canonical_values(job: Job) -> tuple[object, ...]:
     )
 
 
-async def owner_precedence(session: AsyncSession, job_id: UUID) -> int | None:
-    """The highest rank among sources that have already seen this job.
+# The optional canonical fields, which is where two accounts of one posting
+# differ in how much they say. The title, description and application URL are
+# required by the contract, so every record states them and they separate
+# nothing.
+OPTIONAL_CANONICAL_FIELDS = (
+    "location",
+    "workplace_type",
+    "employment_type",
+    "published_at",
+    "expires_at",
+)
+
+
+def stated_field_count(record: Job | NormalizedJob) -> int:
+    """How many of the optional canonical fields a record actually states."""
+    return sum(is_stated(getattr(record, name)) for name in OPTIONAL_CANONICAL_FIELDS)
+
+
+@dataclass(frozen=True, slots=True)
+class Owner:
+    """The account the stored canonical fields currently belong to.
+
+    Read off the job's live provenance rows from every source but the one
+    now writing: the sources at the highest rank among them, taken together.
+    `partial` is true only when each of them delivered a snippet, because a
+    full description at that rank would have won the field from a snippet.
+    """
+
+    precedence: int
+    first_seen_at: datetime
+    partial: bool
+
+
+async def current_owner(session: AsyncSession, job_id: UUID, *, other_than: UUID) -> Owner | None:
+    """The owner of a job as seen from a source about to write it, if any.
 
     Derived from provenance rather than stored on the job. The rows are already
     there, one per source per job, so a separate owner column would be a second
-    copy of the same fact and a chance for the two to disagree.
+    copy of the same fact and a chance for the two to disagree. Retired rows do
+    not count: a source that stopped listing the job no longer owns any of it.
     """
     statement = (
-        select(func.max(JobSource.precedence))
+        select(
+            JobSource.precedence,
+            JobProvenance.first_seen_at,
+            func.coalesce(
+                JobProvenance.raw_payload.contains({PARTIAL_DESCRIPTION_KEY: True}), False
+            ),
+        )
         .select_from(JobProvenance)
         .join(JobSource, JobProvenance.source_id == JobSource.id)
-        .where(JobProvenance.job_id == job_id)
+        .where(
+            JobProvenance.job_id == job_id,
+            JobProvenance.source_id != other_than,
+            JobProvenance.retired_at.is_(None),
+        )
     )
-    highest: int | None = await session.scalar(statement)
-    return highest
+    rows = (await session.execute(statement)).all()
+    if not rows:
+        return None
+    highest = max(precedence for precedence, _seen, _partial in rows)
+    owning = [(seen, partial) for precedence, seen, partial in rows if precedence == highest]
+    return Owner(
+        precedence=highest,
+        first_seen_at=min(seen for seen, _partial in owning),
+        partial=all(partial for _seen, partial in owning),
+    )
+
+
+async def incoming_outranks(
+    session: AsyncSession,
+    job: Job,
+    registered: JobSource,
+    incoming: NormalizedJob,
+) -> bool:
+    """Whether the arriving record takes the fields it contests from the owner.
+
+    Rank decides first, as it always has: a higher-ranked source wins outright
+    and a lower-ranked one loses outright. Between sources of equal rank the
+    more complete record owns the canonical fields. Aggregators carry the same
+    employer text as each other, so rank cannot tell them apart and how much
+    of the posting a record accounts for is the only signal left. A full
+    description outranks a snippet, and then the record stating more of
+    `OPTIONAL_CANONICAL_FIELDS` wins. The stored side of that comparison is the
+    job as it stands, which holds at least what its owner said.
+
+    A record no more and no less complete than what is stored still lands, so
+    a source can correct itself.
+    """
+    owner = await current_owner(session, job.id, other_than=registered.id)
+    if owner is None or registered.precedence != owner.precedence:
+        return owner is None or registered.precedence > owner.precedence
+
+    arriving = (not incoming.provenance.partial_description, stated_field_count(incoming))
+    stored = (not owner.partial, stated_field_count(job))
+    return arriving >= stored
 
 
 async def persist_job(
@@ -357,14 +438,11 @@ async def write(
         statement = select(Job).options(selectinload(Job.company)).where(Job.id == decision.job_id)
         job = (await session.scalars(statement)).one()
         if decision.outcome is DeduplicationOutcome.CHANGED:
-            # An equal rank goes to the incoming record, so one source
-            # correcting itself still lands.
-            owner = await owner_precedence(session, job.id)
             before = canonical_values(job)
             merge_fields(
                 job,
                 incoming,
-                incoming_outranks=owner is None or registered.precedence >= owner,
+                incoming_outranks=await incoming_outranks(session, job, registered, incoming),
             )
             # A record can differ from what is stored and still change nothing,
             # because the merge may decline every field it disagrees about. That

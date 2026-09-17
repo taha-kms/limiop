@@ -122,8 +122,13 @@ Three rules decide a field:
    A field is silent when it is null, or when it holds the `unspecified` member
    its vocabulary uses for exactly this.
 2. **When both speak, rank decides.**
-3. **An equal rank goes to the incoming record**, so one source can still
-   correct itself.
+3. **At equal rank, the more complete record owns the job.** Aggregators copy
+   the same employer text as each other, so rank cannot separate them and how
+   much of the posting a record accounts for is the only signal left. A full
+   description outranks a partial one; after that, the record stating more of
+   the optional canonical fields (location, workplace type, employment type,
+   published and expiry dates) wins. A record exactly as complete as what is
+   stored still lands, so one source can correct itself.
 
 A lower-ranked source that wins nothing still records that it saw the job, and
 still refreshes when it last did. Losing a disagreement is not the same as being

@@ -803,3 +803,138 @@ def test_two_openings_for_one_role_in_one_city_stay_two_jobs(
         assert jobs == 2
 
     run_database_test(database_url, exercise)
+
+
+# Two sources at the same rank. Aggregators copy the employer's text, so rank
+# cannot separate them and the fuller record owns the canonical fields instead.
+
+MIRROR = SourceRegistration(
+    key="mirror",
+    display_name="Mirror aggregator",
+    base_url="https://mirror.example.com",
+    precedence=AGGREGATOR.precedence,
+)
+MIRROR_TEXT = (
+    "Build the pipelines the analytics team depends on, and own them end to end. "
+    "You will work with engineers across the organisation."
+)
+# The opening sentence alone, which is what a provider that truncates delivers.
+SNIPPET = "Build the pipelines the analytics team depends on, and own them end to end."
+
+Listing = tuple[SourceRegistration, NormalizedJob, datetime]
+
+
+def fuller(source: SourceRegistration, description: str) -> NormalizedJob:
+    """The posting with the two fields the default telling leaves unstated."""
+    return from_source(
+        source, description=description, workplace_type="remote", employment_type="full-time"
+    )
+
+
+async def ingest_each(database: Database, listings: list[Listing]) -> PersistenceResult:
+    result: PersistenceResult | None = None
+    for source, incoming, seen_at in listings:
+        result = await ingest_from(database, source, incoming, seen_at=seen_at)
+    assert result is not None
+    return result
+
+
+@pytest.mark.integration
+def test_a_fuller_record_arriving_second_owns_the_job(database_url: PostgresDsn) -> None:
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), FIRST_SEEN),
+                (MIRROR, fuller(MIRROR, MIRROR_TEXT), LATER_SEEN),
+            ],
+        )
+
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_fuller_record_keeps_the_job_when_a_sparser_one_arrives(
+    database_url: PostgresDsn,
+) -> None:
+    async def exercise(database: Database) -> None:
+        result = await ingest_each(
+            database,
+            [
+                (AGGREGATOR, fuller(AGGREGATOR, AGGREGATOR_TEXT), FIRST_SEEN),
+                (MIRROR, from_source(MIRROR, description=MIRROR_TEXT), LATER_SEEN),
+            ],
+        )
+
+        assert result.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == AGGREGATOR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_full_description_owns_the_job_over_a_partial_one(database_url: PostgresDsn) -> None:
+    """A provider that starts delivering excerpts loses the text to one that does not.
+
+    Identity matching never joins a snippet to a full posting, so the only way
+    a partial record shares a job with a full one is through a source that was
+    full when it first listed the job and truncated later. Both sources state
+    the same fields, so nothing but the snippet separates them.
+    """
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), FIRST_SEEN),
+                (MIRROR, from_source(MIRROR, description=MIRROR_TEXT), LATER_SEEN),
+            ],
+        )
+        truncated = from_source(
+            AGGREGATOR,
+            description=SNIPPET,
+            provenance={
+                "source_key": AGGREGATOR.key,
+                "source_job_id": f"{AGGREGATOR.key}-1",
+                "source_url": f"{AGGREGATOR.base_url}/jobs/1",
+                "partial_description": True,
+            },
+        )
+        snipped = await ingest_from(database, AGGREGATOR, truncated, seen_at=LATER_SEEN)
+
+        assert snipped.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description != SNIPPET
+
+        await ingest_from(
+            database, MIRROR, from_source(MIRROR, description=MIRROR_TEXT), seen_at=LATER_SEEN
+        )
+
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+@pytest.mark.parametrize("board_first", [True, False], ids=["board first", "aggregator first"])
+def test_a_higher_ranked_source_still_beats_a_fuller_lower_one(
+    database_url: PostgresDsn,
+    board_first: bool,
+) -> None:
+    async def exercise(database: Database) -> None:
+        listings: list[Listing] = [
+            (BOARD, from_source(BOARD), FIRST_SEEN),
+            (AGGREGATOR, fuller(AGGREGATOR, AGGREGATOR_TEXT), LATER_SEEN),
+        ]
+        if not board_first:
+            listings.reverse()
+
+        await ingest_each(database, listings)
+
+        job = await stored_job(database)
+        assert job.description == BOARD_TEXT
+        # Rank settles what both describe; what only the aggregator said still lands.
+        assert job.workplace_type is WorkplaceType.REMOTE
+
+    run_database_test(database_url, exercise)
