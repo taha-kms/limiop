@@ -54,6 +54,7 @@ def test_job_uses_shared_metadata_and_canonical_columns() -> None:
         "status",
         "created_at",
         "updated_at",
+        "anonymised_at",
     }
 
 
