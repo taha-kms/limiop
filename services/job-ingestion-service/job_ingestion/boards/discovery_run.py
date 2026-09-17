@@ -789,6 +789,14 @@ async def run_discovery(
                 elif outcome in tallies:
                     tallies[outcome] += 1
 
+                # Durable before the next probe, so a run that dies on a
+                # later company keeps what it found; the one commit at the
+                # end used to lose nineteen minutes of registrations to a
+                # single bad guess. A commit is cheap next to a probe, which
+                # is at least one request and a politeness pause.
+                await session.commit()
+
+        # The source's own registration, when no company was probed.
         await session.commit()
 
     return DiscoverySummary(

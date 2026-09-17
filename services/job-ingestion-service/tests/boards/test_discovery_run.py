@@ -1785,15 +1785,27 @@ def test_a_verifier_that_fails_is_recorded_without_the_credential_its_message_ca
 
 
 @pytest.mark.integration
-def test_a_programming_error_in_a_probe_still_ends_the_run(database_url: PostgresDsn) -> None:
+def test_a_programming_error_in_a_probe_ends_the_run_but_keeps_what_it_had_registered(
+    database_url: PostgresDsn,
+) -> None:
+    """Each company's findings are committed before the next probe, so a run
+    that dies on its third company still leaves the first two registered."""
+
     async def exercise(database: Database) -> None:
         settings = Settings(environment=Environment.TEST, database_url=database_url)
         async with database.session() as session:
-            await make_company(session, "Alpha")
-            await make_company(session, "Bravo")
+            alpha = await make_company(session, "Alpha")
+            bravo = await make_company(session, "Bravo")
+            await make_company(session, "Charlie")
             await session.commit()
 
-        transport = routing({"/alpha/jobs": board("Alpha"), "/bravo/jobs": RuntimeError("bug")})
+        transport = routing(
+            {
+                "/alpha/jobs": board("Alpha"),
+                "/bravo/jobs": board("Bravo"),
+                "/charlie/jobs": RuntimeError("bug"),
+            }
+        )
         with pytest.raises(RuntimeError, match="bug"):
             await run_discovery(
                 database,
@@ -1804,6 +1816,15 @@ def test_a_programming_error_in_a_probe_still_ends_the_run(database_url: Postgre
                 sleeper=never_sleeps,
                 now=lambda: datetime.now(UTC),
             )
+
+        async with database.session() as session:
+            rows = {row.slug: row for row in (await session.scalars(select(JobBoard))).all()}
+
+        assert set(rows) == {"alpha", "bravo"}
+        assert rows["alpha"].company_id == alpha.id
+        assert rows["alpha"].status is BoardStatus.CONFIRMED
+        assert rows["bravo"].company_id == bravo.id
+        assert rows["bravo"].status is BoardStatus.CONFIRMED
 
     run_database_test(database_url, exercise)
 
