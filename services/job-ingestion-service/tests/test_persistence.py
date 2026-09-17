@@ -7,7 +7,7 @@ import pytest
 from platform_db.models import Company, Job, JobBoard, JobProvenance, JobSource
 from platform_db.models.catalog import EmploymentType, WorkplaceType
 from pydantic import PostgresDsn
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy import text as sql
 
 from job_ingestion import persistence
@@ -1117,5 +1117,90 @@ def test_a_record_that_was_partial_once_reads_as_full_again(database_url: Postgr
 
         assert outcomes == [RecordOutcome.SKIPPED] * 6
         assert (await stored_job(database)).description == telling(AGGREGATOR.key)
+
+    run_database_test(database_url, exercise)
+
+
+async def retire(database: Database, source: SourceRegistration, at: datetime) -> None:
+    """Mark every row this source holds as no longer listed, as reconciliation does."""
+    async with database.session() as session:
+        source_id = await session.scalar(select(JobSource.id).where(JobSource.key == source.key))
+        await session.execute(
+            update(JobProvenance).where(JobProvenance.source_id == source_id).values(retired_at=at)
+        )
+        await session.commit()
+
+
+@pytest.mark.integration
+def test_a_retired_board_yields_the_text_and_takes_it_back_on_return(
+    database_url: PostgresDsn,
+) -> None:
+    """A board whose posting is gone from the board no longer owns the text."""
+
+    async def exercise(database: Database) -> None:
+        await ingest_each(
+            database,
+            [
+                (BOARD, from_source(BOARD), seen(0)),
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), seen(1)),
+            ],
+        )
+        assert (await stored_job(database)).description == BOARD_TEXT
+
+        await retire(database, BOARD, seen(2))
+        taken = await ingest_from(
+            database,
+            AGGREGATOR,
+            from_source(AGGREGATOR, description=AGGREGATOR_TEXT),
+            seen_at=seen(3),
+        )
+        assert taken.outcome is RecordOutcome.UPDATED
+        assert (await stored_job(database)).description == AGGREGATOR_TEXT
+
+        returned = await ingest_from(database, BOARD, from_source(BOARD), seen_at=seen(4))
+        assert returned.outcome is RecordOutcome.UPDATED
+        assert (await stored_job(database)).description == BOARD_TEXT
+
+    run_database_test(database_url, exercise)
+
+
+@pytest.mark.integration
+def test_a_snippet_never_replaces_full_text_even_after_its_rival_retires(
+    database_url: PostgresDsn,
+) -> None:
+    """The full text the job holds is not discarded for an excerpt when the
+    source that supplied it stops listing the posting."""
+
+    async def exercise(database: Database) -> None:
+        truncated = from_source(
+            AGGREGATOR,
+            description=SNIPPET,
+            provenance={
+                "source_key": AGGREGATOR.key,
+                "source_job_id": f"{AGGREGATOR.key}-1",
+                "source_url": f"{AGGREGATOR.base_url}/jobs/1",
+                "partial_description": True,
+            },
+        )
+        full = from_source(MIRROR, description=MIRROR_TEXT)
+        await ingest_each(
+            database,
+            [
+                (AGGREGATOR, from_source(AGGREGATOR, description=AGGREGATOR_TEXT), seen(0)),
+                (MIRROR, full, seen(1)),
+                (AGGREGATOR, truncated, seen(2)),
+                (MIRROR, full, seen(3)),
+            ],
+        )
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+        await retire(database, MIRROR, seen(4))
+        snipped = await ingest_from(database, AGGREGATOR, truncated, seen_at=seen(5))
+        assert snipped.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == MIRROR_TEXT
+
+        returned = await ingest_from(database, MIRROR, full, seen_at=seen(6))
+        assert returned.outcome is RecordOutcome.SKIPPED
+        assert (await stored_job(database)).description == MIRROR_TEXT
 
     run_database_test(database_url, exercise)

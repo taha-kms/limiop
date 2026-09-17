@@ -333,39 +333,55 @@ def payload_facts(payload: dict[str, object] | None) -> tuple[bool, int]:
     )
 
 
-async def current_owner(session: AsyncSession, job_id: UUID, *, other_than: UUID) -> Owner | None:
-    """The owner of a job as seen from a source about to write it, if any.
+@dataclass(frozen=True, slots=True)
+class Rivals:
+    """What the other sources on a job have said, seen from the one writing.
+
+    `owner` is read off the live rows only: a source that stopped listing the
+    job no longer ranks. `supplied_full_text` counts retired rows too, since
+    the full description a source once supplied is still the one the job
+    holds after that source has gone.
+    """
+
+    owner: Owner | None
+    supplied_full_text: bool
+
+
+async def rivals_of(session: AsyncSession, job_id: UUID, *, other_than: UUID) -> Rivals:
+    """Every other source's account of a job, summarised for the ownership rule.
 
     Derived from provenance rather than stored on the job. The rows are already
     there, one per source per job, so a separate owner column would be a second
-    copy of the same fact and a chance for the two to disagree. Retired rows do
-    not count: a source that stopped listing the job no longer owns any of it.
+    copy of the same fact and a chance for the two to disagree.
     """
     statement = (
-        select(JobSource.precedence, JobProvenance.first_seen_at, JobProvenance.raw_payload)
+        select(
+            JobSource.precedence,
+            JobProvenance.first_seen_at,
+            JobProvenance.retired_at.is_(None),
+            JobProvenance.raw_payload,
+        )
         .select_from(JobProvenance)
         .join(JobSource, JobProvenance.source_id == JobSource.id)
-        .where(
-            JobProvenance.job_id == job_id,
-            JobProvenance.source_id != other_than,
-            JobProvenance.retired_at.is_(None),
-        )
+        .where(JobProvenance.job_id == job_id, JobProvenance.source_id != other_than)
     )
-    rows = (await session.execute(statement)).all()
-    if not rows:
-        return None
-    highest = max(precedence for precedence, _seen, _payload in rows)
-    owning = [
-        (seen, *payload_facts(payload))
-        for precedence, seen, payload in rows
-        if precedence == highest
+    rows = [
+        (precedence, seen, live, *payload_facts(payload))
+        for precedence, seen, live, payload in (await session.execute(statement)).all()
     ]
-    return Owner(
+    supplied_full_text = any(not partial for _rank, _seen, _live, partial, _stated in rows)
+    ranked = [row for row in rows if row[2]]
+    if not ranked:
+        return Rivals(owner=None, supplied_full_text=supplied_full_text)
+    highest = max(precedence for precedence, _seen, _live, _partial, _stated in ranked)
+    owning = [row for row in ranked if row[0] == highest]
+    owner = Owner(
         precedence=highest,
-        first_seen_at=min(seen for seen, _partial, _stated in owning),
-        partial=all(partial for _seen, partial, _stated in owning),
-        stated=max(stated for _seen, _partial, stated in owning),
+        first_seen_at=min(seen for _rank, seen, _live, _partial, _stated in owning),
+        partial=all(partial for _rank, _seen, _live, partial, _stated in owning),
+        stated=max(stated for _rank, _seen, _live, _partial, stated in owning),
     )
+    return Rivals(owner=owner, supplied_full_text=supplied_full_text)
 
 
 async def first_listed_at(
@@ -415,7 +431,11 @@ async def incoming_outranks(
     that listed the job before any rival still lands its own corrections; a
     source with no rival at its rank always does.
     """
-    owner = await current_owner(session, job.id, other_than=registered.id)
+    rivals = await rivals_of(session, job.id, other_than=registered.id)
+    if incoming.provenance.partial_description and rivals.supplied_full_text:
+        return False
+
+    owner = rivals.owner
     if owner is None or registered.precedence != owner.precedence:
         return owner is None or registered.precedence > owner.precedence
 
