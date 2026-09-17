@@ -7,8 +7,9 @@ and Airflow stays free of business logic.
 The rule: a job that has not been `active` for longer than the grace period of
 30 days is deleted with its provenance, skills and mentions, unless user-facing
 data still references it, in which case it is anonymised and kept. Runs once a
-night at 03:15, after the discovery DAGs and between the hourly ingestion runs,
-so a pass never races a run that is still flipping statuses.
+night at 03:15, after the discovery DAGs. The pass works in pages, each locked
+and committed on its own, so it neither blocks an ingestion run nor trusts a
+row that run is rewriting.
 """
 
 import asyncio

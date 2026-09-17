@@ -8,6 +8,7 @@ schema.
 import asyncio
 from collections.abc import Awaitable, Callable, Collection
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock, patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -16,7 +17,7 @@ from platform_db.models.catalog import JobStatus
 from platform_db.models.job_skills import JobSkill, JobSkillMention
 from platform_db.models.skills import SkillAliasVersion, SkillConcept
 from pydantic import PostgresDsn
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.config import Environment, Settings
@@ -416,5 +417,114 @@ def test_the_entry_point_opens_the_configured_database_and_commits(
 
         assert result == RetentionResult(deleted=1, anonymised=0, examined=1)
         assert await rows_of(database, job_id) == GONE
+
+    run_database_test(database_url, test)
+
+
+# Paging. Every page is selected under a row lock, committed on its own, and
+# the statements that finally act restate the whole predicate.
+
+
+def test_a_page_holds_at_least_one_job() -> None:
+    with pytest.raises(ValueError, match="batch_size"):
+        RetentionPolicy(batch_size=0)
+
+
+async def store_withdrawn_jobs(database: Database, count: int) -> None:
+    """Withdrawn jobs past the grace, with nothing hanging off them, in one write."""
+    async with database.session() as session:
+        company = Company(display_name="Acme GmbH")
+        session.add(company)
+        await session.flush()
+        session.add_all(
+            Job(
+                company_id=company.id,
+                title=f"Engineer {index}",
+                description="Gone.",
+                application_url=f"https://acme.example.com/jobs/{index}",
+                status=JobStatus.REMOVED,
+                updated_at=BEFORE_THE_GRACE - timedelta(minutes=index),
+            )
+            for index in range(count)
+        )
+        await session.commit()
+
+
+async def count_jobs(database: Database) -> int:
+    async with database.session() as session:
+        return (await session.execute(select(func.count()).select_from(Job))).scalar_one()
+
+
+@pytest.mark.integration
+def test_a_large_backlog_is_removed_page_by_page_with_a_commit_per_page(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        await store_withdrawn_jobs(database, 1200)
+        pages: list[int] = []
+
+        async def counting(_session: AsyncSession, candidates: Collection[UUID]) -> set[UUID]:
+            pages.append(len(candidates))
+            return set()
+
+        policy = RetentionPolicy(references=(counting,), batch_size=500)
+        async with database.session() as session:
+            with patch.object(session, "commit", AsyncMock(wraps=session.commit)) as commit:
+                result = await apply_retention(session, now=NOW, policy=policy)
+
+        assert result == RetentionResult(deleted=1200, anonymised=0, examined=1200)
+        assert pages == [500, 500, 200]
+        assert commit.await_count == 3
+        assert await count_jobs(database) == 0
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_a_job_another_session_is_writing_is_left_to_that_session(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+
+        # An ingestion run mid-write holds the row; it is about to re-list the job.
+        async with database.session() as writer:
+            await writer.execute(select(Job.id).where(Job.id == job_id).with_for_update())
+
+            result = await retain(database)
+
+            await writer.execute(
+                update(Job).where(Job.id == job_id).values(status=JobStatus.ACTIVE)
+            )
+            await writer.commit()
+
+        assert result == RetentionResult(deleted=0, anonymised=0, examined=0)
+        assert await rows_of(database, job_id) == INTACT
+        assert (await job_row(database, job_id)).status is JobStatus.ACTIVE
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_a_job_whose_clock_moved_after_selection_is_not_deleted(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+
+        # Something lands on the job between its selection and the delete: the
+        # statements that act must notice, not trust the page they were given.
+        async def relisting(session: AsyncSession, candidates: Collection[UUID]) -> set[UUID]:
+            await session.execute(
+                update(Job)
+                .where(Job.id.in_(candidates))
+                .values(status=JobStatus.ACTIVE, updated_at=NOW)
+            )
+            return set()
+
+        result = await retain(database, policy=RetentionPolicy(references=(relisting,)))
+
+        assert result == RetentionResult(deleted=0, anonymised=0, examined=1)
+        assert await rows_of(database, job_id) == INTACT
 
     run_database_test(database_url, test)
