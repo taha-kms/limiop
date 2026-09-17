@@ -101,3 +101,13 @@ def test_jobs_records_when_retention_anonymised_them() -> None:
     assert isinstance(anonymised_at_type, DateTime)
     assert anonymised_at_type.timezone is True
     assert columns["anonymised_at"].nullable
+
+
+def test_jobs_has_a_partial_index_for_the_retention_scan() -> None:
+    table = Job.__table__
+    assert isinstance(table, Table)
+    indexes = {str(index.name): index for index in table.indexes}
+    assert [column.name for column in indexes["ix_jobs_retention"].columns] == ["updated_at"]
+    assert str(indexes["ix_jobs_retention"].dialect_options["postgresql"]["where"]) == (
+        "status <> 'active'"
+    )

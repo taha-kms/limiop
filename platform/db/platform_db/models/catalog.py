@@ -186,6 +186,8 @@ class Job(Base):
             text("id DESC"),
         ),
         Index("ix_jobs_status_expires_at", "status", "expires_at"),
+        # The nightly retention scan: inactive jobs, oldest change first.
+        Index("ix_jobs_retention", "updated_at", postgresql_where=text("status <> 'active'")),
         Index("ix_jobs_company_id", "company_id"),
         Index("ix_jobs_location", "location"),
     )

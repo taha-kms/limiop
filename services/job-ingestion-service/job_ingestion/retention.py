@@ -25,9 +25,11 @@ whole predicate rather than trusting the page they were handed.
 
 The "left the listing" moment is `jobs.updated_at`. The model declares
 `onupdate=func.now()` and both status flips in `reconciliation` go through the
-ORM, so the column moves exactly when a job stops being active. Provenance
-`retired_at` was the alternative, and it says nothing about an expired job
-whose source still carries it.
+ORM, so the column moves exactly when a job stops being active. But a status
+alone is not the whole story: an expired job a source still sends every hour
+has not left that source's listing, and its provenance row says so with a null
+`retired_at`. Such a job is not a candidate, or the pass would delete it and
+the next run would create it again under a new id.
 
 Per-source hooks are not here yet. France Travail's anonymise-at-retirement and
 Adzuna's remove-when-disabled both attach to this policy when they land.
@@ -42,7 +44,7 @@ from uuid import UUID
 from platform_db.models import Job, JobProvenance
 from platform_db.models.catalog import JobStatus
 from platform_db.models.job_skills import JobSkill, JobSkillMention
-from sqlalchemy import ColumnElement, delete, select, tuple_, update
+from sqlalchemy import ColumnElement, delete, exists, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from job_ingestion.config import Settings, get_settings
@@ -116,10 +118,15 @@ async def run_retention(
 def eligible(cutoff: datetime) -> tuple[ColumnElement[bool], ...]:
     """The candidate predicate, shared by the selection and by every statement
     that acts, so the two can never drift apart."""
+    still_listed = exists().where(
+        JobProvenance.job_id == Job.id,
+        JobProvenance.retired_at.is_(None),
+    )
     return (
-        Job.status != JobStatus.ACTIVE,
+        Job.status.in_((JobStatus.EXPIRED, JobStatus.REMOVED)),
         Job.updated_at < cutoff,
         Job.anonymised_at.is_(None),
+        ~still_listed,
     )
 
 
@@ -141,6 +148,7 @@ async def apply_retention(
         page, after = await select_page(session, cutoff=cutoff, size=policy.batch_size, after=after)
         if not page:
             return result
+        page = await lock_provenance(session, page)
 
         referenced: set[UUID] = set()
         for probe in policy.references:
@@ -185,6 +193,33 @@ async def select_page(
         return set(), after
     last_id, last_updated_at = rows[-1]
     return {job_id for job_id, _ in rows}, (last_updated_at, last_id)
+
+
+async def lock_provenance(session: AsyncSession, page: set[UUID]) -> set[UUID]:
+    """Lock the page's provenance rows too, and drop any job whose rows are held.
+
+    A source re-listing a job rewrites its provenance row before it touches the
+    job, so holding the job alone leaves the row free to go live under the
+    page. Held rows are skipped rather than waited for, in the same order an
+    ingestion run takes its locks reversed, so neither ever waits on the other.
+    A job with a held row is left out of this page, untouched.
+    """
+    rows = (
+        await session.execute(
+            select(JobProvenance.job_id, JobProvenance.id).where(JobProvenance.job_id.in_(page))
+        )
+    ).all()
+    locked = set(
+        (
+            await session.scalars(
+                select(JobProvenance.id)
+                .where(JobProvenance.job_id.in_(page))
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+    )
+    held = {job_id for job_id, provenance_id in rows if provenance_id not in locked}
+    return page - held
 
 
 async def anonymise(

@@ -122,6 +122,8 @@ async def store_job(
                 source_job_id=str(job_id),
                 source_url=f"https://board.example.com/jobs/{job_id}",
                 raw_payload=dict(PAYLOAD),
+                # The source stopped listing it when the job stopped being active.
+                retired_at=None if status is JobStatus.ACTIVE else updated_at,
             )
         )
         session.add(
@@ -632,5 +634,80 @@ def test_a_job_with_no_provenance_is_marked_once(database_url: PostgresDsn) -> N
         assert first == RetentionResult(deleted=0, anonymised=1, examined=1)
         assert again == RetentionResult(deleted=0, anonymised=0, examined=0)
         assert (await job_row(database, job_id)).anonymised_at == NOW
+
+    run_database_test(database_url, test)
+
+
+# A source that still lists the job has not stopped listing it, whatever the
+# status says. Its provenance rows are locked with the page, so a source that
+# re-lists mid-page either waits for the page or keeps the page off the job.
+
+
+async def relist_provenance(database: Database, job_id: UUID) -> None:
+    async with database.session() as session:
+        await session.execute(
+            update(JobProvenance).where(JobProvenance.job_id == job_id).values(retired_at=None)
+        )
+        await session.commit()
+
+
+@pytest.mark.integration
+def test_an_expired_job_a_source_still_lists_is_untouched(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(
+            database,
+            status=JobStatus.EXPIRED,
+            updated_at=BEFORE_THE_GRACE,
+            expires_at=BEFORE_THE_GRACE,
+        )
+        await relist_provenance(database, job_id)
+
+        result = await retain(database)
+
+        assert result == RetentionResult(deleted=0, anonymised=0, examined=0)
+        assert await rows_of(database, job_id) == INTACT
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_a_source_relisting_mid_page_waits_for_the_page(database_url: PostgresDsn) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+        relisting: dict[str, asyncio.Task[None]] = {}
+
+        async def while_locked(_session: AsyncSession, _ids: Collection[UUID]) -> set[UUID]:
+            relisting["task"] = asyncio.create_task(relist_provenance(database, job_id))
+            await asyncio.sleep(0.3)
+            assert not relisting["task"].done(), "the re-list should wait for the page"
+            return set()
+
+        result = await retain(database, policy=RetentionPolicy(references=(while_locked,)))
+        await relisting["task"]
+
+        assert result == RetentionResult(deleted=1, anonymised=0, examined=1)
+        assert await rows_of(database, job_id) == GONE
+
+    run_database_test(database_url, test)
+
+
+@pytest.mark.integration
+def test_a_job_whose_provenance_another_session_holds_is_skipped(
+    database_url: PostgresDsn,
+) -> None:
+    async def test(database: Database) -> None:
+        job_id = await store_job(database, status=JobStatus.REMOVED, updated_at=BEFORE_THE_GRACE)
+
+        async with database.session() as writer:
+            await writer.execute(
+                update(JobProvenance).where(JobProvenance.job_id == job_id).values(retired_at=None)
+            )
+
+            result = await retain(database)
+
+            await writer.commit()
+
+        assert result == RetentionResult(deleted=0, anonymised=0, examined=0)
+        assert await rows_of(database, job_id) == INTACT
 
     run_database_test(database_url, test)
