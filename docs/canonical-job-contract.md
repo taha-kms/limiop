@@ -260,33 +260,42 @@ retiring every posting on the strength of it would let an outage do the
 retiring. Such a run retires nothing and reports that it saw no records and
 cannot tell absence from an outage.
 
-### A windowed source presumes by age instead
+### A creation-windowed source keeps a posting for a presumed lifetime
 
 A source that is read through a window can never claim exhaustion. Adzuna is
-asked only for the last few days of postings, so a walk that runs every
-country short has still seen nothing older than the window, and its client
-reports `reached_the_end` as false on every run.
+asked only for postings created in the last two days, so a walk that runs
+every country short has still seen nothing older than the window, and its
+client reports `reached_the_end` as false on every run. Nor does absence from
+such a source mean anything: a posting leaves the window two days after it was
+created whether or not it is still open, and the API has no closing signal.
 
-Such a source states instead how long a posting may go unseen before it is
-presumed gone: its window plus a grace period for missed runs, carried on the
-run summary as `retire_unseen_after`. Adzuna states its two-day window plus
-five days of grace, so a posting it has not listed for seven days is presumed
-gone. A run refused only for not reaching the end, and stating that age,
-retires the provenance records of its source last seen before the run started
-minus the age, and withdraws jobs exactly as an exhausted run does. The rule's
-inputs are the moment the run started and the stated age; nothing in the run's
-counts moves the line.
+Such a source states a presumed lifetime instead: how long a posting is kept
+after the source last showed it before SkillSync retires it, carried on the
+run summary as `retire_unseen_after`. This is a lifetime, not evidence of
+absence. Adzuna states thirty days, so an Adzuna posting is shown for thirty
+days after it was last seen, roughly thirty to thirty-two days after it was
+created, whether or not Adzuna still lists it: the API never says when a
+posting closes, the terms permit holding the data while the licence stands,
+and a posting older than that is more often filled than open.
 
-Every other refusal stands whether or not an age is stated: a run that stopped
-at its record budget is refused, and a run that saw no records is refused
-before either rule is consulted. The exhaustion rule is unchanged: a run that
-reached the end retires everything it did not see, whatever age it states.
+A run refused only for not reaching the end, and stating a lifetime, retires
+the provenance records of its source last seen before the run started minus
+the lifetime, and withdraws jobs exactly as an exhausted run does. The rule's
+inputs are the moment the run started and the stated lifetime; nothing in the
+run's counts moves the line.
+
+Every other refusal stands whether or not a lifetime is stated: a run that
+stopped at its record budget is refused, and a run that saw no records is
+refused before either rule is consulted. The exhaustion rule is unchanged: a
+run that reached the end retires everything it did not see, whatever lifetime
+it states.
 
 ### The conclusion is drawn twice
 
 **Per source.** A provenance record an exhausted run did not see, or one a
-windowed source has not seen for its stated age, is retired. That is a fact
-about one board: this employer stopped advertising this posting there.
+windowed source has not shown for its stated lifetime, is retired. That is a
+fact about one board: this employer stopped advertising this posting there,
+or the lifetime SkillSync keeps it for has run out.
 
 **Per job.** A job is marked `removed` only once no source still lists it. A
 job dropped by an aggregator but still on the employer's own board is still

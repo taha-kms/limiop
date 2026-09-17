@@ -84,12 +84,13 @@ class IngestionSummary:
     reached_the_end: bool = False
     # Whether the run stopped because it hit its own record budget.
     stopped_at_budget: bool = False
-    # How long a posting may go unseen before it is presumed gone, or None
-    # when the source makes no such statement. A source that reads through a
-    # time window can never claim the end of the source, because everything
-    # older than the window is unread however far the walk went; so it states
-    # this instead: the window, plus a grace period for the runs in between
-    # that were missed or cut short.
+    # How long a posting is kept after the source last showed it before it is
+    # retired, or None when the source makes no such statement. A source that
+    # only shows new postings never says when one closes, and can never claim
+    # the end of the source either, because everything older than its window
+    # is unread however far the walk went; so it states a presumed lifetime
+    # instead. This is a lifetime, not evidence of absence: the posting is
+    # retired when it runs out whether or not the source still lists it.
     retire_unseen_after: timedelta | None = None
     # The alias table every skill count below was produced under, or None when
     # no vocabulary was published and nothing was extracted.

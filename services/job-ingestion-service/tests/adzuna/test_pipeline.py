@@ -16,7 +16,13 @@ from job_ingestion.adzuna.client import AdzunaClient, AdzunaConfig
 from job_ingestion.adzuna.normalizer import AdzunaNormalizer
 from job_ingestion.adzuna.pipeline import build_run, ingest_adzuna
 from job_ingestion.adzuna.records import AdzunaValidator
-from job_ingestion.adzuna.source import DAILY_QUOTA, DISPLAY_NAME, PRECEDENCE, SOURCE_KEY
+from job_ingestion.adzuna.source import (
+    DAILY_QUOTA,
+    DISPLAY_NAME,
+    PRECEDENCE,
+    PRESUMED_LIFETIME,
+    SOURCE_KEY,
+)
 from job_ingestion.config import Settings
 from job_ingestion.contracts import IngestionStage, IngestionSummary
 from job_ingestion.database import Database
@@ -158,22 +164,22 @@ def test_a_configured_source_stores_every_snippet_flagged_partial(
 
 @pytest.mark.integration
 @pytest.mark.usefixtures("configured")
-def test_a_run_ages_out_a_posting_unseen_for_the_window_plus_grace(
+def test_a_run_retires_a_posting_past_its_presumed_lifetime(
     database_url: PostgresDsn,
 ) -> None:
-    """The client never claims the end, so the run states an age instead:
-    `max_days_old` plus five days of grace. A posting no run has listed for
-    longer is presumed gone; one inside the age is left alone, and so is
-    everything this run fetched."""
+    """The client never claims the end, so the run states a lifetime instead:
+    a posting is kept for thirty days after a run last saw it, whether or not
+    Adzuna still lists it. One last seen longer ago is retired; one inside the
+    lifetime is left alone, and so is everything this run fetched."""
 
     async def exercise(database: Database) -> None:
-        await listed_earlier(database, "gone", days_ago=CONFIG.max_days_old + 6)
-        await listed_earlier(database, "recent", days_ago=CONFIG.max_days_old + 4)
+        await listed_earlier(database, "gone", days_ago=31)
+        await listed_earlier(database, "recent", days_ago=29)
 
         summary, _ = await ingest(database_url, ok(page_body("gb")), ok(page_body("de")))
 
         records = await retired_at_by_source_job_id(database)
-        assert summary.retire_unseen_after == timedelta(days=CONFIG.max_days_old + 5)
+        assert summary.retire_unseen_after == PRESUMED_LIFETIME == timedelta(days=30)
         assert summary.reached_the_end is False
         assert records.pop("gb:gone") is not None
         assert len(records) == 7
@@ -260,4 +266,4 @@ def test_the_run_registers_the_configured_source() -> None:
     assert run.source.precedence == 10
     assert run.client.source_key == run.source.key
     assert run.max_records == 10
-    assert run.retire_unseen_after == timedelta(days=7)
+    assert run.retire_unseen_after == timedelta(days=30)

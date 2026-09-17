@@ -37,7 +37,8 @@ AGGREGATOR = SourceRegistration(
 
 FIRST_RUN = datetime(2026, 8, 1, 12, tzinfo=UTC)
 SECOND_RUN = FIRST_RUN + timedelta(days=1)
-# A windowed source's statement: two days of window and five of grace.
+# A windowed source's statement: how long a posting is kept after it was last
+# seen. Short, so the tests can place rows on either side of it.
 UNSEEN_FOR = timedelta(days=7)
 LONG_AGO = SECOND_RUN - UNSEEN_FOR - timedelta(days=1)
 
@@ -91,7 +92,7 @@ def exhausted(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
 
 
 def windowed(source: SourceRegistration, **overrides: Any) -> IngestionSummary:
-    """A run through a time window: never at the end, but stating an age."""
+    """A run through a time window: never at the end, but stating a lifetime."""
     return exhausted(source, reached_the_end=False, retire_unseen_after=UNSEEN_FOR, **overrides)
 
 
@@ -429,17 +430,17 @@ def test_one_source_reconciling_does_not_retire_another_sources_records(
 
 
 # A source read through a window never reaches its end. It states instead how
-# long a posting may go unseen before it is presumed gone.
+# long a posting is kept after the source last showed it.
 
 
 def test_a_windowed_run_is_still_not_exhausted() -> None:
-    """Stating an age changes nothing about the exhaustion rule."""
+    """Stating a lifetime changes nothing about the exhaustion rule."""
     assert windowed(BOARD).source_exhausted is False
     assert why_not(windowed(BOARD)) == "the run did not reach the end of the source"
 
 
 @pytest.mark.integration
-def test_the_aged_rule_retires_what_has_gone_unseen_for_the_stated_age(
+def test_the_aged_rule_retires_what_has_gone_unseen_for_the_stated_lifetime(
     database_url: PostgresDsn,
 ) -> None:
     async def exercise(database: Database) -> None:
@@ -483,16 +484,18 @@ def test_the_aged_rule_withdraws_a_job_only_once_no_source_lists_it(
     ("summary", "expected"),
     [
         pytest.param(
-            exhausted(BOARD, reached_the_end=False), "did not reach the end", id="no age stated"
+            exhausted(BOARD, reached_the_end=False),
+            "did not reach the end",
+            id="no lifetime stated",
         ),
         pytest.param(windowed(BOARD, stopped_at_budget=True), "record budget", id="capped"),
     ],
 )
-def test_a_run_not_entitled_to_presume_by_age_retires_nothing_however_old(
+def test_a_run_not_entitled_to_age_anything_out_retires_nothing_however_old(
     database_url: PostgresDsn, summary: IngestionSummary, expected: str
 ) -> None:
-    """A truncated run that states no age is refused exactly as before, and a
-    budget stop refuses a windowed run the way it refuses any other."""
+    """A truncated run that states no lifetime is refused exactly as before,
+    and a budget stop refuses a windowed run the way it refuses any other."""
 
     async def exercise(database: Database) -> None:
         await ingest(database, BOARD, posting(BOARD), seen_at=LONG_AGO)

@@ -18,11 +18,13 @@ strength of such a run would let an outage do the retiring, so it concludes
 nothing.
 
 A source read through a time window can never exhaust itself: everything older
-than the window is unread however far the walk went. Such a source states
-instead how long a posting may go unseen before it is presumed gone, which is
-`IngestionSummary.retire_unseen_after`, and a run that was refused for not
-reaching the end and nothing else may retire what has gone unseen that long.
-Every other refusal stands, the empty run above included.
+than the window is unread however far the walk went, and a posting that left
+the window is unseen whether or not it is still open. Such a source states
+instead a presumed lifetime, `IngestionSummary.retire_unseen_after`: how long a
+posting is kept after the source last showed it. A run refused for not reaching
+the end and nothing else may retire what the source has not shown for that
+long. That is a lifetime running out rather than evidence of absence, and every
+other refusal stands, the empty run above included.
 
 The conclusion is drawn in two steps, because one source is not the catalogue:
 
@@ -62,9 +64,9 @@ class ReconciliationResult:
     provenance_retired: int = 0
     jobs_withdrawn: int = 0
     # Which rule entitled the run to conclude anything: `EXHAUSTED` when it saw
-    # the whole source, `AGED` when it presumed by age, and empty when it was
-    # refused. Reported so a run's conclusions can be read back against the
-    # rule that licensed them.
+    # the whole source, `AGED` when it retired by lifetime, and empty when it
+    # was refused. Reported so a run's conclusions can be read back against
+    # the rule that licensed them.
     rule: str = ""
 
     @property

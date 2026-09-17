@@ -38,12 +38,16 @@ WEEKLY_CEILING = 1000
 MONTHLY_CEILING = 2500
 DAILY_QUOTA = Quota(per_day=MONTHLY_CEILING // 31)
 
-# How much longer than its window a posting may go unseen before it is
-# presumed gone. Every request is windowed, so a run sees only what the window
-# holds and can never claim the end of the source; the window plus this grace
-# is what the run states instead. Five days covers a run of missed schedules:
-# a quota spent early, a provider outage, a failed deployment over a weekend.
-RETIREMENT_GRACE = timedelta(days=5)
+# How long an Adzuna posting is kept after a run last saw it. Every request is
+# windowed to postings created in the last `max_days_old` days, so a posting is
+# seen during its first days and never again, live or not, and the API has no
+# closing signal. The window decides what is seen; this lifetime decides how
+# long it is kept, so the two are independent: a posting is shown for thirty
+# days after it was last seen, roughly thirty to thirty-two days after it was
+# created, whether or not Adzuna still lists it. The terms permit holding the
+# data while the licence stands, and a posting older than this is more often
+# filled than open.
+PRESUMED_LIFETIME = timedelta(days=30)
 
 # The markets the project covers, as the ISO codes Adzuna paths are keyed by.
 DEFAULT_COUNTRIES = ("gb", "us", "de", "fr", "nl", "at", "ch", "es", "it", "pl", "ca", "au")

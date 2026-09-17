@@ -34,7 +34,7 @@ def build_run(
 ) -> IngestionRun[AdzunaJobRecord]:
     """Assemble the stages around an already-built client.
 
-    The age after which an unseen posting is presumed gone comes from the
+    The lifetime a posting is kept for after it was last seen comes from the
     client's config, because the config is what windows every request; the
     client itself stays transport and never reads a job field.
     """
