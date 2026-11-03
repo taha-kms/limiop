@@ -1,4 +1,4 @@
-FROM python:3.13.15-slim-bookworm@sha256:ed86c82274b3c69b52fb5820f358f0bd7df0b603332063cb5c6e32bd220c3e6e
+FROM python:3.13.18-slim-bookworm@sha256:281d39ff02e3b389401586134ff9e6572954687822a58055ec07a60ded4e0b7f
 
 ENV AIRFLOW_HOME=/opt/airflow \
     PATH="/opt/venv/bin:$PATH" \
