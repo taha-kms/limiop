@@ -20,7 +20,7 @@ dependencies = [
   "psycopg[binary]>=3.3.4,<4.0.0",
   "pydantic-settings>=2.15.0,<3.0.0",
   "pyjwt>=2.10.0,<3.0.0",
-  "pypdf>=6.16.2,<7.0.0",
+  "pypdf>=6.16.2,<8.0.0",
   "python-multipart>=0.0.32,<1.0.0",
   "skillsync-platform-db==0.1.0",
   "skillsync-platform-skills==0.1.0",
